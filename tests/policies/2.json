@@ -1,0 +1,26 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ViewGroups",
+      "Effect": "Allow",
+      "Action": [
+        "iam:ListGroups",
+        "iam:ListUsers",
+        "iam:GetUser",
+        "iam:ListGroupsForUser"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "ViewEditThisGroup",
+      "Effect": "Allow",
+      "Action": [
+        "iam:AddUserToGroup",
+        "iam:RemoveUserFromGroup",
+        "iam:GetGroup"
+      ],
+      "Resource": "arn:aws:iam::*:group/MarketingTeam"
+    }
+  ]
+}
