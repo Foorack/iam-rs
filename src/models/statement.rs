@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::{Action, Effect, Principal, Resource, ConditionBlock, Operator};
+use super::{Action, ConditionBlock, Effect, Operator, Principal, Resource};
 
 /// Represents a single statement in an IAM policy
 ///
@@ -340,7 +340,7 @@ impl IAMStatement {
         condition_block.add_condition(condition);
         self
     }
-    
+
     /// Adds a condition using the Condition struct
     pub fn with_condition_struct(mut self, condition: super::Condition) -> Self {
         let condition_block = self.condition.get_or_insert_with(ConditionBlock::new);
