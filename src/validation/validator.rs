@@ -146,7 +146,7 @@ pub trait Validate {
 /// Helper functions for common validation patterns
 pub mod helpers {
     use super::*;
-    use crate::models::Arn;
+    use crate::core::Arn;
 
     /// Validate that a string is not empty
     pub fn validate_non_empty(

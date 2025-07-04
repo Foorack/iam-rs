@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use super::validation::{Validate, ValidationContext, ValidationResult, helpers};
+use crate::validation::{Validate, ValidationContext, ValidationResult, helpers};
 
 /// Represents a principal in an IAM policy
 ///
@@ -27,7 +27,7 @@ impl Validate for Principal {
                 }
                 Principal::Multiple(principals) => {
                     if principals.is_empty() {
-                        return Err(super::validation::ValidationError::InvalidValue {
+                        return Err(crate::validation::ValidationError::InvalidValue {
                             field: "Principal".to_string(),
                             value: "[]".to_string(),
                             reason: "Principal list cannot be empty".to_string(),
@@ -52,7 +52,7 @@ impl Validate for Principal {
                 }
                 Principal::Mapped(map) => {
                     if map.is_empty() {
-                        return Err(super::validation::ValidationError::InvalidValue {
+                        return Err(crate::validation::ValidationError::InvalidValue {
                             field: "Principal".to_string(),
                             value: "{}".to_string(),
                             reason: "Principal mapping cannot be empty".to_string(),
@@ -65,7 +65,7 @@ impl Validate for Principal {
                         ctx.with_segment(key, |nested_ctx| {
                             // Validate the principal type key
                             if !matches!(key.as_str(), "AWS" | "Federated" | "Service" | "CanonicalUser") {
-                                results.push(Err(super::validation::ValidationError::InvalidValue {
+                                results.push(Err(crate::validation::ValidationError::InvalidValue {
                                     field: "Principal type".to_string(),
                                     value: key.clone(),
                                     reason: "Must be one of: AWS, Federated, Service, CanonicalUser".to_string(),
@@ -85,7 +85,7 @@ impl Validate for Principal {
                                                 results.push(helpers::validate_principal(s, item_ctx));
                                             });
                                         } else {
-                                            results.push(Err(super::validation::ValidationError::InvalidValue {
+                                            results.push(Err(crate::validation::ValidationError::InvalidValue {
                                                 field: "Principal value".to_string(),
                                                 value: item.to_string(),
                                                 reason: "Principal values must be strings".to_string(),
@@ -94,7 +94,7 @@ impl Validate for Principal {
                                     }
                                 }
                                 _ => {
-                                    results.push(Err(super::validation::ValidationError::InvalidValue {
+                                    results.push(Err(crate::validation::ValidationError::InvalidValue {
                                         field: "Principal value".to_string(),
                                         value: value.to_string(),
                                         reason: "Principal value must be string or array of strings".to_string(),

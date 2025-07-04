@@ -1,4 +1,4 @@
-use super::arn::{Arn, ArnError};
+use crate::core::arn::{Arn, ArnError};
 use std::collections::HashSet;
 
 /// Advanced ARN matching capabilities for policy evaluation

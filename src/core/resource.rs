@@ -1,4 +1,4 @@
-use super::validation::{Validate, ValidationContext, ValidationResult, helpers};
+use crate::validation::{Validate, ValidationContext, ValidationResult, helpers};
 use serde::{Deserialize, Serialize};
 
 /// Represents a resource in an IAM policy
@@ -17,7 +17,7 @@ impl Validate for Resource {
             Resource::Single(resource) => helpers::validate_resource(resource, ctx),
             Resource::Multiple(resources) => {
                 if resources.is_empty() {
-                    return Err(super::validation::ValidationError::InvalidValue {
+                    return Err(crate::validation::ValidationError::InvalidValue {
                         field: "Resource".to_string(),
                         value: "[]".to_string(),
                         reason: "Resource list cannot be empty".to_string(),

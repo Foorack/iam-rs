@@ -1,5 +1,7 @@
-use super::Operator;
-use super::validation::{Validate, ValidationContext, ValidationResult, ValidationError, helpers};
+use crate::{
+    core::Operator,
+    validation::{Validate, ValidationContext, ValidationResult, ValidationError, helpers},
+};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 

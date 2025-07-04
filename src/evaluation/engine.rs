@@ -1,6 +1,10 @@
 use super::{
-    Action, ConditionBlock, ContextValue, Effect, IAMPolicy, IAMStatement, Operator, Principal,
-    RequestContext, Resource, arn_matcher::ArnMatcher,
+    context::{ContextValue, RequestContext},
+    matcher::ArnMatcher,
+};
+use crate::{
+    core::{Action, Effect, Operator, Principal, Resource},
+    policy::{ConditionBlock, IAMPolicy, IAMStatement},
 };
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -781,7 +785,7 @@ impl PolicyEvaluator {
     /// Simple wildcard matching for actions and strings
     fn wildcard_match(&self, text: &str, pattern: &str) -> bool {
         // Use the ARN wildcard matching logic
-        super::arn::Arn::wildcard_match(text, pattern)
+        crate::core::arn::Arn::wildcard_match(text, pattern)
     }
 }
 
@@ -814,7 +818,7 @@ pub fn evaluate_policies(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{Action, Effect, IAMStatement, Resource};
+    use crate::{Action, Effect, IAMStatement, Resource};
     use serde_json::json;
 
     #[test]
@@ -891,7 +895,7 @@ mod tests {
 
     #[test]
     fn test_condition_evaluation() {
-        use crate::models::Operator;
+        use crate::Operator;
 
         let mut context = RequestContext::empty();
         context.insert(
@@ -923,7 +927,7 @@ mod tests {
 
     #[test]
     fn test_condition_evaluation_failure() {
-        use crate::models::Operator;
+        use crate::Operator;
 
         let mut context = RequestContext::empty();
         context.insert(

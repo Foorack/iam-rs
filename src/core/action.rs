@@ -1,4 +1,4 @@
-use super::validation::{Validate, ValidationContext, ValidationResult, helpers};
+use crate::validation::{Validate, ValidationContext, ValidationResult, helpers};
 use serde::{Deserialize, Serialize};
 
 /// Represents an action in an IAM policy
@@ -17,7 +17,7 @@ impl Validate for Action {
             Action::Single(action) => helpers::validate_action(action, ctx),
             Action::Multiple(actions) => {
                 if actions.is_empty() {
-                    return Err(super::validation::ValidationError::InvalidValue {
+                    return Err(crate::validation::ValidationError::InvalidValue {
                         field: "Action".to_string(),
                         value: "[]".to_string(),
                         reason: "Action list cannot be empty".to_string(),

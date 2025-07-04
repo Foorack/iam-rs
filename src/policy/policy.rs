@@ -1,5 +1,8 @@
-use super::validation::{Validate, ValidationContext, ValidationError, ValidationResult, helpers};
-use super::{IAMStatement, IAMVersion};
+use super::IAMStatement;
+use crate::{
+    core::IAMVersion,
+    validation::{Validate, ValidationContext, ValidationError, ValidationResult, helpers},
+};
 use serde::{Deserialize, Serialize};
 use serde_with::OneOrMany;
 use serde_with::formats::PreferOne;
@@ -170,7 +173,7 @@ impl Validate for IAMPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{Action, Effect, Resource};
+    use crate::{Action, Effect, Resource};
 
     #[test]
     fn test_policy_validation() {

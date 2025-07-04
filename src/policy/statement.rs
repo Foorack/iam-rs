@@ -1,7 +1,10 @@
 use serde::{Deserialize, Serialize};
 
-use super::{Action, ConditionBlock, Effect, Operator, Principal, Resource};
-use super::validation::{Validate, ValidationContext, ValidationResult, ValidationError, helpers};
+use super::ConditionBlock;
+use crate::{
+    core::{Action, Effect, Operator, Principal, Resource},
+    validation::{Validate, ValidationContext, ValidationError, ValidationResult, helpers},
+};
 
 /// Represents a single statement in an IAM policy
 ///
@@ -467,7 +470,8 @@ mod tests {
         let mut conflicting_resource = IAMStatement::new(Effect::Allow);
         conflicting_resource.action = Some(Action::Single("s3:GetObject".to_string()));
         conflicting_resource.resource = Some(Resource::Single("*".to_string()));
-        conflicting_resource.not_resource = Some(Resource::Single("arn:aws:s3:::bucket/*".to_string()));
+        conflicting_resource.not_resource =
+            Some(Resource::Single("arn:aws:s3:::bucket/*".to_string()));
         assert!(!conflicting_resource.is_valid());
     }
 
@@ -477,22 +481,30 @@ mod tests {
         let mut invalid_not_principal = IAMStatement::new(Effect::Allow);
         invalid_not_principal.action = Some(Action::Single("s3:GetObject".to_string()));
         invalid_not_principal.resource = Some(Resource::Single("*".to_string()));
-        invalid_not_principal.not_principal = Some(Principal::Single("arn:aws:iam::123456789012:user/test".to_string()));
+        invalid_not_principal.not_principal = Some(Principal::Single(
+            "arn:aws:iam::123456789012:user/test".to_string(),
+        ));
         assert!(!invalid_not_principal.is_valid());
 
         // NotPrincipal with Deny effect (valid)
         let mut valid_not_principal = IAMStatement::new(Effect::Deny);
         valid_not_principal.action = Some(Action::Single("s3:GetObject".to_string()));
         valid_not_principal.resource = Some(Resource::Single("*".to_string()));
-        valid_not_principal.not_principal = Some(Principal::Single("arn:aws:iam::123456789012:user/test".to_string()));
+        valid_not_principal.not_principal = Some(Principal::Single(
+            "arn:aws:iam::123456789012:user/test".to_string(),
+        ));
         assert!(valid_not_principal.is_valid());
 
         // Both Principal and NotPrincipal (invalid)
         let mut conflicting_principal = IAMStatement::new(Effect::Deny);
         conflicting_principal.action = Some(Action::Single("s3:GetObject".to_string()));
         conflicting_principal.resource = Some(Resource::Single("*".to_string()));
-        conflicting_principal.principal = Some(Principal::Single("arn:aws:iam::123456789012:user/test".to_string()));
-        conflicting_principal.not_principal = Some(Principal::Single("arn:aws:iam::123456789012:user/other".to_string()));
+        conflicting_principal.principal = Some(Principal::Single(
+            "arn:aws:iam::123456789012:user/test".to_string(),
+        ));
+        conflicting_principal.not_principal = Some(Principal::Single(
+            "arn:aws:iam::123456789012:user/other".to_string(),
+        ));
         assert!(!conflicting_principal.is_valid());
     }
 
