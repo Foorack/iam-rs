@@ -48,7 +48,7 @@ mod tests {
             );
 
         assert!(statement.condition.is_some());
-        let condition = statement.condition.unwrap();
-        assert!(condition.contains_key(&Operator::StringEquals));
+        let condition_block = statement.condition.unwrap();
+        assert!(condition_block.has_condition(&Operator::StringEquals, "s3:prefix"));
     }
 }

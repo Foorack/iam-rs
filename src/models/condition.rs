@@ -1,0 +1,211 @@
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use super::Operator;
+
+/// Represents a single condition in an IAM policy
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Condition {
+    /// The condition operator (e.g., StringEquals, DateGreaterThan)
+    pub operator: Operator,
+    /// The condition key (e.g., "aws:username", "s3:prefix")
+    pub key: String,
+    /// The condition value(s)
+    pub value: serde_json::Value,
+}
+
+/// Represents a condition block in an IAM policy
+/// This is a collection of conditions grouped by operator
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConditionBlock {
+    /// Map of operators to their key-value pairs
+    pub conditions: HashMap<Operator, HashMap<String, serde_json::Value>>,
+}
+
+impl Condition {
+    /// Creates a new condition
+    pub fn new<K: Into<String>>(operator: Operator, key: K, value: serde_json::Value) -> Self {
+        Self {
+            operator,
+            key: key.into(),
+            value,
+        }
+    }
+    
+    /// Creates a condition with a string value
+    pub fn string<K: Into<String>, V: Into<String>>(operator: Operator, key: K, value: V) -> Self {
+        Self::new(operator, key, serde_json::Value::String(value.into()))
+    }
+    
+    /// Creates a condition with a boolean value
+    pub fn boolean<K: Into<String>>(operator: Operator, key: K, value: bool) -> Self {
+        Self::new(operator, key, serde_json::Value::Bool(value))
+    }
+    
+    /// Creates a condition with a numeric value
+    pub fn number<K: Into<String>>(operator: Operator, key: K, value: i64) -> Self {
+        Self::new(operator, key, serde_json::Value::Number(serde_json::Number::from(value)))
+    }
+    
+    /// Creates a condition with an array of string values
+    pub fn string_array<K: Into<String>>(operator: Operator, key: K, values: Vec<String>) -> Self {
+        let json_values: Vec<serde_json::Value> = values.into_iter()
+            .map(serde_json::Value::String)
+            .collect();
+        Self::new(operator, key, serde_json::Value::Array(json_values))
+    }
+}
+
+impl ConditionBlock {
+    /// Creates a new empty condition block
+    pub fn new() -> Self {
+        Self {
+            conditions: HashMap::new(),
+        }
+    }
+    
+    /// Adds a condition to the block
+    pub fn add_condition(&mut self, condition: Condition) {
+        let operator_map = self.conditions.entry(condition.operator).or_insert_with(HashMap::new);
+        operator_map.insert(condition.key, condition.value);
+    }
+    
+    /// Adds a condition using the builder pattern
+    pub fn with_condition(mut self, condition: Condition) -> Self {
+        self.add_condition(condition);
+        self
+    }
+    
+    /// Adds a condition directly with operator, key, and value
+    pub fn with_condition_direct<K: Into<String>>(
+        mut self,
+        operator: Operator,
+        key: K,
+        value: serde_json::Value,
+    ) -> Self {
+        let condition = Condition::new(operator, key, value);
+        self.add_condition(condition);
+        self
+    }
+    
+    /// Gets all conditions for a specific operator
+    pub fn get_conditions_for_operator(&self, operator: &Operator) -> Option<&HashMap<String, serde_json::Value>> {
+        self.conditions.get(operator)
+    }
+    
+    /// Gets a specific condition value
+    pub fn get_condition_value(&self, operator: &Operator, key: &str) -> Option<&serde_json::Value> {
+        self.conditions.get(operator)?.get(key)
+    }
+    
+    /// Checks if a condition exists
+    pub fn has_condition(&self, operator: &Operator, key: &str) -> bool {
+        self.conditions.get(operator)
+            .map(|map| map.contains_key(key))
+            .unwrap_or(false)
+    }
+    
+    /// Gets all operators used in this condition block
+    pub fn operators(&self) -> Vec<&Operator> {
+        self.conditions.keys().collect()
+    }
+    
+    /// Checks if the condition block is empty
+    pub fn is_empty(&self) -> bool {
+        self.conditions.is_empty()
+    }
+    
+    /// Converts to the legacy HashMap format for backward compatibility
+    pub fn to_legacy_format(&self) -> HashMap<String, HashMap<String, serde_json::Value>> {
+        self.conditions.iter()
+            .map(|(op, conditions)| (op.as_str().to_string(), conditions.clone()))
+            .collect()
+    }
+    
+    /// Creates a condition block from the legacy HashMap format
+    pub fn from_legacy_format(legacy: HashMap<String, HashMap<String, serde_json::Value>>) -> Result<Self, String> {
+        let mut conditions = HashMap::new();
+        
+        for (op_str, condition_map) in legacy {
+            let operator = op_str.parse::<Operator>()
+                .map_err(|e| format!("Invalid operator '{}': {}", op_str, e))?;
+            conditions.insert(operator, condition_map);
+        }
+        
+        Ok(Self { conditions })
+    }
+}
+
+impl Default for ConditionBlock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn test_condition_creation() {
+        let condition = Condition::string(
+            Operator::StringEquals,
+            "aws:username",
+            "john"
+        );
+        
+        assert_eq!(condition.operator, Operator::StringEquals);
+        assert_eq!(condition.key, "aws:username");
+        assert_eq!(condition.value, json!("john"));
+    }
+    
+    #[test]
+    fn test_condition_block() {
+        let block = ConditionBlock::new()
+            .with_condition(Condition::string(
+                Operator::StringEquals,
+                "aws:username",
+                "john"
+            ))
+            .with_condition(Condition::boolean(
+                Operator::Bool,
+                "aws:SecureTransport",
+                true
+            ));
+        
+        assert!(block.has_condition(&Operator::StringEquals, "aws:username"));
+        assert!(block.has_condition(&Operator::Bool, "aws:SecureTransport"));
+        assert!(!block.has_condition(&Operator::StringEquals, "nonexistent"));
+        
+        let username = block.get_condition_value(&Operator::StringEquals, "aws:username");
+        assert_eq!(username, Some(&json!("john")));
+    }
+    
+    #[test]
+    fn test_legacy_format_conversion() {
+        let mut legacy = HashMap::new();
+        let mut string_conditions = HashMap::new();
+        string_conditions.insert("aws:username".to_string(), json!("john"));
+        legacy.insert("StringEquals".to_string(), string_conditions);
+        
+        let block = ConditionBlock::from_legacy_format(legacy.clone()).unwrap();
+        assert!(block.has_condition(&Operator::StringEquals, "aws:username"));
+        
+        let converted_back = block.to_legacy_format();
+        assert_eq!(converted_back, legacy);
+    }
+    
+    #[test]
+    fn test_condition_serialization() {
+        let condition = Condition::string(
+            Operator::StringEquals,
+            "aws:username",
+            "john"
+        );
+        
+        let json = serde_json::to_string(&condition).unwrap();
+        let deserialized: Condition = serde_json::from_str(&json).unwrap();
+        
+        assert_eq!(condition, deserialized);
+    }
+}

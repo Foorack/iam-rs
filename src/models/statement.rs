@@ -1,9 +1,6 @@
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
-use crate::Operator;
-
-use super::{Action, Effect, Principal, Resource};
+use super::{Action, Effect, Principal, Resource, ConditionBlock, Operator};
 
 /// Represents a single statement in an IAM policy
 ///
@@ -288,7 +285,7 @@ pub struct IAMStatement {
     ///
     /// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition.html
     #[serde(rename = "Condition", skip_serializing_if = "Option::is_none")]
-    pub condition: Option<HashMap<Operator, HashMap<String, serde_json::Value>>>,
+    pub condition: Option<ConditionBlock>,
 }
 
 impl IAMStatement {
@@ -338,9 +335,16 @@ impl IAMStatement {
         key: String,
         value: serde_json::Value,
     ) -> Self {
-        let condition = self.condition.get_or_insert_with(HashMap::new);
-        let operator_map = condition.entry(operator).or_insert_with(HashMap::new);
-        operator_map.insert(key, value);
+        let condition_block = self.condition.get_or_insert_with(ConditionBlock::new);
+        let condition = super::Condition::new(operator, key, value);
+        condition_block.add_condition(condition);
+        self
+    }
+    
+    /// Adds a condition using the Condition struct
+    pub fn with_condition_struct(mut self, condition: super::Condition) -> Self {
+        let condition_block = self.condition.get_or_insert_with(ConditionBlock::new);
+        condition_block.add_condition(condition);
         self
     }
 }
