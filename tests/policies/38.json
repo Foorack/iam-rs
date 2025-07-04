@@ -1,0 +1,20 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "TagUsersWithOnlyTheseTags",
+      "Effect": "Allow",
+      "Action": ["iam:CreateUser", "iam:TagUser"],
+      "Resource": "*",
+      "Condition": {
+        "StringEqualsIfExists": {
+          "aws:RequestTag/Department": ["Development", "QualityAssurance"],
+          "aws:RequestTag/JobFunction": "Employee"
+        },
+        "ForAllValues:StringEquals": {
+          "aws:TagKeys": ["Department", "JobFunction"]
+        }
+      }
+    }
+  ]
+}

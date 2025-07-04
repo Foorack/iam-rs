@@ -1,0 +1,11 @@
+{
+  "Version": "2012-10-17",
+  "Statement": {
+    "Effect": "Allow",
+    "Action": ["iam:TagUser", "iam:TagRole", "iam:UntagUser", "iam:UntagRole"],
+    "Resource": "*",
+    "Condition": {
+      "ForAllValues:StringEquals": { "aws:TagKeys": "Department" }
+    }
+  }
+}

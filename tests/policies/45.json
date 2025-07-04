@@ -1,0 +1,38 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "AllowAllUsersToListAllGroups",
+      "Effect": "Allow",
+      "Action": "iam:ListGroups",
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowAllUsersToViewAndManageThisGroup",
+      "Effect": "Allow",
+      "Action": "iam:*Group*",
+      "Resource": "arn:aws:iam::*:group/AllUsers"
+    },
+    {
+      "Sid": "LimitGroupManagementAccessToSpecificUsers",
+      "Effect": "Deny",
+      "Action": [
+        "iam:AddUserToGroup",
+        "iam:CreateGroup",
+        "iam:RemoveUserFromGroup",
+        "iam:DeleteGroup",
+        "iam:AttachGroupPolicy",
+        "iam:UpdateGroup",
+        "iam:DetachGroupPolicy",
+        "iam:DeleteGroupPolicy",
+        "iam:PutGroupPolicy"
+      ],
+      "Resource": "arn:aws:iam::*:group/AllUsers",
+      "Condition": {
+        "StringNotEquals": {
+          "aws:username": ["srodriguez", "mjackson", "adesai"]
+        }
+      }
+    }
+  ]
+}

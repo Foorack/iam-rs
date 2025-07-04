@@ -1,0 +1,41 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListAllS3Buckets",
+      "Effect": "Allow",
+      "Action": ["s3:ListAllMyBuckets"],
+      "Resource": "arn:aws:s3:::*"
+    },
+    {
+      "Sid": "AllowBucketLevelActions",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket", "s3:GetBucketLocation"],
+      "Resource": "arn:aws:s3:::*"
+    },
+    {
+      "Sid": "AllowBucketObjectActions",
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:PutObjectAcl",
+        "s3:GetObject",
+        "s3:GetObjectAcl",
+        "s3:DeleteObject"
+      ],
+      "Resource": "arn:aws:s3:::*/*"
+    },
+    {
+      "Sid": "RequireMFAForProductionBucket",
+      "Effect": "Deny",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::amzn-s3-demo-bucket-production/*",
+        "arn:aws:s3:::amzn-s3-demo-bucket-production"
+      ],
+      "Condition": {
+        "NumericGreaterThanIfExists": { "aws:MultiFactorAuthAge": "1800" }
+      }
+    }
+  ]
+}

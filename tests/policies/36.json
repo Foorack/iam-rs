@@ -1,0 +1,28 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "ListTagsForAllUsers",
+      "Effect": "Allow",
+      "Action": ["iam:ListUserTags", "iam:ListUsers"],
+      "Resource": "*"
+    },
+    {
+      "Sid": "TagManagerWithSpecificDepartment",
+      "Effect": "Allow",
+      "Action": "iam:TagUser",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "iam:ResourceTag/JobFunction": "Manager",
+          "aws:RequestTag/Department": [
+            "Marketing",
+            "Development",
+            "QualityAssurance"
+          ]
+        },
+        "ForAllValues:StringEquals": { "aws:TagKeys": "Department" }
+      }
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "Version": "2012-10-17",
+  "Statement": {
+    "Effect": "Allow",
+    "Action": ["iam:AttachUserPolicy", "iam:DetachUserPolicy"],
+    "Resource": "*",
+    "Condition": {
+      "ArnEquals": {
+        "iam:PolicyARN": [
+          "arn:aws:iam::*:policy/policy-name-1",
+          "arn:aws:iam::*:policy/policy-name-2"
+        ]
+      }
+    }
+  }
+}
