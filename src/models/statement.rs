@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::{Action, ConditionBlock, Effect, Operator, Principal, Resource};
+use super::validation::{Validate, ValidationContext, ValidationResult, ValidationError, helpers};
 
 /// Represents a single statement in an IAM policy
 ///
@@ -346,5 +347,169 @@ impl IAMStatement {
         let condition_block = self.condition.get_or_insert_with(ConditionBlock::new);
         condition_block.add_condition(condition);
         self
+    }
+}
+
+impl Validate for IAMStatement {
+    fn validate(&self, context: &mut ValidationContext) -> ValidationResult {
+        context.with_segment("Statement", |ctx| {
+            let mut results = Vec::new();
+
+            // Check that either Action or NotAction is present
+            match (&self.action, &self.not_action) {
+                (None, None) => {
+                    results.push(Err(ValidationError::MissingField {
+                        field: "Action or NotAction".to_string(),
+                        context: ctx.current_path(),
+                    }));
+                }
+                (Some(_), Some(_)) => {
+                    results.push(Err(ValidationError::LogicalError {
+                        message: "Statement cannot have both Action and NotAction".to_string(),
+                    }));
+                }
+                _ => {} // Valid: exactly one is present
+            }
+
+            // Check that either Resource or NotResource is present
+            match (&self.resource, &self.not_resource) {
+                (None, None) => {
+                    results.push(Err(ValidationError::MissingField {
+                        field: "Resource or NotResource".to_string(),
+                        context: ctx.current_path(),
+                    }));
+                }
+                (Some(_), Some(_)) => {
+                    results.push(Err(ValidationError::LogicalError {
+                        message: "Statement cannot have both Resource and NotResource".to_string(),
+                    }));
+                }
+                _ => {} // Valid: exactly one is present
+            }
+
+            // Check logical constraints on Principal/NotPrincipal
+            if let (Some(_), Some(_)) = (&self.principal, &self.not_principal) {
+                results.push(Err(ValidationError::LogicalError {
+                    message: "Statement cannot have both Principal and NotPrincipal".to_string(),
+                }));
+            }
+
+            // Validate NotPrincipal only used with Deny effect
+            if self.not_principal.is_some() && self.effect != Effect::Deny {
+                results.push(Err(ValidationError::LogicalError {
+                    message: "NotPrincipal must only be used with Effect: Deny".to_string(),
+                }));
+            }
+
+            // Validate individual components if present
+            if let Some(ref action) = self.action {
+                results.push(action.validate(ctx));
+            }
+            if let Some(ref not_action) = self.not_action {
+                results.push(not_action.validate(ctx));
+            }
+            if let Some(ref resource) = self.resource {
+                results.push(resource.validate(ctx));
+            }
+            if let Some(ref not_resource) = self.not_resource {
+                results.push(not_resource.validate(ctx));
+            }
+            if let Some(ref principal) = self.principal {
+                results.push(principal.validate(ctx));
+            }
+            if let Some(ref not_principal) = self.not_principal {
+                results.push(not_principal.validate(ctx));
+            }
+            if let Some(ref condition) = self.condition {
+                results.push(condition.validate(ctx));
+            }
+
+            // Validate Sid format if present
+            if let Some(ref sid) = self.sid {
+                if !sid.chars().all(|c| c.is_ascii_alphanumeric()) {
+                    results.push(Err(ValidationError::InvalidValue {
+                        field: "Sid".to_string(),
+                        value: sid.clone(),
+                        reason: "Sid must contain only ASCII alphanumeric characters".to_string(),
+                    }));
+                }
+            }
+
+            helpers::collect_errors(results)
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_statement_validation() {
+        // Valid statement
+        let valid_statement = IAMStatement::new(Effect::Allow)
+            .with_action(Action::Single("s3:GetObject".to_string()))
+            .with_resource(Resource::Single("arn:aws:s3:::bucket/*".to_string()));
+        assert!(valid_statement.is_valid());
+
+        // Missing action and resource
+        let invalid_statement = IAMStatement::new(Effect::Allow);
+        assert!(!invalid_statement.is_valid());
+
+        // Both Action and NotAction
+        let mut conflicting_statement = IAMStatement::new(Effect::Allow);
+        conflicting_statement.action = Some(Action::Single("s3:GetObject".to_string()));
+        conflicting_statement.not_action = Some(Action::Single("s3:PutObject".to_string()));
+        conflicting_statement.resource = Some(Resource::Single("*".to_string()));
+        assert!(!conflicting_statement.is_valid());
+
+        // Both Resource and NotResource
+        let mut conflicting_resource = IAMStatement::new(Effect::Allow);
+        conflicting_resource.action = Some(Action::Single("s3:GetObject".to_string()));
+        conflicting_resource.resource = Some(Resource::Single("*".to_string()));
+        conflicting_resource.not_resource = Some(Resource::Single("arn:aws:s3:::bucket/*".to_string()));
+        assert!(!conflicting_resource.is_valid());
+    }
+
+    #[test]
+    fn test_statement_principal_validation() {
+        // NotPrincipal with Allow effect (invalid)
+        let mut invalid_not_principal = IAMStatement::new(Effect::Allow);
+        invalid_not_principal.action = Some(Action::Single("s3:GetObject".to_string()));
+        invalid_not_principal.resource = Some(Resource::Single("*".to_string()));
+        invalid_not_principal.not_principal = Some(Principal::Single("arn:aws:iam::123456789012:user/test".to_string()));
+        assert!(!invalid_not_principal.is_valid());
+
+        // NotPrincipal with Deny effect (valid)
+        let mut valid_not_principal = IAMStatement::new(Effect::Deny);
+        valid_not_principal.action = Some(Action::Single("s3:GetObject".to_string()));
+        valid_not_principal.resource = Some(Resource::Single("*".to_string()));
+        valid_not_principal.not_principal = Some(Principal::Single("arn:aws:iam::123456789012:user/test".to_string()));
+        assert!(valid_not_principal.is_valid());
+
+        // Both Principal and NotPrincipal (invalid)
+        let mut conflicting_principal = IAMStatement::new(Effect::Deny);
+        conflicting_principal.action = Some(Action::Single("s3:GetObject".to_string()));
+        conflicting_principal.resource = Some(Resource::Single("*".to_string()));
+        conflicting_principal.principal = Some(Principal::Single("arn:aws:iam::123456789012:user/test".to_string()));
+        conflicting_principal.not_principal = Some(Principal::Single("arn:aws:iam::123456789012:user/other".to_string()));
+        assert!(!conflicting_principal.is_valid());
+    }
+
+    #[test]
+    fn test_statement_sid_validation() {
+        // Valid Sid
+        let valid_sid = IAMStatement::new(Effect::Allow)
+            .with_sid("ValidSid123")
+            .with_action(Action::Single("s3:GetObject".to_string()))
+            .with_resource(Resource::Single("*".to_string()));
+        assert!(valid_sid.is_valid());
+
+        // Invalid Sid with special characters
+        let mut invalid_sid = IAMStatement::new(Effect::Allow);
+        invalid_sid.sid = Some("Invalid-Sid!".to_string());
+        invalid_sid.action = Some(Action::Single("s3:GetObject".to_string()));
+        invalid_sid.resource = Some(Resource::Single("*".to_string()));
+        assert!(!invalid_sid.is_valid());
     }
 }

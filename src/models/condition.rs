@@ -1,4 +1,5 @@
 use super::Operator;
+use super::validation::{Validate, ValidationContext, ValidationResult, ValidationError, helpers};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 
@@ -193,6 +194,210 @@ impl ConditionBlock {
 impl Default for ConditionBlock {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Validate for Condition {
+    fn validate(&self, context: &mut ValidationContext) -> ValidationResult {
+        context.with_segment("Condition", |ctx| {
+            let mut results = Vec::new();
+
+            // Validate that key is not empty
+            results.push(helpers::validate_non_empty(&self.key, "key", ctx));
+
+            // Validate that the operator and value are compatible
+            match &self.value {
+                serde_json::Value::Null => {
+                    results.push(Err(ValidationError::InvalidCondition {
+                        operator: self.operator.as_str().to_string(),
+                        key: self.key.clone(),
+                        reason: "Condition value cannot be null".to_string(),
+                    }));
+                }
+                serde_json::Value::Array(arr) => {
+                    if arr.is_empty() {
+                        results.push(Err(ValidationError::InvalidCondition {
+                            operator: self.operator.as_str().to_string(),
+                            key: self.key.clone(),
+                            reason: "Condition value array cannot be empty".to_string(),
+                        }));
+                    }
+                    
+                    // Check if operator supports multiple values
+                    if !self.operator.is_multivalued_operator() && arr.len() > 1 {
+                        results.push(Err(ValidationError::InvalidCondition {
+                            operator: self.operator.as_str().to_string(),
+                            key: self.key.clone(),
+                            reason: format!("Operator {} does not support multiple values", self.operator.as_str()),
+                        }));
+                    }
+                }
+                _ => {} // Single values are generally OK
+            }
+
+            // Validate operator-specific rules (always strict)
+            match self.operator.category() {
+                    "String" => {
+                        // String operators should have string values
+                        match &self.value {
+                            serde_json::Value::String(_) => {},
+                            serde_json::Value::Array(arr) => {
+                                for (i, val) in arr.iter().enumerate() {
+                                    if !val.is_string() {
+                                        results.push(Err(ValidationError::InvalidCondition {
+                                            operator: self.operator.as_str().to_string(),
+                                            key: self.key.clone(),
+                                            reason: format!("String operator requires string values, found {} at index {}", val, i),
+                                        }));
+                                    }
+                                }
+                            },
+                            _ => {
+                                results.push(Err(ValidationError::InvalidCondition {
+                                    operator: self.operator.as_str().to_string(),
+                                    key: self.key.clone(),
+                                    reason: "String operator requires string value(s)".to_string(),
+                                }));
+                            }
+                        }
+                    },
+                    "Numeric" => {
+                        // Numeric operators should have numeric values
+                        match &self.value {
+                            serde_json::Value::Number(_) => {},
+                            serde_json::Value::String(s) => {
+                                // Allow string representation of numbers
+                                if s.parse::<f64>().is_err() {
+                                    results.push(Err(ValidationError::InvalidCondition {
+                                        operator: self.operator.as_str().to_string(),
+                                        key: self.key.clone(),
+                                        reason: format!("Numeric operator requires numeric value, found non-numeric string: {}", s),
+                                    }));
+                                }
+                            },
+                            serde_json::Value::Array(arr) => {
+                                for (i, val) in arr.iter().enumerate() {
+                                    match val {
+                                        serde_json::Value::Number(_) => {},
+                                        serde_json::Value::String(s) => {
+                                            if s.parse::<f64>().is_err() {
+                                                results.push(Err(ValidationError::InvalidCondition {
+                                                    operator: self.operator.as_str().to_string(),
+                                                    key: self.key.clone(),
+                                                    reason: format!("Numeric operator requires numeric values, found non-numeric string at index {}: {}", i, s),
+                                                }));
+                                            }
+                                        },
+                                        _ => {
+                                            results.push(Err(ValidationError::InvalidCondition {
+                                                operator: self.operator.as_str().to_string(),
+                                                key: self.key.clone(),
+                                                reason: format!("Numeric operator requires numeric values, found {} at index {}", val, i),
+                                            }));
+                                        }
+                                    }
+                                }
+                            },
+                            _ => {
+                                results.push(Err(ValidationError::InvalidCondition {
+                                    operator: self.operator.as_str().to_string(),
+                                    key: self.key.clone(),
+                                    reason: "Numeric operator requires numeric value(s)".to_string(),
+                                }));
+                            }
+                        }
+                    },
+                    "Date" => {
+                        // Date operators should have valid date strings
+                        match &self.value {
+                            serde_json::Value::String(s) => {
+                                // Basic ISO 8601 format check
+                                if !s.contains('T') && !s.contains('-') {
+                                    results.push(Err(ValidationError::InvalidCondition {
+                                        operator: self.operator.as_str().to_string(),
+                                        key: self.key.clone(),
+                                        reason: format!("Date operator requires ISO 8601 date format, found: {}", s),
+                                    }));
+                                }
+                            },
+                            _ => {
+                                results.push(Err(ValidationError::InvalidCondition {
+                                    operator: self.operator.as_str().to_string(),
+                                    key: self.key.clone(),
+                                    reason: "Date operator requires string date value".to_string(),
+                                }));
+                            }
+                        }
+                    },
+                    "Boolean" => {
+                        // Boolean operators should have boolean values
+                        match &self.value {
+                            serde_json::Value::Bool(_) => {},
+                            serde_json::Value::String(s) => {
+                                if !matches!(s.as_str(), "true" | "false") {
+                                    results.push(Err(ValidationError::InvalidCondition {
+                                        operator: self.operator.as_str().to_string(),
+                                        key: self.key.clone(),
+                                        reason: format!("Boolean operator requires boolean value, found: {}", s),
+                                    }));
+                                }
+                            },
+                            _ => {
+                                results.push(Err(ValidationError::InvalidCondition {
+                                    operator: self.operator.as_str().to_string(),
+                                    key: self.key.clone(),
+                                    reason: "Boolean operator requires boolean value".to_string(),
+                                }));
+                            }
+                        }
+                    },
+                    _ => {} // Other categories are more flexible
+                }
+
+            helpers::collect_errors(results)
+        })
+    }
+}
+
+impl Validate for ConditionBlock {
+    fn validate(&self, context: &mut ValidationContext) -> ValidationResult {
+        context.with_segment("ConditionBlock", |ctx| {
+            if self.conditions.is_empty() {
+                return Err(ValidationError::InvalidValue {
+                    field: "Condition".to_string(),
+                    value: "{}".to_string(),
+                    reason: "Condition block cannot be empty".to_string(),
+                });
+            }
+
+            let mut results = Vec::new();
+
+            for (operator, condition_map) in &self.conditions {
+                ctx.with_segment(&operator.as_str(), |op_ctx| {
+                    if condition_map.is_empty() {
+                        results.push(Err(ValidationError::InvalidValue {
+                            field: "Condition operator".to_string(),
+                            value: operator.as_str().to_string(),
+                            reason: "Condition operator cannot have empty condition map".to_string(),
+                        }));
+                        return;
+                    }
+
+                    for (key, value) in condition_map {
+                        op_ctx.with_segment(key, |key_ctx| {
+                            let condition = Condition {
+                                operator: operator.clone(),
+                                key: key.clone(),
+                                value: value.clone(),
+                            };
+                            results.push(condition.validate(key_ctx));
+                        });
+                    }
+                });
+            }
+
+            helpers::collect_errors(results)
+        })
     }
 }
 

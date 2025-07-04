@@ -236,4 +236,122 @@ mod tests {
             assert!(result.is_err(), "ARN should be invalid: {}", invalid_arn);
         }
     }
+
+    #[test]
+    fn test_policy_validation_integration() {
+        // Test valid policy with UUID-like ID for strict mode
+        let valid_policy = IAMPolicy::new()
+            .with_id("550e8400-e29b-41d4-a716-446655440000") // UUID format
+            .add_statement(
+                IAMStatement::new(Effect::Allow)
+                    .with_sid("ValidStatement")
+                    .with_action(Action::Single("s3:GetObject".to_string()))
+                    .with_resource(Resource::Single("arn:aws:s3:::bucket/*".to_string())),
+            );
+
+        assert!(valid_policy.is_valid());
+        assert!(valid_policy.validate_strict().is_ok());
+
+        // Test invalid policy - missing action
+        let mut invalid_policy = IAMPolicy::new();
+        invalid_policy
+            .statement
+            .push(IAMStatement::new(Effect::Allow));
+        assert!(!invalid_policy.is_valid());
+
+        // Test policy with validation errors
+        let complex_invalid_policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(Effect::Allow)
+                .with_action(Action::Single("invalid-action".to_string()))
+                .with_resource(Resource::Single("invalid-resource".to_string())),
+        );
+
+        assert!(!complex_invalid_policy.is_valid());
+
+        let validation_result = complex_invalid_policy.validate_strict();
+        assert!(validation_result.is_err());
+
+        let error = validation_result.unwrap_err();
+        assert!(
+            error.to_string().contains("Multiple validation errors")
+                || error.to_string().contains("Invalid")
+        );
+    }
+
+    #[test]
+    fn test_policy_validation_strict_id_requirements() {
+        // Policy with short ID (should fail validation)
+        let policy_short_id = IAMPolicy::new().with_id("short").add_statement(
+            IAMStatement::new(Effect::Allow)
+                .with_action(Action::Single("s3:GetObject".to_string()))
+                .with_resource(Resource::Single("*".to_string())),
+        );
+
+        // Should fail validation due to short ID
+        assert!(!policy_short_id.is_valid());
+        assert!(policy_short_id.validate_strict().is_err());
+    }
+
+    #[test]
+    fn test_condition_validation_integration() {
+        use serde_json::json;
+
+        // Valid condition
+        let valid_statement = IAMStatement::new(Effect::Allow)
+            .with_action(Action::Single("s3:GetObject".to_string()))
+            .with_resource(Resource::Single("*".to_string()))
+            .with_condition(
+                Operator::StringEquals,
+                "aws:username".to_string(),
+                json!("alice"),
+            );
+
+        assert!(valid_statement.is_valid());
+
+        // Invalid condition - numeric operator with string value (strict mode)
+        let invalid_condition_statement = IAMStatement::new(Effect::Allow)
+            .with_action(Action::Single("s3:GetObject".to_string()))
+            .with_resource(Resource::Single("*".to_string()))
+            .with_condition(
+                Operator::NumericEquals,
+                "aws:RequestedRegion".to_string(),
+                json!("invalid-number"),
+            );
+
+        // Should pass basic validation (lenient)
+        // Should fail validation due to type mismatch
+        assert!(!invalid_condition_statement.is_valid());
+        assert!(invalid_condition_statement.validate_strict().is_err());
+    }
+
+    #[test]
+    fn test_statement_logical_validation() {
+        // Test NotPrincipal with Allow (should fail)
+        let mut invalid_not_principal = IAMStatement::new(Effect::Allow);
+        invalid_not_principal.action = Some(Action::Single("s3:GetObject".to_string()));
+        invalid_not_principal.resource = Some(Resource::Single("*".to_string()));
+        invalid_not_principal.not_principal = Some(Principal::Single(
+            "arn:aws:iam::123456789012:user/test".to_string(),
+        ));
+
+        assert!(!invalid_not_principal.is_valid());
+
+        // Test both Action and NotAction (should fail)
+        let mut conflicting_actions = IAMStatement::new(Effect::Allow);
+        conflicting_actions.action = Some(Action::Single("s3:GetObject".to_string()));
+        conflicting_actions.not_action = Some(Action::Single("s3:PutObject".to_string()));
+        conflicting_actions.resource = Some(Resource::Single("*".to_string()));
+
+        assert!(!conflicting_actions.is_valid());
+
+        // Test valid NotPrincipal with Deny
+        let mut valid_not_principal = IAMStatement::new(Effect::Deny);
+        valid_not_principal.action = Some(Action::Single("*".to_string()));
+        valid_not_principal.resource = Some(Resource::Single("*".to_string()));
+        valid_not_principal.not_principal = Some(Principal::Single(
+            "arn:aws:iam::123456789012:user/admin".to_string(),
+        ));
+
+        assert!(valid_not_principal.is_valid());
+    }
 }

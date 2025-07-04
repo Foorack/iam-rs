@@ -8,6 +8,7 @@ pub mod policy;
 pub mod principal;
 pub mod resource;
 pub mod statement;
+pub mod validation;
 pub mod version;
 
 pub use action::Action;
@@ -20,4 +21,5 @@ pub use policy::IAMPolicy;
 pub use principal::Principal;
 pub use resource::Resource;
 pub use statement::IAMStatement;
+pub use validation::{Validate, ValidationContext, ValidationError, ValidationResult};
 pub use version::IAMVersion;

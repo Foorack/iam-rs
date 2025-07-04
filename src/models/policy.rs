@@ -1,8 +1,10 @@
+use super::validation::{Validate, ValidationContext, ValidationError, ValidationResult, helpers};
 use super::{IAMStatement, IAMVersion};
 use serde::{Deserialize, Serialize};
 use serde_with::OneOrMany;
 use serde_with::formats::PreferOne;
 use serde_with::serde_as;
+use std::collections::HashSet;
 
 /// JSON policy documents are made up of elements.
 /// The elements are listed here in the general order you use them in a policy.
@@ -101,5 +103,131 @@ impl IAMPolicy {
 impl Default for IAMPolicy {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl Validate for IAMPolicy {
+    fn validate(&self, context: &mut ValidationContext) -> ValidationResult {
+        context.with_segment("Policy", |ctx| {
+            let mut results = Vec::new();
+
+            // Check that policy has at least one statement
+            if self.statement.is_empty() {
+                results.push(Err(ValidationError::MissingField {
+                    field: "Statement".to_string(),
+                    context: ctx.current_path(),
+                }));
+                return helpers::collect_errors(results);
+            }
+
+            // Validate each statement
+            for (i, statement) in self.statement.iter().enumerate() {
+                ctx.with_segment(&format!("Statement[{}]", i), |stmt_ctx| {
+                    results.push(statement.validate(stmt_ctx));
+                });
+            }
+
+            // Check for duplicate statement IDs
+            let mut seen_sids = HashSet::new();
+            for (i, statement) in self.statement.iter().enumerate() {
+                if let Some(ref sid) = statement.sid {
+                    if seen_sids.contains(sid) {
+                        results.push(Err(ValidationError::LogicalError {
+                            message: format!(
+                                "Duplicate statement ID '{}' found at position {}",
+                                sid, i
+                            ),
+                        }));
+                    } else {
+                        seen_sids.insert(sid.clone());
+                    }
+                }
+            }
+
+            // Validate that policy version is supported
+            match self.version {
+                IAMVersion::V20081017 | IAMVersion::V20121017 => {
+                    // These are valid versions
+                } // Future versions would be added here
+            }
+
+            // Validate policy ID format if present
+            if let Some(ref id) = self.id {
+                if id.is_empty() {
+                    results.push(Err(ValidationError::InvalidValue {
+                        field: "Id".to_string(),
+                        value: id.clone(),
+                        reason: "Policy ID cannot be empty".to_string(),
+                    }));
+                }
+            }
+
+            helpers::collect_errors(results)
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{Action, Effect, Resource};
+
+    #[test]
+    fn test_policy_validation() {
+        // Valid policy with UUID-format ID
+        let valid_policy = IAMPolicy::new()
+            .with_id("550e8400-e29b-41d4-a716-446655440000")
+            .add_statement(
+                IAMStatement::new(Effect::Allow)
+                    .with_sid("AllowS3Read")
+                    .with_action(Action::Single("s3:GetObject".to_string()))
+                    .with_resource(Resource::Single("arn:aws:s3:::bucket/*".to_string())),
+            );
+        assert!(valid_policy.is_valid());
+
+        // Empty policy (no statements)
+        let empty_policy = IAMPolicy::new();
+        assert!(!empty_policy.is_valid());
+
+        // Policy with duplicate statement IDs and valid UUID
+        let duplicate_sid_policy = IAMPolicy::new()
+            .with_id("550e8400-e29b-41d4-a716-446655440001")
+            .add_statement(
+                IAMStatement::new(Effect::Allow)
+                    .with_sid("DuplicateId")
+                    .with_action(Action::Single("s3:GetObject".to_string()))
+                    .with_resource(Resource::Single("*".to_string())),
+            )
+            .add_statement(
+                IAMStatement::new(Effect::Deny)
+                    .with_sid("DuplicateId")
+                    .with_action(Action::Single("s3:DeleteObject".to_string()))
+                    .with_resource(Resource::Single("*".to_string())),
+            );
+        assert!(!duplicate_sid_policy.is_valid());
+    }
+
+    #[test]
+    fn test_policy_id_validation() {
+        // Empty ID
+        let mut empty_id_policy = IAMPolicy::new();
+        empty_id_policy.id = Some("".to_string());
+        empty_id_policy.statement.push(
+            IAMStatement::new(Effect::Allow)
+                .with_action(Action::Single("s3:GetObject".to_string()))
+                .with_resource(Resource::Single("*".to_string())),
+        );
+        assert!(!empty_id_policy.is_valid());
+
+        // Valid short ID (non-strict mode)
+        let short_id_policy = IAMPolicy::new().with_id("short").add_statement(
+            IAMStatement::new(Effect::Allow)
+                .with_action(Action::Single("s3:GetObject".to_string()))
+                .with_resource(Resource::Single("*".to_string())),
+        );
+        // Short ID should now fail validation (always strict)
+        assert!(!short_id_policy.is_valid());
+        let result = short_id_policy.validate_strict();
+        assert!(result.is_err()); // Should fail due to short ID
     }
 }
