@@ -1,0 +1,29 @@
+[package]
+authors = ["Foorack <max@foorack.com>"]
+description = "Rust library for parsing and evaluating IAM policies. Provider-agnostic and designed for building flexible authorization systems."
+edition = "2024"
+license = "MIT"
+name = "iam-rs"
+readme = "README.md"
+repository = "https://github.com/foorack/iam-rs"
+version = "0.0.1"
+
+[dependencies]
+serde = { version = "1.0.217", features = ["derive"], default-features = false }
+serde_json = { version = "1.0.135", features = [
+    "std",
+], default-features = false }
+serde_with = { version = "3.14.0", features = [
+    "macros",
+    "alloc",
+], default-features = false }
+chrono = { version = "0.4", features = ["serde"], default-features = false }
+
+[lints.clippy]
+correctness = { level = "deny", priority = 1 }
+suspicious = { level = "deny", priority = 1 }
+style = { level = "warn", priority = 1 }
+complexity = { level = "warn", priority = 1 }
+perf = { level = "warn", priority = 1 }
+pedantic = { level = "warn", priority = 1 }
+cargo = { level = "warn", priority = 1 }
