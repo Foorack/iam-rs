@@ -1,5 +1,21 @@
 # iam-rs
 
+# NOTE: THIS LIBRARY IS NOT READY YET - STILL WIP
+
+# NOTE: THIS LIBRARY IS NOT READY YET - STILL WIP
+
+# NOTE: THIS LIBRARY IS NOT READY YET - STILL WIP
+
+# NOTE: THIS LIBRARY IS NOT READY YET - STILL WIP
+
+# NOTE: THIS LIBRARY IS NOT READY YET - STILL WIP
+
+# NOTE: THIS LIBRARY IS NOT READY YET - STILL WIP
+
+# NOTE: THIS LIBRARY IS NOT READY YET - STILL WIP
+
+# NOTE: THIS LIBRARY IS NOT READY YET - STILL WIP
+
 [![Crates.io](https://img.shields.io/crates/v/iam-rs.svg)](https://crates.io/crates/iam-rs)
 [![Documentation](https://docs.rs/iam-rs/badge.svg)](https://docs.rs/iam-rs)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
