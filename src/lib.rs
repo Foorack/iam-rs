@@ -42,13 +42,13 @@ mod tests {
         let statement = IAMStatement::new(Effect::Allow)
             .with_action(Action::Single("s3:GetObject".to_string()))
             .with_condition(
-                "StringEquals".to_string(),
+                Operator::StringEquals,
                 "s3:prefix".to_string(),
                 json!("uploads/"),
             );
 
         assert!(statement.condition.is_some());
         let condition = statement.condition.unwrap();
-        assert!(condition.contains_key("StringEquals"));
+        assert!(condition.contains_key(&Operator::StringEquals));
     }
 }

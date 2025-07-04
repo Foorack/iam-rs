@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use crate::Operator;
+
 use super::{Action, Effect, Principal, Resource};
 
 /// Represents a single statement in an IAM policy
@@ -125,14 +127,14 @@ pub struct IAMStatement {
     /// You can use it with the Resource element to provide scope for the policy, limiting the allowed actions to the actions that can be performed on the specified resource.
     ///
     /// Example: Allow all S3 actions except deleting a bucket:
-    /// ```
+    /// ```json
     /// "Effect": "Allow",
     /// "NotAction": "s3:DeleteBucket",
     /// "Resource": "arn:aws:s3:::*"
     /// ```
     ///
     /// Example: Allow all actions except IAM:
-    /// ```
+    /// ```json
     /// "Effect": "Allow",
     /// "NotAction": "iam:*",
     /// "Resource": "*"
@@ -146,7 +148,7 @@ pub struct IAMStatement {
     /// This combination does not allow the listed items, but instead explicitly denies the actions not listed.
     ///
     /// Example: Deny all actions except IAM actions if not using MFA:
-    /// ```
+    /// ```json
     /// {
     ///     "Sid": "DenyAllUsersNotUsingMFA",
     ///     "Effect": "Deny",
@@ -192,17 +194,17 @@ pub struct IAMStatement {
     /// ## Examples
     ///
     /// All IAM users whose path is `/accounting`:
-    /// ```
+    /// ```text
     /// "Resource": "arn:aws:iam::account-ID-without-hyphens:user/accounting/*"
     /// ```
     ///
     /// All items within a specific Amazon S3 bucket:
-    /// ```
+    /// ```text
     /// "Resource": "arn:aws:s3:::amzn-s3-demo-bucket/*"
     /// ```
     ///
     /// Wildcards can match across slashes and other characters:
-    /// ```
+    /// ```text
     /// "Resource": "arn:aws:s3:::amzn-s3-demo-bucket/*/test/*"
     /// ```
     /// This matches:
@@ -223,7 +225,7 @@ pub struct IAMStatement {
     /// ## Specifying multiple resources
     ///
     /// You can specify multiple resources in the `Resource` element by using an array of ARNs:
-    /// ```
+    /// ```json
     /// "Resource": [
     ///     "arn:aws:dynamodb:us-east-2:account-ID-without-hyphens:table/books_table",
     ///     "arn:aws:dynamodb:us-east-2:account-ID-without-hyphens:table/magazines_table"
@@ -233,7 +235,7 @@ pub struct IAMStatement {
     /// ## Using policy variables in resource ARNs
     ///
     /// You can use JSON policy variables in the part of the ARN that identifies the specific resource. For example:
-    /// ```
+    /// ```text
     /// "Resource": "arn:aws:dynamodb:us-east-2:account-id:table/${aws:username}"
     /// ```
     /// This allows access to a DynamoDB table that matches the current user's name.
@@ -286,7 +288,7 @@ pub struct IAMStatement {
     ///
     /// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition.html
     #[serde(rename = "Condition", skip_serializing_if = "Option::is_none")]
-    pub condition: Option<HashMap<String, HashMap<String, serde_json::Value>>>,
+    pub condition: Option<HashMap<Operator, HashMap<String, serde_json::Value>>>,
 }
 
 impl IAMStatement {
@@ -332,7 +334,7 @@ impl IAMStatement {
     /// Adds a condition to the statement
     pub fn with_condition(
         mut self,
-        operator: String,
+        operator: Operator,
         key: String,
         value: serde_json::Value,
     ) -> Self {
