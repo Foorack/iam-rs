@@ -26,6 +26,7 @@ A Rust library for parsing and evaluating IAM (Identity and Access Management) p
 
 - 🔒 **Provider-agnostic**: Works with any AWS IAM-compatible JSON-based policy format
 - 📝 **Full IAM Support**: Complete implementation of IAM policy including conditions, principals, actions, and resources
+- 🏷️ **ARN Validation**: Comprehensive ARN parsing, validation, and wildcard matching
 - 🚀 **Type-safe**: Strong typing with comprehensive enums and structs
 - 🔧 **Builder Pattern**: Fluent API for constructing policies programmatically
 - 📦 **Serde Integration**: Built-in JSON serialization and deserialization
@@ -121,7 +122,69 @@ let statement = IAMStatement::new(Effect::Allow)
     .with_resource(Resource::Single("arn:aws:s3:::my-bucket/*".to_string()));
 ```
 
+### ARN (Amazon Resource Name)
+
+Comprehensive ARN parsing, validation, and wildcard matching.
+
+```rust
+use iam_rs::Arn;
+
+// Parse an ARN
+let arn = Arn::parse("arn:aws:s3:::my-bucket/folder/file.txt")?;
+println!("Service: {}", arn.service);
+println!("Resource: {}", arn.resource);
+
+// Validate ARN format
+assert!(arn.is_valid());
+
+// Wildcard matching
+let pattern = "arn:aws:s3:::my-bucket/*";
+assert!(arn.matches(pattern)?);
+
+// Extract resource information
+if let Some(resource_type) = arn.resource_type() {
+    println!("Resource type: {}", resource_type);
+}
+if let Some(resource_id) = arn.resource_id() {
+    println!("Resource ID: {}", resource_id);
+}
+```
+
 ### Advanced Usage
+
+#### ARN Validation and Matching
+
+```rust
+use iam_rs::Arn;
+
+// Parse and validate ARNs
+let arn = Arn::parse("arn:aws:s3:::my-bucket/uploads/file.txt")?;
+
+// Wildcard pattern matching
+let patterns = vec![
+    "arn:aws:s3:::my-bucket/*",           // ✓ Matches
+    "arn:aws:s3:::my-bucket/uploads/*",   // ✓ Matches
+    "arn:aws:s3:::other-bucket/*",        // ✗ No match
+    "arn:aws:s3:::my-bucket/*/file.txt",  // ✓ Matches
+    "arn:aws:s3:::my-bucket/uploads/file.???", // ✓ Matches
+];
+
+for pattern in patterns {
+    if arn.matches(pattern)? {
+        println!("✓ ARN matches pattern: {}", pattern);
+    } else {
+        println!("✗ ARN does not match pattern: {}", pattern);
+    }
+}
+
+// Extract resource components
+if let Some(resource_type) = arn.resource_type() {
+    println!("Resource type: {}", resource_type); // "my-bucket"
+}
+if let Some(resource_id) = arn.resource_id() {
+    println!("Resource ID: {}", resource_id);     // "uploads/file.txt"
+}
+```
 
 #### Multiple Actions and Resources
 

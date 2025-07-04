@@ -1,4 +1,5 @@
 pub mod action;
+pub mod arn;
 pub mod condition;
 pub mod context;
 pub mod effect;
@@ -10,6 +11,7 @@ pub mod statement;
 pub mod version;
 
 pub use action::Action;
+pub use arn::{Arn, ArnError};
 pub use condition::{Condition, ConditionBlock};
 pub use context::{ContextValue, RequestContext};
 pub use effect::Effect;
