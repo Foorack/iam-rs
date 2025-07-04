@@ -1,5 +1,19 @@
 # iam-rs
 
+# STILL IN DEVELOPMENT AND VERIFICATION - DO NOT USE YET
+
+# STILL IN DEVELOPMENT AND VERIFICATION - DO NOT USE YET
+
+# STILL IN DEVELOPMENT AND VERIFICATION - DO NOT USE YET
+
+# STILL IN DEVELOPMENT AND VERIFICATION - DO NOT USE YET
+
+# STILL IN DEVELOPMENT AND VERIFICATION - DO NOT USE YET
+
+# STILL IN DEVELOPMENT AND VERIFICATION - DO NOT USE YET
+
+# STILL IN DEVELOPMENT AND VERIFICATION - DO NOT USE YET
+
 [![Crates.io](https://img.shields.io/crates/v/iam-rs.svg)](https://crates.io/crates/iam-rs)
 [![Documentation](https://docs.rs/iam-rs/badge.svg)](https://docs.rs/iam-rs)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
