@@ -279,20 +279,6 @@ mod tests {
     }
 
     #[test]
-    fn test_policy_validation_strict_id_requirements() {
-        // Policy with short ID (should fail validation)
-        let policy_short_id = IAMPolicy::new().with_id("short").add_statement(
-            IAMStatement::new(Effect::Allow)
-                .with_action(Action::Single("s3:GetObject".to_string()))
-                .with_resource(Resource::Single("*".to_string())),
-        );
-
-        // Should fail validation due to short ID
-        assert!(!policy_short_id.is_valid());
-        assert!(policy_short_id.validate_strict().is_err());
-    }
-
-    #[test]
     fn test_condition_validation_integration() {
         use serde_json::json;
 

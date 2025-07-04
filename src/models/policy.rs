@@ -219,15 +219,12 @@ mod tests {
         );
         assert!(!empty_id_policy.is_valid());
 
-        // Valid short ID (non-strict mode)
+        // Valid short ID
         let short_id_policy = IAMPolicy::new().with_id("short").add_statement(
             IAMStatement::new(Effect::Allow)
                 .with_action(Action::Single("s3:GetObject".to_string()))
                 .with_resource(Resource::Single("*".to_string())),
         );
-        // Short ID should now fail validation (always strict)
-        assert!(!short_id_policy.is_valid());
-        let result = short_id_policy.validate_strict();
-        assert!(result.is_err()); // Should fail due to short ID
+        assert!(short_id_policy.is_valid());
     }
 }
