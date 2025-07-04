@@ -51,43 +51,48 @@ mod tests {
         let condition_block = statement.condition.unwrap();
         assert!(condition_block.has_condition(&Operator::StringEquals, "s3:prefix"));
     }
-    
+
     #[test]
     fn test_full_statement_with_complex_conditions() {
         let statement = IAMStatement::new(Effect::Allow)
             .with_sid("ComplexConditionExample")
             .with_action(Action::Multiple(vec![
                 "s3:GetObject".to_string(),
-                "s3:PutObject".to_string()
+                "s3:PutObject".to_string(),
             ]))
             .with_resource(Resource::Single("arn:aws:s3:::my-bucket/*".to_string()))
             .with_condition(
                 Operator::StringEquals,
                 "aws:PrincipalTag/department".to_string(),
-                json!(["finance", "hr", "legal"])
+                json!(["finance", "hr", "legal"]),
             )
             .with_condition(
                 Operator::ArnLike,
                 "aws:PrincipalArn".to_string(),
-                json!(["arn:aws:iam::222222222222:user/Ana", "arn:aws:iam::222222222222:user/Mary"])
+                json!([
+                    "arn:aws:iam::222222222222:user/Ana",
+                    "arn:aws:iam::222222222222:user/Mary"
+                ]),
             );
-        
+
         let policy = IAMPolicy::new()
             .with_id("test-complex-conditions")
             .add_statement(statement);
-        
+
         let json = policy.to_json().unwrap();
         println!("Full policy JSON:\n{}", json);
-        
+
         let parsed_policy = IAMPolicy::from_json(&json).unwrap();
         assert_eq!(policy, parsed_policy);
-        
+
         // Verify the conditions are properly structured
         let stmt = &parsed_policy.statement[0];
         assert!(stmt.condition.is_some());
         let condition_block = stmt.condition.as_ref().unwrap();
-        
-        assert!(condition_block.has_condition(&Operator::StringEquals, "aws:PrincipalTag/department"));
+
+        assert!(
+            condition_block.has_condition(&Operator::StringEquals, "aws:PrincipalTag/department")
+        );
         assert!(condition_block.has_condition(&Operator::ArnLike, "aws:PrincipalArn"));
     }
 }

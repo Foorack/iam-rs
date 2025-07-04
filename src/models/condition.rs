@@ -1,5 +1,5 @@
 use super::Operator;
-use serde::{Deserialize, Serialize, Deserializer, Serializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::HashMap;
 
 /// Represents a single condition in an IAM policy
@@ -32,7 +32,7 @@ impl Serialize for ConditionBlock {
             .iter()
             .map(|(op, conditions)| (op.as_str().to_string(), conditions))
             .collect();
-        
+
         string_map.serialize(serializer)
     }
 }
@@ -42,17 +42,18 @@ impl<'de> Deserialize<'de> for ConditionBlock {
     where
         D: Deserializer<'de>,
     {
-        let string_map: HashMap<String, HashMap<String, serde_json::Value>> = 
+        let string_map: HashMap<String, HashMap<String, serde_json::Value>> =
             HashMap::deserialize(deserializer)?;
-        
+
         let mut conditions = HashMap::new();
-        
+
         for (op_str, condition_map) in string_map {
-            let operator = op_str.parse::<Operator>()
-                .map_err(|e| serde::de::Error::custom(format!("Invalid operator '{}': {}", op_str, e)))?;
+            let operator = op_str.parse::<Operator>().map_err(|e| {
+                serde::de::Error::custom(format!("Invalid operator '{}': {}", op_str, e))
+            })?;
             conditions.insert(operator, condition_map);
         }
-        
+
         Ok(ConditionBlock { conditions })
     }
 }
@@ -254,27 +255,27 @@ mod tests {
 
         assert_eq!(condition, deserialized);
     }
-    
+
     #[test]
     fn test_condition_block_serialization() {
         let block = ConditionBlock::new()
             .with_condition(Condition::string_array(
                 Operator::StringEquals,
                 "aws:PrincipalTag/department",
-                vec!["finance".to_string(), "hr".to_string(), "legal".to_string()]
+                vec!["finance".to_string(), "hr".to_string(), "legal".to_string()],
             ))
             .with_condition(Condition::string_array(
                 Operator::ArnLike,
                 "aws:PrincipalArn",
                 vec![
                     "arn:aws:iam::222222222222:user/Ana".to_string(),
-                    "arn:aws:iam::222222222222:user/Mary".to_string()
-                ]
+                    "arn:aws:iam::222222222222:user/Mary".to_string(),
+                ],
             ));
-        
+
         let json = serde_json::to_string_pretty(&block).unwrap();
         println!("Current serialization:\n{}", json);
-        
+
         // Test that it can be deserialized back
         let deserialized: ConditionBlock = serde_json::from_str(&json).unwrap();
         assert_eq!(block, deserialized);
