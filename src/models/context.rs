@@ -1,3 +1,4 @@
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -26,7 +27,9 @@ pub enum ContextValue {
     /// Boolean value (e.g., MFA present)
     Boolean(bool),
     /// Numeric value (e.g., MFA age in seconds, epoch time)
-    Number(i64),
+    Number(f64),
+    /// DateTime value (e.g., request time)
+    DateTime(DateTime<Utc>),
 }
 
 impl RequestContext {
@@ -40,10 +43,30 @@ impl RequestContext {
         }
     }
 
+    /// Creates an empty request context (for evaluation context only)
+    pub fn empty() -> Self {
+        Self {
+            principal: String::new(),
+            action: String::new(),
+            resource: String::new(),
+            context: HashMap::new(),
+        }
+    }
+
     /// Adds all context
     pub fn with_context(mut self, context: HashMap<String, ContextValue>) -> Self {
         self.context.extend(context);
         self
+    }
+
+    /// Get a context value by key
+    pub fn get(&self, key: &str) -> Option<&ContextValue> {
+        self.context.get(key)
+    }
+
+    /// Insert a context value
+    pub fn insert(&mut self, key: String, value: ContextValue) {
+        self.context.insert(key, value);
     }
 
     /// Adds a string context value
@@ -65,7 +88,7 @@ impl RequestContext {
     }
 
     /// Adds a numeric context value
-    pub fn with_number_context<K: Into<String>>(mut self, key: K, value: i64) -> Self {
+    pub fn with_number_context<K: Into<String>>(mut self, key: K, value: f64) -> Self {
         self.context.insert(key.into(), ContextValue::Number(value));
         self
     }
@@ -104,7 +127,7 @@ impl ContextValue {
     }
 
     /// Converts the context value to a number
-    pub fn as_number(&self) -> Option<i64> {
+    pub fn as_number(&self) -> Option<f64> {
         match self {
             ContextValue::Number(n) => Some(*n),
             _ => None,
@@ -136,7 +159,7 @@ mod tests {
         context = context
             .with_string_context("string_key", "string_value")
             .with_boolean_context("bool_key", true)
-            .with_number_context("number_key", 42);
+            .with_number_context("number_key", 42.0);
 
         // Test string value
         let string_val = context.get_context("string_key").unwrap();
@@ -148,7 +171,7 @@ mod tests {
 
         // Test number value
         let number_val = context.get_context("number_key").unwrap();
-        assert_eq!(number_val.as_number().unwrap(), 42);
+        assert_eq!(number_val.as_number().unwrap(), 42.0);
     }
 
     #[test]

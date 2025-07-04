@@ -155,7 +155,7 @@ impl Arn {
     /// Check if a string matches a pattern with wildcards
     /// * matches any sequence of characters
     /// ? matches any single character
-    fn wildcard_match(text: &str, pattern: &str) -> bool {
+    pub fn wildcard_match(text: &str, pattern: &str) -> bool {
         Self::wildcard_match_recursive(text, pattern, 0, 0)
     }
 

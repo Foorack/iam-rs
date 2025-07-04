@@ -1,37 +1,23 @@
 # iam-rs
 
-# NOTE: THIS LIBRARY IS NOT READY YET - STILL WIP
-
-# NOTE: THIS LIBRARY IS NOT READY YET - STILL WIP
-
-# NOTE: THIS LIBRARY IS NOT READY YET - STILL WIP
-
-# NOTE: THIS LIBRARY IS NOT READY YET - STILL WIP
-
-# NOTE: THIS LIBRARY IS NOT READY YET - STILL WIP
-
-# NOTE: THIS LIBRARY IS NOT READY YET - STILL WIP
-
-# NOTE: THIS LIBRARY IS NOT READY YET - STILL WIP
-
-# NOTE: THIS LIBRARY IS NOT READY YET - STILL WIP
-
 [![Crates.io](https://img.shields.io/crates/v/iam-rs.svg)](https://crates.io/crates/iam-rs)
 [![Documentation](https://docs.rs/iam-rs/badge.svg)](https://docs.rs/iam-rs)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A Rust library for parsing and evaluating IAM (Identity and Access Management) policies. Provider-agnostic and designed for building flexible authorization systems.
+A complete Rust library for parsing, validating, and evaluating IAM (Identity and Access Management) policies. Provider-agnostic and designed for building flexible authorization systems with full AWS IAM compatibility.
 
 ## Features
 
 - 🔒 **Provider-agnostic**: Works with any AWS IAM-compatible JSON-based policy format
 - 📝 **Full IAM Support**: Complete implementation of IAM policy including conditions, principals, actions, and resources
 - 🏷️ **ARN Validation**: Comprehensive ARN parsing, validation, and wildcard matching
+- ⚖️ **Policy Evaluation**: Complete policy evaluation engine with Allow/Deny decisions
+- 🎯 **Condition Engine**: Support for all AWS condition operators (String, Numeric, Date, Boolean, IP, ARN, Null)
 - 🚀 **Type-safe**: Strong typing with comprehensive enums and structs
 - 🔧 **Builder Pattern**: Fluent API for constructing policies programmatically
 - 📦 **Serde Integration**: Built-in JSON serialization and deserialization
 - ⚡ **Zero Dependencies**: Minimal dependencies (only `serde` and serde-libs)
-- 🧪 **Well Tested**: Comprehensive test suite
+- 🧪 **Well Tested**: Comprehensive test suite with 72+ tests
 
 ## Installation
 
@@ -44,10 +30,38 @@ iam-rs = "0.0.1"
 
 ## Quick Start
 
+### Policy Evaluation (Authorization)
+
+```rust
+use iam_rs::{evaluate_policy, AuthorizationRequest, IAMPolicy, IAMStatement, Effect, Action, Resource, Decision};
+
+// Create a policy
+let policy = IAMPolicy::new()
+    .add_statement(
+        IAMStatement::new(Effect::Allow)
+            .with_action(Action::Single("s3:GetObject".to_string()))
+            .with_resource(Resource::Single("arn:aws:s3:::my-bucket/*".to_string()))
+    );
+
+// Create an authorization request
+let request = AuthorizationRequest::simple(
+    "arn:aws:iam::123456789012:user/alice",
+    "s3:GetObject",
+    "arn:aws:s3:::my-bucket/file.txt"
+);
+
+// Evaluate the request against the policy
+match evaluate_policy(&policy, &request)? {
+    Decision::Allow => println!("✓ Access granted"),
+    Decision::Deny => println!("✗ Access denied"),
+    Decision::NotApplicable => println!("? No applicable policy (implicit deny)"),
+}
+```
+
 ### Creating a Policy
 
 ```rust
-use iam_rs::{IAMPolicy, IAMStatement, Effect, Action, Resource};
+use iam_rs::{IAMPolicy, IAMStatement, Effect, Action, Resource, Operator};
 use serde_json::json;
 
 let policy = IAMPolicy::new()
@@ -58,7 +72,7 @@ let policy = IAMPolicy::new()
             .with_action(Action::Single("s3:GetObject".to_string()))
             .with_resource(Resource::Single("arn:aws:s3:::my-bucket/*".to_string()))
             .with_condition(
-                "StringEquals".to_string(),
+                Operator::StringEquals,
                 "s3:prefix".to_string(),
                 json!("uploads/")
             )
@@ -121,6 +135,65 @@ let statement = IAMStatement::new(Effect::Allow)
     ]))
     .with_resource(Resource::Single("arn:aws:s3:::my-bucket/*".to_string()));
 ```
+
+## Policy Evaluation Engine
+
+The library includes a complete policy evaluation engine that implements AWS IAM logic for authorization decisions.
+
+### Simple Evaluation
+
+```rust
+use iam_rs::{evaluate_policy, AuthorizationRequest, Decision};
+
+// Simple authorization check
+let decision = evaluate_policy(&policy, &request)?;
+match decision {
+    Decision::Allow => println!("Access granted"),
+    Decision::Deny => println!("Access denied"),
+    Decision::NotApplicable => println!("No applicable policy"),
+}
+```
+
+### Advanced Evaluation with Context
+
+```rust
+use iam_rs::{PolicyEvaluator, RequestContext, ContextValue, EvaluationOptions};
+
+// Create request context for condition evaluation
+let mut context = RequestContext::empty();
+context.insert("aws:userid".to_string(), ContextValue::String("alice".to_string()));
+context.insert("aws:CurrentTime".to_string(), ContextValue::String("2024-01-15T10:00:00Z".to_string()));
+
+let request = AuthorizationRequest::new(
+    "arn:aws:iam::123456789012:user/alice",
+    "s3:GetObject",
+    "arn:aws:s3:::private-bucket/file.txt",
+    context
+);
+
+// Advanced evaluation with multiple policies
+let evaluator = PolicyEvaluator::with_policies(vec![policy1, policy2])
+    .with_options(EvaluationOptions {
+        collect_match_details: true,
+        stop_on_explicit_deny: true,
+        max_statements: 100,
+    });
+
+let result = evaluator.evaluate(&request)?;
+println!("Decision: {:?}", result.decision);
+for statement_match in result.matched_statements {
+    println!("Matched: {:?}", statement_match);
+}
+```
+
+### IAM Logic Support
+
+The evaluation engine properly implements AWS IAM precedence rules:
+
+- **Explicit Deny** always overrides Allow
+- **Conditions** must be satisfied for statement to apply
+- **Wildcard matching** for actions, resources, and principals
+- **Multiple policies** are combined with proper precedence
 
 ### ARN (Amazon Resource Name)
 
@@ -206,18 +279,19 @@ let resources = Resource::Multiple(vec![
 #### Complex Conditions
 
 ```rust
+use iam_rs::{Operator};
 use serde_json::json;
 
 let statement = IAMStatement::new(Effect::Allow)
     .with_action(Action::Single("s3:GetObject".to_string()))
     .with_resource(Resource::Single("arn:aws:s3:::secure-bucket/*".to_string()))
     .with_condition(
-        "StringEquals".to_string(),
+        Operator::StringEquals,
         "aws:username".to_string(),
         json!("${aws:userid}")
     )
     .with_condition(
-        "DateGreaterThan".to_string(),
+        Operator::DateGreaterThan,
         "aws:CurrentTime".to_string(),
         json!("2024-01-01T00:00:00Z")
     );
@@ -246,6 +320,36 @@ let mut service_map = HashMap::new();
 service_map.insert("Service".to_string(), json!("lambda.amazonaws.com"));
 let service = Principal::Mapped(service_map);
 ```
+
+## Examples
+
+The library includes comprehensive examples demonstrating all features:
+
+### Running Examples
+
+```bash
+# ARN parsing and validation
+cargo run --example arn_demo
+
+# Policy validation
+cargo run --example validation_demo
+
+# Policy evaluation engine
+cargo run --example evaluation_demo
+```
+
+### Example Scenarios
+
+The evaluation demo showcases:
+
+- ✅ Simple Allow/Deny policies
+- ✅ Wildcard action and resource matching
+- ✅ Condition-based authorization (String, Numeric, Date)
+- ✅ Explicit deny precedence (IAM compliance)
+- ✅ Multiple policy evaluation
+- ✅ Detailed evaluation with match information
+- ✅ Resource pattern matching
+- ✅ Context-aware authorization
 
 ## JSON Schema Compatibility
 

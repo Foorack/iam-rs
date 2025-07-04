@@ -1,7 +1,14 @@
 [package]
 authors = ["Foorack <max@foorack.com>"]
-description = "Rust library for parsing and evaluating IAM policies. Provider-agnostic and designed for building flexible authorization systems."
+categories = [
+    "authentication",
+    "web-programming",
+    "parser-implementations",
+    "api-bindings",
+]
+description = "Complete Rust library for parsing, validating, and evaluating IAM policies. Provider-agnostic authorization engine with full AWS IAM compatibility."
 edition = "2024"
+keywords = ["iam", "aws", "authorization", "policy", "security"]
 license = "MIT"
 name = "iam-rs"
 readme = "README.md"
