@@ -449,4 +449,109 @@ mod tests {
                 .unwrap()
         );
     }
+
+    #[test]
+    fn test_amazon_arns_from_json() {
+        // Read the JSON file containing Amazon ARN examples
+        let json_content = std::fs::read_to_string("tests/arns.json")
+            .expect("Failed to read tests/arns.json file");
+
+        // Parse the JSON array of ARN strings
+        let arns: Vec<String> =
+            serde_json::from_str(&json_content).expect("Failed to parse JSON content");
+
+        println!("Testing {} ARNs from tests/arns.json", arns.len());
+
+        let mut successful_parses = 0;
+        let mut failed_parses = 0;
+        let mut validation_failures = 0;
+
+        for (index, arn_string) in arns.iter().enumerate() {
+            // Trim any whitespace (some ARNs in the JSON might have trailing spaces)
+            let arn_string = arn_string.trim();
+
+            if arn_string.is_empty() {
+                continue;
+            }
+
+            print!("Testing ARN {}: {} ... ", index + 1, arn_string);
+
+            match Arn::parse(arn_string) {
+                Ok(arn) => {
+                    successful_parses += 1;
+
+                    // Verify the ARN can be serialized back to string
+                    let reconstructed = arn.to_string();
+
+                    // Check if the ARN passes validation
+                    if arn.is_valid() {
+                        println!("✓ PASSED (valid)");
+
+                        // Additional checks for well-formed ARNs
+                        assert!(
+                            !arn.partition.is_empty(),
+                            "Partition should not be empty for ARN: {}",
+                            arn_string
+                        );
+                        assert!(
+                            !arn.service.is_empty(),
+                            "Service should not be empty for ARN: {}",
+                            arn_string
+                        );
+                        assert!(
+                            !arn.resource.is_empty(),
+                            "Resource should not be empty for ARN: {}",
+                            arn_string
+                        );
+
+                        // Test that the ARN can be round-tripped
+                        let reparsed = Arn::parse(&reconstructed).expect(&format!(
+                            "Failed to reparse reconstructed ARN: {}",
+                            reconstructed
+                        ));
+                        assert_eq!(
+                            arn, reparsed,
+                            "Round-trip parsing failed for ARN: {}",
+                            arn_string
+                        );
+                    } else {
+                        validation_failures += 1;
+                        println!("⚠ PARSED but invalid");
+                    }
+                }
+                Err(e) => {
+                    failed_parses += 1;
+                    println!("✗ FAILED to parse: {:?}", e);
+
+                    // Some ARNs in the test set might be intentionally invalid or use placeholder values
+                    // We'll allow some failures but track them for analysis
+                }
+            }
+        }
+
+        println!("\n=== ARN Test Summary ===");
+        println!("Total ARNs tested: {}", arns.len());
+        println!("Successfully parsed: {}", successful_parses);
+        println!("Failed to parse: {}", failed_parses);
+        println!("Parsed but invalid: {}", validation_failures);
+        println!(
+            "Success rate: {:.1}%",
+            (successful_parses as f64 / arns.len() as f64) * 100.0
+        );
+
+        // We expect a high success rate, but some ARNs might be intentionally malformed
+        // or use placeholder values that don't conform to strict validation rules
+        assert!(
+            successful_parses > 0,
+            "At least some ARNs should parse successfully"
+        );
+
+        // Most of the ARNs should be valid AWS ARNs, so we expect a reasonable success rate
+        let success_rate = (successful_parses as f64 / arns.len() as f64) * 100.0;
+        assert!(
+            success_rate > 80.0,
+            "Expected success rate > 80%, got {:.1}%",
+            success_rate
+        );
+    }
 }
