@@ -149,9 +149,16 @@ impl Validate for IAMPolicy {
 
             // Validate that policy version is supported
             match self.version {
-                IAMVersion::V20081017 | IAMVersion::V20121017 => {
-                    // These are valid versions
-                } // Future versions would be added here
+                IAMVersion::V20121017 => {
+                    // Supported version
+                }
+                _ => {
+                    results.push(Err(ValidationError::InvalidValue {
+                        field: "Version".to_string(),
+                        value: format!("{:?}", self.version),
+                        reason: "Only IAM version 2012-10-17 is supported".to_string(),
+                    }));
+                }
             }
 
             // Validate policy ID format if present
