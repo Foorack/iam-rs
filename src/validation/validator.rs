@@ -367,8 +367,8 @@ mod tests {
 
     #[test]
     fn test_policy_validation_integration() {
-        use crate::{IAMPolicy, IAMStatement, Effect, Action, Resource};
-        
+        use crate::{Action, Effect, IAMPolicy, IAMStatement, Resource};
+
         // Test valid policy with UUID-like ID for strict mode
         let valid_policy = IAMPolicy::new()
             .with_id("550e8400-e29b-41d4-a716-446655440000") // UUID format
@@ -410,7 +410,7 @@ mod tests {
 
     #[test]
     fn test_condition_validation_integration() {
-        use crate::{IAMStatement, Effect, Action, Resource, Operator};
+        use crate::{Action, Effect, IAMStatement, Operator, Resource};
         use serde_json::json;
 
         // Valid condition
