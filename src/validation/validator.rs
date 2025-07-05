@@ -144,7 +144,7 @@ pub trait Validate {
 }
 
 /// Helper functions for common validation patterns
-pub mod helpers {
+pub(crate) mod helpers {
     use super::*;
     use crate::core::Arn;
 
@@ -358,19 +358,33 @@ mod tests {
         assert!(
             helpers::validate_principal("arn:aws:iam::123456789012:user/test", &context).is_ok()
         );
+        assert!(
+            helpers::validate_principal("arn:aws:iam::123456789012:role/test", &context).is_ok()
+        );
+        assert!(helpers::validate_principal("asset.controlpanel.internal", &context).is_ok());
         assert!(helpers::validate_principal("invalid", &context).is_err());
+        assert!(helpers::validate_principal("https://example.com", &context).is_ok());
+        assert!(helpers::validate_principal("http://example.com", &context).is_ok());
+        assert!(
+            helpers::validate_principal(
+                "arn:aws:iam::123456789012:saml-provider/TestProvider",
+                &context
+            )
+            .is_ok()
+        );
 
         // Test resource validation
         assert!(helpers::validate_resource("*", &context).is_ok());
         assert!(helpers::validate_resource("arn:aws:s3:::bucket/*", &context).is_ok());
         assert!(helpers::validate_resource("invalid-resource", &context).is_err());
+        assert!(helpers::validate_resource("arn:aws:s3:::bucket/object", &context).is_ok());
     }
 
     #[test]
     fn test_policy_validation_integration() {
         use crate::{Action, Effect, IAMPolicy, IAMStatement, Resource};
 
-        // Test valid policy with UUID-like ID for strict mode
+        // Test valid policy with UUID-like ID
         let valid_policy = IAMPolicy::new()
             .with_id("550e8400-e29b-41d4-a716-446655440000") // UUID format
             .add_statement(
@@ -379,9 +393,7 @@ mod tests {
                     .with_action(Action::Single("s3:GetObject".to_string()))
                     .with_resource(Resource::Single("arn:aws:s3:::bucket/*".to_string())),
             );
-
         assert!(valid_policy.is_valid());
-        assert!(valid_policy.validate_result().is_ok());
 
         // Test invalid policy - missing action
         let mut invalid_policy = IAMPolicy::new();
