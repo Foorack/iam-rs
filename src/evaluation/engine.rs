@@ -1,6 +1,7 @@
 use super::{
-    context::{ContextValue, RequestContext},
+    context::{Context, ContextValue},
     matcher::ArnMatcher,
+    request::IAMRequest,
 };
 use crate::{
     core::{Action, Effect, Operator, Principal, Resource},
@@ -57,7 +58,7 @@ pub struct EvaluationResult {
     /// Statements that matched (for debugging/auditing)
     pub matched_statements: Vec<StatementMatch>,
     /// Evaluation context used
-    pub context: RequestContext,
+    pub context: IAMRequest,
 }
 
 /// Information about a statement that matched during evaluation
@@ -71,46 +72,6 @@ pub struct StatementMatch {
     pub conditions_satisfied: bool,
     /// Reason for the match/non-match
     pub reason: String,
-}
-
-/// Authorization request for policy evaluation
-#[derive(Debug, Clone)]
-pub struct AuthorizationRequest {
-    /// The principal making the request
-    pub principal: String,
-    /// The action being requested
-    pub action: String,
-    /// The resource being accessed
-    pub resource: String,
-    /// Additional context for condition evaluation
-    pub context: RequestContext,
-}
-
-impl AuthorizationRequest {
-    /// Create a new authorization request
-    pub fn new<S: Into<String>>(
-        principal: S,
-        action: S,
-        resource: S,
-        context: RequestContext,
-    ) -> Self {
-        Self {
-            principal: principal.into(),
-            action: action.into(),
-            resource: resource.into(),
-            context,
-        }
-    }
-
-    /// Create a simple authorization request with minimal context
-    pub fn simple<S: Into<String>>(principal: S, action: S, resource: S) -> Self {
-        Self {
-            principal: principal.into(),
-            action: action.into(),
-            resource: resource.into(),
-            context: RequestContext::empty(),
-        }
-    }
 }
 
 /// Policy evaluation engine
@@ -172,10 +133,7 @@ impl PolicyEvaluator {
     }
 
     /// Evaluate an authorization request against all policies
-    pub fn evaluate(
-        &self,
-        request: &AuthorizationRequest,
-    ) -> Result<EvaluationResult, EvaluationError> {
+    pub fn evaluate(&self, request: &IAMRequest) -> Result<EvaluationResult, EvaluationError> {
         let mut matched_statements = Vec::new();
         let mut has_explicit_allow = false;
         let mut has_explicit_deny = false;
@@ -215,7 +173,7 @@ impl PolicyEvaluator {
                                 return Ok(EvaluationResult {
                                     decision: Decision::Deny,
                                     matched_statements,
-                                    context: request.context.clone(),
+                                    context: request.clone(),
                                 });
                             }
                         }
@@ -237,7 +195,7 @@ impl PolicyEvaluator {
         Ok(EvaluationResult {
             decision,
             matched_statements,
-            context: request.context.clone(),
+            context: request.clone(),
         })
     }
 
@@ -245,7 +203,7 @@ impl PolicyEvaluator {
     fn evaluate_statement(
         &self,
         statement: &IAMStatement,
-        request: &AuthorizationRequest,
+        request: &IAMRequest,
     ) -> Result<StatementMatch, EvaluationError> {
         // Check if principal matches (for resource-based policies)
         if let Some(ref principal) = statement.principal {
@@ -446,7 +404,7 @@ impl PolicyEvaluator {
     fn evaluate_conditions(
         &self,
         condition_block: &ConditionBlock,
-        context: &RequestContext,
+        context: &Context,
     ) -> Result<bool, EvaluationError> {
         // All conditions in a block must be satisfied (AND logic)
         for (operator, condition_map) in &condition_block.conditions {
@@ -465,7 +423,7 @@ impl PolicyEvaluator {
         operator: &Operator,
         key: &str,
         value: &serde_json::Value,
-        context: &RequestContext,
+        context: &Context,
     ) -> Result<bool, EvaluationError> {
         // Get the context value for the key
         let context_value = context.get(key);
@@ -790,7 +748,7 @@ impl Default for PolicyEvaluator {
 /// Convenience function for simple policy evaluation
 pub fn evaluate_policy(
     policy: &IAMPolicy,
-    request: &AuthorizationRequest,
+    request: &IAMRequest,
 ) -> Result<Decision, EvaluationError> {
     let evaluator = PolicyEvaluator::with_policies(vec![policy.clone()]);
     let result = evaluator.evaluate(request)?;
@@ -800,7 +758,7 @@ pub fn evaluate_policy(
 /// Convenience function for evaluating multiple policies
 pub fn evaluate_policies(
     policies: &[IAMPolicy],
-    request: &AuthorizationRequest,
+    request: &IAMRequest,
 ) -> Result<Decision, EvaluationError> {
     let evaluator = PolicyEvaluator::with_policies(policies.to_vec());
     let result = evaluator.evaluate(request)?;
@@ -821,7 +779,7 @@ mod tests {
                 .with_resource(Resource::Single("arn:aws:s3:::my-bucket/*".to_string())),
         );
 
-        let request = AuthorizationRequest::simple(
+        let request = IAMRequest::new(
             "arn:aws:iam::123456789012:user/test",
             "s3:GetObject",
             "arn:aws:s3:::my-bucket/file.txt",
@@ -839,7 +797,7 @@ mod tests {
                 .with_resource(Resource::Single("arn:aws:s3:::my-bucket/*".to_string())),
         );
 
-        let request = AuthorizationRequest::simple(
+        let request = IAMRequest::new(
             "arn:aws:iam::123456789012:user/test",
             "s3:DeleteObject",
             "arn:aws:s3:::my-bucket/file.txt",
@@ -857,7 +815,7 @@ mod tests {
                 .with_resource(Resource::Single("arn:aws:s3:::other-bucket/*".to_string())),
         );
 
-        let request = AuthorizationRequest::simple(
+        let request = IAMRequest::new(
             "arn:aws:iam::123456789012:user/test",
             "s3:GetObject",
             "arn:aws:s3:::my-bucket/file.txt",
@@ -875,7 +833,7 @@ mod tests {
                 .with_resource(Resource::Single("arn:aws:s3:::my-bucket/*".to_string())),
         );
 
-        let request = AuthorizationRequest::simple(
+        let request = IAMRequest::new(
             "arn:aws:iam::123456789012:user/test",
             "s3:GetObject",
             "arn:aws:s3:::my-bucket/file.txt",
@@ -889,7 +847,7 @@ mod tests {
     fn test_condition_evaluation() {
         use crate::Operator;
 
-        let mut context = RequestContext::empty();
+        let mut context = Context::new();
         context.insert(
             "aws:userid".to_string(),
             ContextValue::String("test-user".to_string()),
@@ -906,7 +864,7 @@ mod tests {
                 ),
         );
 
-        let request = AuthorizationRequest::new(
+        let request = IAMRequest::new_with_context(
             "arn:aws:iam::123456789012:user/test",
             "s3:GetObject",
             "arn:aws:s3:::my-bucket/file.txt",
@@ -921,7 +879,7 @@ mod tests {
     fn test_condition_evaluation_failure() {
         use crate::Operator;
 
-        let mut context = RequestContext::empty();
+        let mut context = Context::new();
         context.insert(
             "aws:userid".to_string(),
             ContextValue::String("other-user".to_string()),
@@ -938,7 +896,7 @@ mod tests {
                 ),
         );
 
-        let request = AuthorizationRequest::new(
+        let request = IAMRequest::new_with_context(
             "arn:aws:iam::123456789012:user/test",
             "s3:GetObject",
             "arn:aws:s3:::my-bucket/file.txt",
@@ -966,7 +924,7 @@ mod tests {
             ),
         ];
 
-        let request = AuthorizationRequest::simple(
+        let request = IAMRequest::new(
             "arn:aws:iam::123456789012:user/test",
             "s3:DeleteObject",
             "arn:aws:s3:::protected-bucket/file.txt",
@@ -978,7 +936,7 @@ mod tests {
 
     #[test]
     fn test_numeric_condition() {
-        let mut context = RequestContext::empty();
+        let mut context = Context::new();
         context.insert("aws:RequestedRegion".to_string(), ContextValue::Number(5.0));
 
         let policy = IAMPolicy::new().add_statement(
@@ -992,7 +950,7 @@ mod tests {
                 ),
         );
 
-        let request = AuthorizationRequest::new(
+        let request = IAMRequest::new_with_context(
             "arn:aws:iam::123456789012:user/test",
             "s3:GetObject",
             "arn:aws:s3:::my-bucket/file.txt",
@@ -1012,7 +970,7 @@ mod tests {
                 .with_resource(Resource::Single("arn:aws:s3:::my-bucket/*".to_string())),
         );
 
-        let request = AuthorizationRequest::simple(
+        let request = IAMRequest::new(
             "arn:aws:iam::123456789012:user/test",
             "s3:GetObject",
             "arn:aws:s3:::my-bucket/file.txt",

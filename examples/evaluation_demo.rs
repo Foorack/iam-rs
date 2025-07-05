@@ -1,6 +1,6 @@
 use iam_rs::{
-    Action, AuthorizationRequest, ContextValue, Decision, Effect, EvaluationOptions, IAMPolicy,
-    IAMStatement, Operator, PolicyEvaluator, RequestContext, Resource, evaluate_policy,
+    Action, Context, ContextValue, Decision, Effect, EvaluationOptions, IAMPolicy, IAMRequest,
+    IAMStatement, Operator, PolicyEvaluator, Resource, evaluate_policy,
 };
 use serde_json::json;
 
@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .with_resource(Resource::Single("arn:aws:s3:::my-bucket/*".to_string())),
         );
 
-    let request = AuthorizationRequest::simple(
+    let request = IAMRequest::new(
         "arn:aws:iam::123456789012:user/alice",
         "s3:GetObject",
         "arn:aws:s3:::my-bucket/file.txt",
@@ -44,7 +44,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 )),
         );
 
-    let delete_request = AuthorizationRequest::simple(
+    let delete_request = IAMRequest::new(
         "arn:aws:iam::123456789012:user/alice",
         "s3:DeleteObject",
         "arn:aws:s3:::protected-bucket/important.txt",
@@ -68,7 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .with_resource(Resource::Single("arn:aws:s3:::my-bucket/*".to_string())),
         );
 
-    let wildcard_request = AuthorizationRequest::simple(
+    let wildcard_request = IAMRequest::new(
         "arn:aws:iam::123456789012:user/alice",
         "s3:PutObject",
         "arn:aws:s3:::my-bucket/new-file.txt",
@@ -83,7 +83,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Example 4: Condition-Based Policy
     println!("4. Condition-Based Policy:");
-    let mut context = RequestContext::empty();
+    let mut context = Context::new();
     context.insert(
         "aws:userid".to_string(),
         ContextValue::String("alice".to_string()),
@@ -109,7 +109,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ),
         );
 
-    let condition_request = AuthorizationRequest::new(
+    let condition_request = IAMRequest::new_with_context(
         "arn:aws:iam::123456789012:user/alice",
         "s3:GetObject",
         "arn:aws:s3:::private-bucket/personal.txt",
@@ -125,13 +125,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Example 5: Failed Condition
     println!("5. Failed Condition:");
-    let mut wrong_context = RequestContext::empty();
+    let mut wrong_context = Context::new();
     wrong_context.insert(
         "aws:userid".to_string(),
         ContextValue::String("bob".to_string()),
     );
 
-    let failed_condition_request = AuthorizationRequest::new(
+    let failed_condition_request = IAMRequest::new_with_context(
         "arn:aws:iam::123456789012:user/bob",
         "s3:GetObject",
         "arn:aws:s3:::private-bucket/personal.txt",
@@ -169,7 +169,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     ];
 
     let evaluator = PolicyEvaluator::with_policies(combined_policies);
-    let protected_request = AuthorizationRequest::simple(
+    let protected_request = IAMRequest::new(
         "arn:aws:iam::123456789012:user/alice",
         "s3:DeleteObject",
         "arn:aws:s3:::protected-bucket/critical.txt",
@@ -184,7 +184,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Example 7: Numeric Condition
     println!("7. Numeric Condition:");
-    let mut numeric_context = RequestContext::empty();
+    let mut numeric_context = Context::new();
     numeric_context.insert("aws:RequestCount".to_string(), ContextValue::Number(5.0));
 
     let numeric_policy = IAMPolicy::new()
@@ -201,7 +201,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ),
         );
 
-    let numeric_request = AuthorizationRequest::new(
+    let numeric_request = IAMRequest::new_with_context(
         "arn:aws:iam::123456789012:user/alice",
         "s3:GetObject",
         "arn:aws:s3:::any-bucket/file.txt",
@@ -241,7 +241,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Example 9: No Applicable Policy (Implicit Deny)
     println!("9. No Applicable Policy (Implicit Deny):");
-    let unrelated_request = AuthorizationRequest::simple(
+    let unrelated_request = IAMRequest::new(
         "arn:aws:iam::123456789012:user/alice",
         "ec2:DescribeInstances",
         "arn:aws:ec2:us-east-1:123456789012:instance/*",
@@ -268,7 +268,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .with_resource(Resource::Single("arn:aws:s3:::user-data-*/*".to_string())),
         );
 
-    let pattern_request = AuthorizationRequest::simple(
+    let pattern_request = IAMRequest::new(
         "arn:aws:iam::123456789012:user/alice",
         "s3:GetObject",
         "arn:aws:s3:::user-data-alice/profile.json",

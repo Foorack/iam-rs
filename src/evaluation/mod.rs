@@ -2,11 +2,13 @@
 mod context;
 mod engine;
 mod matcher;
+mod request;
 
 // Re-export evaluation types
-pub use context::{ContextValue, RequestContext};
+pub use context::{Context, ContextValue};
 pub use engine::{
-    AuthorizationRequest, Decision, EvaluationError, EvaluationOptions, EvaluationResult,
-    PolicyEvaluator, evaluate_policies, evaluate_policy,
+    Decision, EvaluationError, EvaluationOptions, EvaluationResult, PolicyEvaluator,
+    evaluate_policies, evaluate_policy,
 };
 pub use matcher::{ArnBuilder, ArnMatcher, ArnSet};
+pub use request::IAMRequest;
