@@ -359,14 +359,6 @@ impl PolicyEvaluator {
                     Ok(false)
                 }
             }
-            Principal::Multiple(principals) => {
-                for p in principals {
-                    if self.principal_matches(&Principal::Single(p.clone()), request_principal)? {
-                        return Ok(true);
-                    }
-                }
-                Ok(false)
-            }
             Principal::Mapped(map) => {
                 // Handle mapped principals (e.g., {"AWS": "arn:aws:iam::123456789012:user/test"})
                 for values in map.values() {
