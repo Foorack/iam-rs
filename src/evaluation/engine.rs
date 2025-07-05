@@ -7,6 +7,7 @@ use crate::{
     core::{Action, Effect, Operator, Principal, Resource},
     policy::{ConditionBlock, IAMPolicy, IAMStatement},
 };
+use base64::prelude::*;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -699,8 +700,46 @@ impl PolicyEvaluator {
         context_value: Option<&ContextValue>,
         condition_value: &serde_json::Value,
     ) -> Result<bool, EvaluationError> {
-        // TODO: For now, just do string comparison. Full implementation would handle base64 binary data.
-        self.evaluate_string_condition(context_value, condition_value, |a, b| a == b)
+        let context_bytes = match context_value {
+            Some(ContextValue::String(s)) => {
+                // Try to decode base64 string to bytes
+                BASE64_STANDARD.decode(s.as_bytes()).map_err(|_| {
+                    EvaluationError::ConditionError("Invalid base64 context value".to_string())
+                })?
+            }
+            Some(_) => return Ok(false), // Type mismatch
+            None => return Ok(false),    // Missing context
+        };
+
+        match condition_value {
+            serde_json::Value::String(s) => {
+                // Decode base64 condition value to bytes
+                let condition_bytes = BASE64_STANDARD.decode(s.as_bytes()).map_err(|_| {
+                    EvaluationError::ConditionError("Invalid base64 condition value".to_string())
+                })?;
+                Ok(context_bytes == condition_bytes)
+            }
+            serde_json::Value::Array(arr) => {
+                // Any value in the array can match
+                for val in arr {
+                    if let serde_json::Value::String(s) = val {
+                        let condition_bytes =
+                            BASE64_STANDARD.decode(s.as_bytes()).map_err(|_| {
+                                EvaluationError::ConditionError(
+                                    "Invalid base64 value in array".to_string(),
+                                )
+                            })?;
+                        if context_bytes == condition_bytes {
+                            return Ok(true);
+                        }
+                    }
+                }
+                Ok(false)
+            }
+            _ => Err(EvaluationError::ConditionError(
+                "Binary condition requires string value".to_string(),
+            )),
+        }
     }
 
     /// Helper for IP address condition evaluation

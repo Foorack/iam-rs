@@ -25,6 +25,7 @@ serde_with = { version = "3.14.0", features = [
     "alloc",
 ], default-features = false }
 chrono = { version = "0.4", features = ["serde"], default-features = false }
+base64 = { version = "0.22.1" }
 
 [lints.clippy]
 correctness = { level = "deny", priority = 1 }
