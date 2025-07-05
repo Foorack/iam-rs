@@ -451,6 +451,135 @@ mod tests {
     }
 
     #[test]
+    fn test_arn_validation_in_policies() {
+        // Test valid ARNs in policy resources
+        let valid_arns = vec![
+            "arn:aws:s3:::my-bucket/*",
+            "arn:aws:s3:::my-bucket/folder/*",
+            "arn:aws:iam::123456789012:user/username",
+            "arn:aws:ec2:us-east-1:123456789012:instance/*",
+            "arn:aws:lambda:us-east-1:123456789012:function:MyFunction",
+        ];
+
+        for arn_str in valid_arns {
+            let arn = Arn::parse(arn_str).unwrap();
+            assert!(arn.is_valid(), "ARN should be valid: {}", arn_str);
+        }
+    }
+
+    #[test]
+    fn test_arn_wildcard_matching_in_policies() {
+        // Test ARN pattern matching for resource access
+        let resource_arn =
+            Arn::parse("arn:aws:s3:::my-bucket/uploads/user123/document.pdf").unwrap();
+
+        // These patterns should match
+        let matching_patterns = vec![
+            "arn:aws:s3:::my-bucket/*",
+            "arn:aws:s3:::my-bucket/uploads/*",
+            "arn:aws:s3:::my-bucket/uploads/user123/*",
+            "arn:aws:s3:::*/uploads/user123/document.pdf",
+            "arn:aws:s3:::my-bucket/uploads/*/document.pdf",
+            "arn:aws:s3:::my-bucket/*/user123/document.pdf",
+            "arn:aws:s3:::my-bucket/uploads/user???/document.pdf",
+        ];
+
+        for pattern in matching_patterns {
+            assert!(
+                resource_arn.matches(pattern).unwrap(),
+                "Pattern '{}' should match ARN '{}'",
+                pattern,
+                resource_arn
+            );
+        }
+
+        // These patterns should NOT match
+        let non_matching_patterns = vec![
+            "arn:aws:s3:::other-bucket/*",
+            "arn:aws:s3:::my-bucket/downloads/*",
+            "arn:aws:s3:::my-bucket/uploads/user456/*",
+            "arn:aws:ec2:*:*:*", // Different service
+            "arn:aws:s3:::my-bucket/uploads/user12/document.pdf", // user12 != user123
+        ];
+
+        for pattern in non_matching_patterns {
+            assert!(
+                !resource_arn.matches(pattern).unwrap(),
+                "Pattern '{}' should NOT match ARN '{}'",
+                pattern,
+                resource_arn
+            );
+        }
+    }
+
+    #[test]
+    fn test_arn_resource_parsing() {
+        let test_cases = vec![
+            ("arn:aws:s3:::bucket/object", Some("bucket"), Some("object")),
+            (
+                "arn:aws:iam::123456789012:user/username",
+                Some("user"),
+                Some("username"),
+            ),
+            (
+                "arn:aws:iam::123456789012:role/MyRole",
+                Some("role"),
+                Some("MyRole"),
+            ),
+            (
+                "arn:aws:sns:us-east-1:123456789012:my-topic",
+                None,
+                Some("my-topic"),
+            ),
+            (
+                "arn:aws:dynamodb:us-east-1:123456789012:table/MyTable",
+                Some("table"),
+                Some("MyTable"),
+            ),
+            (
+                "arn:aws:s3:::bucket/folder/subfolder/file.txt",
+                Some("bucket"),
+                Some("folder/subfolder/file.txt"),
+            ),
+        ];
+
+        for (arn_str, expected_type, expected_id) in test_cases {
+            let arn = Arn::parse(arn_str).unwrap();
+            assert_eq!(
+                arn.resource_type(),
+                expected_type,
+                "Resource type mismatch for {}",
+                arn_str
+            );
+            assert_eq!(
+                arn.resource_id(),
+                expected_id,
+                "Resource ID mismatch for {}",
+                arn_str
+            );
+        }
+    }
+
+    #[test]
+    fn test_invalid_arns() {
+        let invalid_arns = vec![
+            "not-an-arn",
+            "arn:aws:s3",                                            // Too few parts
+            "arn::s3:us-east-1:123456789012:bucket/my-bucket",       // Empty partition
+            "arn:aws::us-east-1:123456789012:bucket/my-bucket",      // Empty service
+            "arn:aws:s3:us-east-1:123456789012:",                    // Empty resource
+            "arn:aws:s3:us-east-1:invalid-account:bucket/my-bucket", // Invalid account ID
+            "arn:aws:s3:us-east-1:12345678901:bucket/my-bucket",     // Account ID too short
+            "arn:aws:s3:us-east-1:1234567890123:bucket/my-bucket",   // Account ID too long
+        ];
+
+        for invalid_arn in invalid_arns {
+            let result = Arn::parse(invalid_arn);
+            assert!(result.is_err(), "ARN should be invalid: {}", invalid_arn);
+        }
+    }
+
+    #[test]
     fn test_amazon_arns_from_json() {
         // Read the JSON file containing Amazon ARN examples
         let json_content = std::fs::read_to_string("tests/arns.json")

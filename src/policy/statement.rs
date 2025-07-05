@@ -509,6 +509,85 @@ mod tests {
     }
 
     #[test]
+    fn test_full_statement_with_complex_conditions() {
+        let statement = IAMStatement::new(Effect::Allow)
+            .with_sid("ComplexConditionExample")
+            .with_action(Action::Multiple(vec![
+                "s3:GetObject".to_string(),
+                "s3:PutObject".to_string(),
+            ]))
+            .with_resource(Resource::Single("arn:aws:s3:::my-bucket/*".to_string()))
+            .with_condition(
+                Operator::StringEquals,
+                "aws:PrincipalTag/department".to_string(),
+                serde_json::json!(["finance", "hr", "legal"]),
+            )
+            .with_condition(
+                Operator::ArnLike,
+                "aws:PrincipalArn".to_string(),
+                serde_json::json!([
+                    "arn:aws:iam::222222222222:user/Ana",
+                    "arn:aws:iam::222222222222:user/Mary"
+                ]),
+            );
+
+        // Verify the conditions are properly structured
+        assert!(statement.condition.is_some());
+        let condition_block = statement.condition.as_ref().unwrap();
+
+        assert!(
+            condition_block.has_condition(&Operator::StringEquals, "aws:PrincipalTag/department")
+        );
+        assert!(condition_block.has_condition(&Operator::ArnLike, "aws:PrincipalArn"));
+    }
+
+    #[test]
+    fn test_condition_handling() {
+        let statement = IAMStatement::new(Effect::Allow)
+            .with_action(Action::Single("s3:GetObject".to_string()))
+            .with_condition(
+                Operator::StringEquals,
+                "s3:prefix".to_string(),
+                serde_json::json!("uploads/"),
+            );
+
+        assert!(statement.condition.is_some());
+        let condition_block = statement.condition.unwrap();
+        assert!(condition_block.has_condition(&Operator::StringEquals, "s3:prefix"));
+    }
+
+    #[test]
+    fn test_statement_logical_validation() {
+        // Test NotPrincipal with Allow (should fail)
+        let mut invalid_not_principal = IAMStatement::new(Effect::Allow);
+        invalid_not_principal.action = Some(Action::Single("s3:GetObject".to_string()));
+        invalid_not_principal.resource = Some(Resource::Single("*".to_string()));
+        invalid_not_principal.not_principal = Some(Principal::Single(
+            "arn:aws:iam::123456789012:user/test".to_string(),
+        ));
+
+        assert!(!invalid_not_principal.is_valid());
+
+        // Test both Action and NotAction (should fail)
+        let mut conflicting_actions = IAMStatement::new(Effect::Allow);
+        conflicting_actions.action = Some(Action::Single("s3:GetObject".to_string()));
+        conflicting_actions.not_action = Some(Action::Single("s3:PutObject".to_string()));
+        conflicting_actions.resource = Some(Resource::Single("*".to_string()));
+
+        assert!(!conflicting_actions.is_valid());
+
+        // Test valid NotPrincipal with Deny
+        let mut valid_not_principal = IAMStatement::new(Effect::Deny);
+        valid_not_principal.action = Some(Action::Single("*".to_string()));
+        valid_not_principal.resource = Some(Resource::Single("*".to_string()));
+        valid_not_principal.not_principal = Some(Principal::Single(
+            "arn:aws:iam::123456789012:user/admin".to_string(),
+        ));
+
+        assert!(valid_not_principal.is_valid());
+    }
+
+    #[test]
     fn test_statement_sid_validation() {
         // Valid Sid
         let valid_sid = IAMStatement::new(Effect::Allow)

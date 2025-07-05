@@ -366,6 +366,81 @@ mod tests {
     }
 
     #[test]
+    fn test_policy_validation_integration() {
+        use crate::{IAMPolicy, IAMStatement, Effect, Action, Resource};
+        
+        // Test valid policy with UUID-like ID for strict mode
+        let valid_policy = IAMPolicy::new()
+            .with_id("550e8400-e29b-41d4-a716-446655440000") // UUID format
+            .add_statement(
+                IAMStatement::new(Effect::Allow)
+                    .with_sid("ValidStatement")
+                    .with_action(Action::Single("s3:GetObject".to_string()))
+                    .with_resource(Resource::Single("arn:aws:s3:::bucket/*".to_string())),
+            );
+
+        assert!(valid_policy.is_valid());
+        assert!(valid_policy.validate_result().is_ok());
+
+        // Test invalid policy - missing action
+        let mut invalid_policy = IAMPolicy::new();
+        invalid_policy
+            .statement
+            .push(IAMStatement::new(Effect::Allow));
+        assert!(!invalid_policy.is_valid());
+
+        // Test policy with validation errors
+        let complex_invalid_policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(Effect::Allow)
+                .with_action(Action::Single("invalid-action".to_string()))
+                .with_resource(Resource::Single("invalid-resource".to_string())),
+        );
+
+        assert!(!complex_invalid_policy.is_valid());
+
+        let validation_result = complex_invalid_policy.validate_result();
+        assert!(validation_result.is_err());
+
+        let error = validation_result.unwrap_err();
+        assert!(
+            error.to_string().contains("Multiple validation errors")
+                || error.to_string().contains("Invalid")
+        );
+    }
+
+    #[test]
+    fn test_condition_validation_integration() {
+        use crate::{IAMStatement, Effect, Action, Resource, Operator};
+        use serde_json::json;
+
+        // Valid condition
+        let valid_statement = IAMStatement::new(Effect::Allow)
+            .with_action(Action::Single("s3:GetObject".to_string()))
+            .with_resource(Resource::Single("*".to_string()))
+            .with_condition(
+                Operator::StringEquals,
+                "aws:username".to_string(),
+                json!("alice"),
+            );
+
+        assert!(valid_statement.is_valid());
+
+        // Invalid condition - numeric operator with string value (strict mode)
+        let invalid_condition_statement = IAMStatement::new(Effect::Allow)
+            .with_action(Action::Single("s3:GetObject".to_string()))
+            .with_resource(Resource::Single("*".to_string()))
+            .with_condition(
+                Operator::NumericEquals,
+                "aws:RequestedRegion".to_string(),
+                json!("invalid-number"),
+            );
+
+        // Should fail validation due to type mismatch
+        assert!(!invalid_condition_statement.is_valid());
+        assert!(invalid_condition_statement.validate_result().is_err());
+    }
+
+    #[test]
     fn test_collect_errors() {
         let results = vec![
             Ok(()),
