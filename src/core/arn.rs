@@ -81,8 +81,8 @@ impl Arn {
         let region = parts[3].to_string();
         let account_id = parts[4].to_string();
 
-        // Validate account ID format
-        if !account_id.is_empty() && !Self::is_valid_account_id(&account_id) {
+        // Validate account ID
+        if !Self::is_valid_account_id(&account_id) {
             return Err(ArnError::InvalidAccountId(account_id));
         }
 
@@ -103,10 +103,16 @@ impl Arn {
 
     /// Validate if a string is a valid account ID (12 digits) or a wildcard pattern
     fn is_valid_account_id(account_id: &str) -> bool {
+        // Allow empty
+        if account_id.is_empty() {
+            return true;
+        }
+
         // If wildcards are present, we're more lenient
         if account_id.contains('*') || account_id.contains('?') {
             return true;
         }
+
         account_id.len() == 12 && account_id.chars().all(|c| c.is_ascii_digit())
     }
 
@@ -216,7 +222,7 @@ impl Arn {
         }
 
         // Validate account ID if present
-        if !self.account_id.is_empty() && !Self::is_valid_account_id(&self.account_id) {
+        if !Self::is_valid_account_id(&self.account_id) {
             return false;
         }
 
@@ -388,23 +394,27 @@ mod tests {
         let valid_arn = Arn::parse("arn:aws:s3:us-east-1:123456789012:bucket/my-bucket").unwrap();
         assert!(valid_arn.is_valid());
 
-        let invalid_partition = Arn {
-            partition: "invalid".to_string(),
+        let valid_arn = Arn {
+            partition: "aws-cn".to_string(),
             service: "s3".to_string(),
             region: "us-east-1".to_string(),
             account_id: "123456789012".to_string(),
             resource: "bucket/my-bucket".to_string(),
         };
+        assert!(valid_arn.is_valid());
+
+        let valid_arn = Arn::parse("arn:aws:s3:abc::*").unwrap();
+        assert!(valid_arn.is_valid());
+        let invalid_partition = Arn::parse("arn:@:s3:abc::*").unwrap();
         assert!(!invalid_partition.is_valid());
+        let invalid_service = Arn::parse("arn:aws:@:abc::*").unwrap();
+        assert!(!invalid_service.is_valid());
+        let invalid_account_id = Arn::parse("arn:aws:s3:abc:12345:*").unwrap();
+        assert!(!invalid_account_id.is_valid());
     }
 
     #[test]
     fn test_wildcard_parsing() {
-        // Test that wildcards are rejected in normal parsing
-        let result = Arn::parse("arn:aws:s3:*:*:bucket/*");
-        assert!(result.is_err());
-
-        // Test that wildcards are allowed with wildcard parsing
         let arn = Arn::parse("arn:aws:s3:*:*:bucket/*").unwrap();
         assert_eq!(arn.region, "*");
         assert_eq!(arn.account_id, "*");
