@@ -526,8 +526,7 @@ impl PolicyEvaluator {
             | Operator::ForAllValuesStringEquals
             | Operator::ForAnyValueStringLike
             | Operator::ForAllValuesStringLike => {
-                // For now, treat these as regular string conditions
-                // Full implementation would handle set logic
+                // TODO: Treat these as regular string conditions for now. Full implementation should handle set logic.
                 self.evaluate_string_condition(context_value, value, |a, b| a == b)
             }
 
@@ -700,8 +699,7 @@ impl PolicyEvaluator {
         context_value: Option<&ContextValue>,
         condition_value: &serde_json::Value,
     ) -> Result<bool, EvaluationError> {
-        // For now, just do string comparison
-        // Full implementation would handle base64 binary data
+        // TODO: For now, just do string comparison. Full implementation would handle base64 binary data.
         self.evaluate_string_condition(context_value, condition_value, |a, b| a == b)
     }
 
@@ -712,7 +710,7 @@ impl PolicyEvaluator {
         condition_value: &serde_json::Value,
         should_match: bool,
     ) -> Result<bool, EvaluationError> {
-        // Simplified IP matching - real implementation would use IP parsing
+        // TODO: Simplified IP matching - real implementation would use IP parsing
         let result =
             self.evaluate_string_condition(context_value, condition_value, |a, b| a == b)?;
         Ok(if should_match { result } else { !result })
