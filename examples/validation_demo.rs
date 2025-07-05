@@ -1,6 +1,6 @@
 use iam_rs::{
-    Action, Effect, IAMPolicy, IAMStatement, Operator, Principal, Resource, Validate,
-    ValidationError,
+    Action, Effect, IAMPolicy, IAMStatement, Operator, Principal, PrincipalType, Resource,
+    Validate, ValidationError,
 };
 use serde_json::json;
 
@@ -120,7 +120,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     logical_error_policy.resource = Some(Resource::Single("*".to_string()));
     let mut principal_map = std::collections::HashMap::new();
     principal_map.insert(
-        "AWS".to_string(),
+        PrincipalType::Aws,
         serde_json::json!("arn:aws:iam::123456789012:user/test"),
     );
     logical_error_policy.not_principal = Some(Principal::Mapped(principal_map));
@@ -155,7 +155,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Invalid principal
     let mut invalid_map = std::collections::HashMap::new();
-    invalid_map.insert("AWS".to_string(), serde_json::json!("invalid-principal"));
+    invalid_map.insert(PrincipalType::Aws, serde_json::json!("invalid-principal"));
     let invalid_principal = Principal::Mapped(invalid_map);
     match invalid_principal.validate_result() {
         Err(e) => println!("✗ Invalid principal: {}", e),
@@ -164,7 +164,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Valid service principal
     let service_principal = Principal::Mapped(
-        [("Service".to_string(), json!("lambda.amazonaws.com"))]
+        [(PrincipalType::Service, json!("lambda.amazonaws.com"))]
             .iter()
             .cloned()
             .collect(),

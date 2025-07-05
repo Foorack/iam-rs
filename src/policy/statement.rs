@@ -483,7 +483,7 @@ mod tests {
         invalid_not_principal.resource = Some(Resource::Single("*".to_string()));
         let mut principal_map = std::collections::HashMap::new();
         principal_map.insert(
-            "AWS".to_string(),
+            crate::core::PrincipalType::Aws,
             serde_json::json!("arn:aws:iam::123456789012:user/test"),
         );
         invalid_not_principal.not_principal = Some(Principal::Mapped(principal_map));
@@ -495,7 +495,7 @@ mod tests {
         valid_not_principal.resource = Some(Resource::Single("*".to_string()));
         let mut principal_map = std::collections::HashMap::new();
         principal_map.insert(
-            "AWS".to_string(),
+            crate::core::PrincipalType::Aws,
             serde_json::json!("arn:aws:iam::123456789012:user/test"),
         );
         valid_not_principal.not_principal = Some(Principal::Mapped(principal_map));
@@ -507,13 +507,13 @@ mod tests {
         conflicting_principal.resource = Some(Resource::Single("*".to_string()));
         let mut principal_map1 = std::collections::HashMap::new();
         principal_map1.insert(
-            "AWS".to_string(),
+            crate::core::PrincipalType::Aws,
             serde_json::json!("arn:aws:iam::123456789012:user/test"),
         );
         conflicting_principal.principal = Some(Principal::Mapped(principal_map1));
         let mut principal_map2 = std::collections::HashMap::new();
         principal_map2.insert(
-            "AWS".to_string(),
+            crate::core::PrincipalType::Aws,
             serde_json::json!("arn:aws:iam::123456789012:user/other"),
         );
         conflicting_principal.not_principal = Some(Principal::Mapped(principal_map2));
@@ -576,7 +576,7 @@ mod tests {
         invalid_not_principal.resource = Some(Resource::Single("*".to_string()));
         let mut principal_map = std::collections::HashMap::new();
         principal_map.insert(
-            "AWS".to_string(),
+            crate::core::PrincipalType::Aws,
             serde_json::json!("arn:aws:iam::123456789012:user/test"),
         );
         invalid_not_principal.not_principal = Some(Principal::Mapped(principal_map));
@@ -597,7 +597,7 @@ mod tests {
         valid_not_principal.resource = Some(Resource::Single("*".to_string()));
         let mut principal_map = std::collections::HashMap::new();
         principal_map.insert(
-            "AWS".to_string(),
+            crate::core::PrincipalType::Aws,
             serde_json::json!("arn:aws:iam::123456789012:user/admin"),
         );
         valid_not_principal.not_principal = Some(Principal::Mapped(principal_map));

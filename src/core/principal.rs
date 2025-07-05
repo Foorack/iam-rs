@@ -2,8 +2,35 @@ use crate::validation::{Validate, ValidationContext, ValidationResult, helpers};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// Principal type for IAM policies
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum PrincipalType {
+    /// AWS principals (users, roles, root accounts)
+    #[serde(rename = "AWS")]
+    Aws,
+    /// Federated principals (SAML, OIDC providers)
+    #[serde(rename = "Federated")]
+    Federated,
+    /// AWS service principals
+    #[serde(rename = "Service")]
+    Service,
+    /// S3 canonical user principals
+    #[serde(rename = "CanonicalUser")]
+    CanonicalUser,
+}
+
+impl std::fmt::Display for PrincipalType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PrincipalType::Aws => write!(f, "AWS"),
+            PrincipalType::Federated => write!(f, "Federated"),
+            PrincipalType::Service => write!(f, "Service"),
+            PrincipalType::CanonicalUser => write!(f, "CanonicalUser"),
+        }
+    }
+}
+
 /// Represents a principal in an IAM policy
-///
 /// <principal_block> = ("Principal" | "NotPrincipal") : ("*" | <principal_map>)
 /// <principal_map> = { <principal_map_entry>, <principal_map_entry>, ... }
 /// <principal_map_entry> = ("AWS" | "Federated" | "Service" | "CanonicalUser") :
@@ -16,7 +43,7 @@ pub enum Principal {
     /// Wildcard principal (*)
     Wildcard,
     /// Principal with service mapping (e.g., {"AWS": "arn:aws:iam::123456789012:user/username"})
-    Mapped(HashMap<String, serde_json::Value>),
+    Mapped(HashMap<PrincipalType, serde_json::Value>),
 }
 
 impl Validate for Principal {
@@ -39,23 +66,8 @@ impl Validate for Principal {
                     let mut results = Vec::new();
 
                     for (key, value) in map {
-                        ctx.with_segment(key, |nested_ctx| {
-                            // Validate the principal type key
-                            if !matches!(
-                                key.as_str(),
-                                "AWS" | "Federated" | "Service" | "CanonicalUser"
-                            ) {
-                                results.push(Err(
-                                    crate::validation::ValidationError::InvalidValue {
-                                        field: "Principal type".to_string(),
-                                        value: key.clone(),
-                                        reason:
-                                            "Must be one of: AWS, Federated, Service, CanonicalUser"
-                                                .to_string(),
-                                    },
-                                ));
-                                return;
-                            }
+                        ctx.with_segment(&key.to_string(), |nested_ctx| {
+                            // Principal type key is guaranteed to be valid since it's an enum
 
                             // Validate the principal values
                             match value {
@@ -116,7 +128,7 @@ mod tests {
     fn test_principal_validation() {
         let mut valid_mapped = HashMap::new();
         valid_mapped.insert(
-            "AWS".to_string(),
+            PrincipalType::Aws,
             json!("arn:aws:iam::123456789012:user/alice"),
         );
         let valid_mapped = Principal::Mapped(valid_mapped);
@@ -127,14 +139,14 @@ mod tests {
 
         let mut another_valid_mapped = HashMap::new();
         another_valid_mapped.insert(
-            "AWS".to_string(),
+            PrincipalType::Aws,
             json!("arn:aws:iam::123456789012:user/alice"),
         );
         let another_valid_mapped = Principal::Mapped(another_valid_mapped);
         assert!(another_valid_mapped.is_valid());
 
         let mut invalid_mapped = HashMap::new();
-        invalid_mapped.insert("AWS".to_string(), json!("invalid-principal"));
+        invalid_mapped.insert(PrincipalType::Aws, json!("invalid-principal"));
         let invalid_mapped = Principal::Mapped(invalid_mapped);
         assert!(!invalid_mapped.is_valid());
 
@@ -146,20 +158,17 @@ mod tests {
     fn test_principal_mapped_validation() {
         // Valid service principal
         let mut service_map = HashMap::new();
-        service_map.insert("Service".to_string(), json!("lambda.amazonaws.com"));
+        service_map.insert(PrincipalType::Service, json!("lambda.amazonaws.com"));
         let service_principal = Principal::Mapped(service_map);
         assert!(service_principal.is_valid());
 
-        // Invalid principal type
-        let mut invalid_map = HashMap::new();
-        invalid_map.insert("InvalidType".to_string(), json!("test"));
-        let invalid_principal = Principal::Mapped(invalid_map);
-        assert!(!invalid_principal.is_valid());
+        // Test that we can no longer create invalid principal types
+        // (This is now impossible at compile time with the enum)
 
         // Array of principals
         let mut array_map = HashMap::new();
         array_map.insert(
-            "AWS".to_string(),
+            PrincipalType::Aws,
             json!([
                 "arn:aws:iam::123456789012:user/alice",
                 "arn:aws:iam::123456789012:user/bob"

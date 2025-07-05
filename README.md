@@ -138,11 +138,11 @@ let policy = IAMPolicy::new()
 Individual policy statements with effect, principals, actions, resources, and conditions.
 
 ```rust
-use iam_rs::{IAMStatement, Effect, Action, Resource, Principal};
+use iam_rs::{IAMStatement, Effect, Action, Resource, Principal, PrincipalType};
 use std::collections::HashMap;
 
 let mut principal_map = HashMap::new();
-principal_map.insert("AWS".to_string(), serde_json::json!("arn:aws:iam::123456789012:user/username"));
+principal_map.insert(PrincipalType::Aws, serde_json::json!("arn:aws:iam::123456789012:user/username"));
 
 let statement = IAMStatement::new(Effect::Allow)
     .with_sid("ExampleStatement")
@@ -318,7 +318,7 @@ let statement = IAMStatement::new(Effect::Allow)
 #### Principal Types
 
 ```rust
-use iam_rs::Principal;
+use iam_rs::{Principal, PrincipalType};
 use std::collections::HashMap;
 
 // Wildcard principal (allows any principal)
@@ -326,12 +326,12 @@ let wildcard = Principal::Wildcard;
 
 // AWS principal mapping
 let mut aws_map = HashMap::new();
-aws_map.insert("AWS".to_string(), serde_json::json!("arn:aws:iam::123456789012:user/alice"));
+aws_map.insert(PrincipalType::Aws, serde_json::json!("arn:aws:iam::123456789012:user/alice"));
 let aws_principal = Principal::Mapped(aws_map);
 
 // Multiple principals in a service mapping
 let mut service_map = HashMap::new();
-service_map.insert("AWS".to_string(), serde_json::json!([
+service_map.insert(PrincipalType::Aws, serde_json::json!([
     "arn:aws:iam::123456789012:user/alice",
     "arn:aws:iam::123456789012:user/bob"
 ]));
@@ -344,7 +344,7 @@ let wildcard = Principal::Wildcard;
 
 // Service principal with mapping
 let mut service_map = HashMap::new();
-service_map.insert("Service".to_string(), json!("lambda.amazonaws.com"));
+service_map.insert(PrincipalType::Service, json!("lambda.amazonaws.com"));
 let service = Principal::Mapped(service_map);
 ```
 

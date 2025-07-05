@@ -12,6 +12,6 @@ pub use action::Action;
 pub use arn::{Arn, ArnError};
 pub use effect::Effect;
 pub use operator::Operator;
-pub use principal::Principal;
+pub use principal::{Principal, PrincipalType};
 pub use resource::Resource;
 pub use version::IAMVersion;
