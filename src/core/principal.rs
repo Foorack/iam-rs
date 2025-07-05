@@ -31,6 +31,7 @@ impl std::fmt::Display for PrincipalType {
 }
 
 /// Represents a principal in an IAM policy
+///
 /// <principal_block> = ("Principal" | "NotPrincipal") : ("*" | <principal_map>)
 /// <principal_map> = { <principal_map_entry>, <principal_map_entry>, ... }
 /// <principal_map_entry> = ("AWS" | "Federated" | "Service" | "CanonicalUser") :
@@ -66,9 +67,8 @@ impl Validate for Principal {
                     let mut results = Vec::new();
 
                     for (key, value) in map {
+                        // Principal type key is guaranteed to be valid since it's an enum
                         ctx.with_segment(&key.to_string(), |nested_ctx| {
-                            // Principal type key is guaranteed to be valid since it's an enum
-
                             // Validate the principal values
                             match value {
                                 serde_json::Value::String(s) => {
