@@ -57,6 +57,8 @@ impl std::error::Error for ArnError {}
 
 impl Arn {
     /// Parse an ARN string into an Arn struct
+    /// This method is extremely lenient and only validates bare format requirements.
+    /// Use `is_valid()` to perform comprehensive validation.
     pub fn parse(arn_str: &str) -> Result<Self, ArnError> {
         let parts: Vec<&str> = arn_str.split(':').collect();
 
@@ -69,28 +71,12 @@ impl Arn {
         }
 
         let partition = parts[1].to_string();
-        if partition.is_empty() {
-            return Err(ArnError::InvalidPartition(partition));
-        }
-
         let service = parts[2].to_string();
-        if service.is_empty() {
-            return Err(ArnError::InvalidService(service));
-        }
-
         let region = parts[3].to_string();
         let account_id = parts[4].to_string();
 
-        // Validate account ID
-        if !Self::is_valid_account_id(&account_id) {
-            return Err(ArnError::InvalidAccountId(account_id));
-        }
-
         // Join remaining parts as resource (handles cases with multiple colons in resource)
         let resource = parts[5..].join(":");
-        if resource.is_empty() {
-            return Err(ArnError::InvalidResource(resource));
-        }
 
         Ok(Arn {
             partition,
@@ -99,21 +85,6 @@ impl Arn {
             account_id,
             resource,
         })
-    }
-
-    /// Validate if a string is a valid account ID (12 digits) or a wildcard pattern
-    fn is_valid_account_id(account_id: &str) -> bool {
-        // Allow empty
-        if account_id.is_empty() {
-            return true;
-        }
-
-        // If wildcards are present, we're more lenient
-        if account_id.contains('*') || account_id.contains('?') {
-            return true;
-        }
-
-        account_id.len() == 12 && account_id.chars().all(|c| c.is_ascii_digit())
     }
 
     /// Convert the ARN back to string format
@@ -207,14 +178,31 @@ impl Arn {
 
     /// Check if this ARN is valid according to AWS ARN rules
     pub fn is_valid(&self) -> bool {
-        // Basic validation rules
-        if self.partition.is_empty() || self.service.is_empty() || self.resource.is_empty() {
+        // Basic format validation rules
+        if self.partition.is_empty() {
             return false;
         }
 
-        // Validate partition (alphanumeric and dash, no special characters)
+        if self.service.is_empty() {
+            return false;
+        }
+
+        if self.resource.is_empty() {
+            return false;
+        }
+
+        // Validate partition (alphanumeric, dash, and underscore, but no other special characters)
         if !self
             .partition
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+        {
+            return false;
+        }
+
+        // Validate service (alphanumeric and dash, no other special characters)
+        if !self
+            .service
             .chars()
             .all(|c| c.is_alphanumeric() || c == '-')
         {
@@ -228,6 +216,21 @@ impl Arn {
 
         // Service-specific validation could be added here
         true
+    }
+
+    /// Validate if a string is a valid account ID (12 digits) or a wildcard pattern
+    fn is_valid_account_id(account_id: &str) -> bool {
+        // Allow empty
+        if account_id.is_empty() {
+            return true;
+        }
+
+        // If wildcards are present, we're more lenient
+        if account_id.contains('*') || account_id.contains('?') {
+            return true;
+        }
+
+        account_id.len() == 12 && account_id.chars().all(|c| c.is_ascii_digit())
     }
 
     /// Get the resource type from the resource string
@@ -324,8 +327,10 @@ mod tests {
 
     #[test]
     fn test_invalid_account_id() {
-        let result = Arn::parse("arn:aws:s3:us-east-1:invalid:bucket/my-bucket");
-        assert!(matches!(result, Err(ArnError::InvalidAccountId(_))));
+        let result = Arn::parse("arn:aws:s3:us-east-1:invalid:bucket/my-bucket")
+            .unwrap()
+            .is_valid();
+        assert!(!result);
     }
 
     #[test]
@@ -560,18 +565,28 @@ mod tests {
     fn test_invalid_arns() {
         let invalid_arns = vec![
             "not-an-arn",
-            "arn:aws:s3",                                            // Too few parts
-            "arn::s3:us-east-1:123456789012:bucket/my-bucket",       // Empty partition
-            "arn:aws::us-east-1:123456789012:bucket/my-bucket",      // Empty service
-            "arn:aws:s3:us-east-1:123456789012:",                    // Empty resource
-            "arn:aws:s3:us-east-1:invalid-account:bucket/my-bucket", // Invalid account ID
-            "arn:aws:s3:us-east-1:12345678901:bucket/my-bucket",     // Account ID too short
-            "arn:aws:s3:us-east-1:1234567890123:bucket/my-bucket",   // Account ID too long
+            "arn:aws:s3", // Too few parts
         ];
 
+        // These should fail parsing entirely (basic format issues)
         for invalid_arn in invalid_arns {
             let result = Arn::parse(invalid_arn);
-            assert!(result.is_err(), "ARN should be invalid: {}", invalid_arn);
+            assert!(result.is_err(), "ARN should fail parsing: {}", invalid_arn);
+        }
+
+        let validation_invalid_arns = vec![
+            "arn::s3:us-east-1:123456789012:bucket/my-bucket", // Empty partition
+            "arn:aws::us-east-1:123456789012:bucket/my-bucket", // Empty service
+            "arn:aws:s3:us-east-1:123456789012:",              // Empty resource
+            "arn:aws:s3:us-east-1:invalid-account:bucket/my-bucket", // Invalid account ID
+            "arn:aws:s3:us-east-1:12345678901:bucket/my-bucket", // Account ID too short
+            "arn:aws:s3:us-east-1:1234567890123:bucket/my-bucket", // Account ID too long
+        ];
+
+        // These should parse but fail validation
+        for invalid_arn in validation_invalid_arns {
+            let arn = Arn::parse(invalid_arn).expect(&format!("Should parse: {}", invalid_arn));
+            assert!(!arn.is_valid(), "ARN should be invalid: {}", invalid_arn);
         }
     }
 
