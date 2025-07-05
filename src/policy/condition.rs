@@ -3,7 +3,7 @@ use crate::{
     validation::{Validate, ValidationContext, ValidationResult, ValidationError, helpers},
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 /// Represents a single condition in an IAM policy
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -29,14 +29,21 @@ impl Serialize for ConditionBlock {
     where
         S: Serializer,
     {
-        // Convert the HashMap<Operator, ...> to HashMap<String, ...> for serialization
-        let string_map: HashMap<String, &HashMap<String, serde_json::Value>> = self
+        // Convert the HashMap<Operator, ...> to BTreeMap<String, ...> for ordered serialization
+        // Also, sort the keys within each condition (e.g., inside StringEquals)
+        let ordered_map: BTreeMap<String, BTreeMap<String, &serde_json::Value>> = self
             .conditions
             .iter()
-            .map(|(op, conditions)| (op.as_str().to_string(), conditions))
+            .map(|(op, conditions)| {
+                let inner_ordered: BTreeMap<String, &serde_json::Value> = conditions
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v))
+                    .collect();
+                (op.as_str().to_string(), inner_ordered)
+            })
             .collect();
 
-        string_map.serialize(serializer)
+        ordered_map.serialize(serializer)
     }
 }
 
@@ -226,7 +233,7 @@ impl Validate for Condition {
                     }
                     
                     // Check if operator supports multiple values
-                    if !self.operator.is_multivalued_operator() && arr.len() > 1 {
+                    if !self.operator.supports_multiple_values() && arr.len() > 1 {
                         results.push(Err(ValidationError::InvalidCondition {
                             operator: self.operator.as_str().to_string(),
                             key: self.key.clone(),

@@ -1,15 +1,13 @@
 {
   "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Action": [
-        "iam:GetContextKeysForCustomPolicy",
-        "iam:GetContextKeysForPrincipalPolicy",
-        "iam:SimulateCustomPolicy",
-        "iam:SimulatePrincipalPolicy"
-      ],
-      "Effect": "Allow",
-      "Resource": "*"
-    }
-  ]
+  "Statement": {
+    "Effect": "Allow",
+    "Action": [
+      "iam:GetContextKeysForCustomPolicy",
+      "iam:GetContextKeysForPrincipalPolicy",
+      "iam:SimulateCustomPolicy",
+      "iam:SimulatePrincipalPolicy"
+    ],
+    "Resource": "*"
+  }
 }

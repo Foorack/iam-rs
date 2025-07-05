@@ -230,4 +230,89 @@ mod tests {
         );
         assert!(short_id_policy.is_valid());
     }
+
+    #[test]
+    fn test_policy_roundtrip_from_files() {
+        // List filenames in the tests/policies directory
+        let policies_dir = "tests/policies";
+
+        let mut policy_files = std::fs::read_dir(policies_dir)
+            .unwrap_or_else(|e| {
+                panic!(
+                    "Failed to read policies directory '{}': {}",
+                    policies_dir, e
+                )
+            })
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                let path = entry.path();
+                if path.extension()? == "json" {
+                    Some(path)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        // Verify we actually found policy files to test
+        assert!(
+            !policy_files.is_empty(),
+            "No policy JSON files found in {}/",
+            policies_dir
+        );
+
+        // Sort files by name for consistent test order
+        // All files are called 1.json, 2.json, ..., 10.json, etc.
+        policy_files.sort_by_key(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .map(|s| s.split(".").next().unwrap().parse::<u32>().unwrap())
+                .map(|n| format!("{:010}", n))
+        });
+
+        println!(
+            "Testing {} policy files from {}/",
+            policy_files.len(),
+            policies_dir
+        );
+
+        for (index, policy_file) in policy_files.iter().enumerate() {
+            let filename = policy_file
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown");
+
+            println!("Testing policy #{}: {} ... ", index + 1, filename);
+
+            // Read the JSON file
+            let json_content = std::fs::read_to_string(&policy_file).unwrap_or_else(|e| {
+                panic!("Failed to read file '{}': {}", policy_file.display(), e)
+            });
+
+            // Parse the policy from JSON
+            let original_policy = IAMPolicy::from_json(&json_content)
+                .unwrap_or_else(|e| panic!("Failed to parse JSON policy: {:?}", e));
+
+            // Validate the parsed policy
+            assert!(
+                original_policy.is_valid(),
+                "Policy {} is invalid: {:?}",
+                filename,
+                original_policy.validate(&mut ValidationContext::new())
+            );
+
+            // Serialize the policy back to JSON
+            let serialized_json = original_policy
+                .to_json()
+                .unwrap_or_else(|e| panic!("Failed to serialize policy to JSON: {:?}", e));
+
+            // Compare the serialized JSON with the prettified original
+            assert_eq!(
+                serialized_json,
+                json_content.trim_end_matches("\n"),
+                "Serialized JSON does not match original prettified JSON for file '{}'",
+                filename
+            );
+        }
+    }
 }

@@ -4,25 +4,39 @@
     {
       "Sid": "DenyAllAwsReourcesOutsideAccountExceptAmazonS3",
       "Effect": "Deny",
-      "NotAction": ["s3:GetObject", "s3:PutObject", "s3:PutObjectAcl"],
+      "NotAction": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:PutObjectAcl"
+      ],
       "Resource": "*",
       "Condition": {
         "StringNotEquals": {
-          "aws:ResourceAccount": ["111122223333"]
+          "aws:ResourceAccount": [
+            "111122223333"
+          ]
         }
       }
     },
     {
       "Sid": "DenyAllS3ResourcesOutsideAccountExceptDataExchange",
       "Effect": "Deny",
-      "Action": ["s3:GetObject", "s3:PutObject", "s3:PutObjectAcl"],
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:PutObjectAcl"
+      ],
       "Resource": "*",
       "Condition": {
-        "StringNotEquals": {
-          "aws:ResourceAccount": ["111122223333"]
-        },
         "ForAllValues:StringNotEquals": {
-          "aws:CalledVia": ["dataexchange.amazonaws.com"]
+          "aws:CalledVia": [
+            "dataexchange.amazonaws.com"
+          ]
+        },
+        "StringNotEquals": {
+          "aws:ResourceAccount": [
+            "111122223333"
+          ]
         }
       }
     }

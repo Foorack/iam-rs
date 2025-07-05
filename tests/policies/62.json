@@ -4,12 +4,18 @@
     {
       "Effect": "Allow",
       "Action": "s3:*",
-      "Resource": ["arn:aws:s3:::bucket-name", "arn:aws:s3:::bucket-name/*"]
+      "Resource": [
+        "arn:aws:s3:::bucket-name",
+        "arn:aws:s3:::bucket-name/*"
+      ]
     },
     {
       "Effect": "Deny",
       "NotAction": "s3:*",
-      "NotResource": ["arn:aws:s3:::bucket-name", "arn:aws:s3:::bucket-name/*"]
+      "NotResource": [
+        "arn:aws:s3:::bucket-name",
+        "arn:aws:s3:::bucket-name/*"
+      ]
     }
   ]
 }

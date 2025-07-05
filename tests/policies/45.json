@@ -30,7 +30,11 @@
       "Resource": "arn:aws:iam::*:group/AllUsers",
       "Condition": {
         "StringNotEquals": {
-          "aws:username": ["srodriguez", "mjackson", "adesai"]
+          "aws:username": [
+            "srodriguez",
+            "mjackson",
+            "adesai"
+          ]
         }
       }
     }

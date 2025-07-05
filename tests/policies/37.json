@@ -17,13 +17,21 @@
     {
       "Sid": "AddTag",
       "Effect": "Allow",
-      "Action": ["iam:TagUser", "iam:TagRole"],
+      "Action": [
+        "iam:TagUser",
+        "iam:TagRole"
+      ],
       "Resource": "*",
       "Condition": {
-        "StringEquals": {
-          "aws:RequestTag/CostCenter": ["A-123", "B-456"]
+        "ForAllValues:StringEquals": {
+          "aws:TagKeys": "CostCenter"
         },
-        "ForAllValues:StringEquals": { "aws:TagKeys": "CostCenter" }
+        "StringEquals": {
+          "aws:RequestTag/CostCenter": [
+            "A-123",
+            "B-456"
+          ]
+        }
       }
     }
   ]

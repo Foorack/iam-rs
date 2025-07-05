@@ -29,7 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("✗ Policy is invalid");
     }
 
-    match valid_policy.validate_strict() {
+    match valid_policy.validate_result() {
         Ok(()) => println!("✓ Policy passes validation"),
         Err(e) => println!("✗ Policy fails validation: {}", e),
     }
@@ -42,7 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     if !invalid_policy.is_valid() {
         println!("✗ Policy is invalid (as expected)");
-        match invalid_policy.validate_strict() {
+        match invalid_policy.validate_result() {
             Err(e) => println!("   Validation errors: {}", e),
             Ok(()) => println!("   Unexpected: validation passed"),
         }
@@ -72,7 +72,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .with_resource(Resource::Single("*".to_string())),
         );
 
-    match multi_error_policy.validate_strict() {
+    match multi_error_policy.validate_result() {
         Err(ValidationError::Multiple(errors)) => {
             println!("✗ Found {} validation errors:", errors.len());
             for (i, error) in errors.iter().enumerate() {
@@ -104,7 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ),
         );
 
-    match comprehensive_policy.validate_strict() {
+    match comprehensive_policy.validate_result() {
         Ok(()) => println!("✓ Policy passes validation"),
         Err(e) => println!("✗ Policy fails validation: {}", e),
     }
@@ -122,7 +122,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "arn:aws:iam::123456789012:user/test".to_string(),
     ));
 
-    match logical_error_policy.validate_strict() {
+    match logical_error_policy.validate_result() {
         Err(e) => println!("✗ Logical error detected: {}", e),
         Ok(()) => println!("✓ Unexpected: validation passed"),
     }
@@ -133,7 +133,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     conflicting_statement.not_action = Some(Action::Single("s3:PutObject".to_string()));
     conflicting_statement.resource = Some(Resource::Single("*".to_string()));
 
-    match conflicting_statement.validate_strict() {
+    match conflicting_statement.validate_result() {
         Err(e) => println!("✗ Logical error detected: {}", e),
         Ok(()) => println!("✓ Unexpected: validation passed"),
     }
@@ -145,14 +145,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Invalid action
     let invalid_action = Action::Single("invalid-action".to_string());
-    match invalid_action.validate_strict() {
+    match invalid_action.validate_result() {
         Err(e) => println!("✗ Invalid action: {}", e),
         Ok(()) => println!("✓ Action is valid"),
     }
 
     // Invalid principal
     let invalid_principal = Principal::Single("invalid-principal".to_string());
-    match invalid_principal.validate_strict() {
+    match invalid_principal.validate_result() {
         Err(e) => println!("✗ Invalid principal: {}", e),
         Ok(()) => println!("✓ Principal is valid"),
     }

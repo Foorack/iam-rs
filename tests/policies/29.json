@@ -2,16 +2,17 @@
   "Version": "2012-10-17",
   "Statement": [
     {
+      "Effect": "Allow",
       "Action": [
         "ec2:DescribeInstances",
         "ec2:DescribeSecurityGroups",
         "ec2:DescribeSecurityGroupReferences",
         "ec2:DescribeStaleSecurityGroups"
       ],
-      "Resource": "*",
-      "Effect": "Allow"
+      "Resource": "*"
     },
     {
+      "Effect": "Allow",
       "Action": [
         "ec2:AuthorizeSecurityGroupEgress",
         "ec2:AuthorizeSecurityGroupIngress",
@@ -23,8 +24,7 @@
       "Resource": [
         "arn:aws:ec2:*:*:instance/i-instance-id",
         "arn:aws:ec2:*:*:security-group/sg-security-group-id"
-      ],
-      "Effect": "Allow"
+      ]
     }
   ]
 }

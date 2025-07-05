@@ -4,13 +4,20 @@
     {
       "Sid": "AllowServices",
       "Effect": "Allow",
-      "Action": ["s3:*", "cloudwatch:*", "ec2:*"],
+      "Action": [
+        "s3:*",
+        "cloudwatch:*",
+        "ec2:*"
+      ],
       "Resource": "*"
     },
     {
       "Sid": "AllowIAMConsoleForCredentials",
       "Effect": "Allow",
-      "Action": ["iam:ListUsers", "iam:GetAccountPasswordPolicy"],
+      "Action": [
+        "iam:ListUsers",
+        "iam:GetAccountPasswordPolicy"
+      ],
       "Resource": "*"
     },
     {
@@ -22,13 +29,18 @@
         "iam:GetUser",
         "iam:*LoginProfile*"
       ],
-      "Resource": ["arn:aws:iam::*:user/${aws:username}"]
+      "Resource": [
+        "arn:aws:iam::*:user/${aws:username}"
+      ]
     },
     {
       "Sid": "DenyS3Logs",
       "Effect": "Deny",
       "Action": "s3:*",
-      "Resource": ["arn:aws:s3:::logs", "arn:aws:s3:::logs/*"]
+      "Resource": [
+        "arn:aws:s3:::logs",
+        "arn:aws:s3:::logs/*"
+      ]
     },
     {
       "Sid": "DenyEC2Production",

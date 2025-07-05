@@ -29,7 +29,10 @@
     {
       "Sid": "AllowUsersToSeeStatsOnIAMConsoleDashboard",
       "Effect": "Allow",
-      "Action": ["iam:GetAccount*", "iam:ListAccount*"],
+      "Action": [
+        "iam:GetAccount*",
+        "iam:ListAccount*"
+      ],
       "Resource": "*"
     }
   ]

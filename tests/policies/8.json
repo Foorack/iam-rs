@@ -4,16 +4,23 @@
     {
       "Sid": "EnableDisableHongKong",
       "Effect": "Allow",
-      "Action": ["account:EnableRegion", "account:DisableRegion"],
+      "Action": [
+        "account:EnableRegion",
+        "account:DisableRegion"
+      ],
       "Resource": "*",
       "Condition": {
-        "StringEquals": { "account:TargetRegion": "ap-east-1" }
+        "StringEquals": {
+          "account:TargetRegion": "ap-east-1"
+        }
       }
     },
     {
       "Sid": "ViewConsole",
       "Effect": "Allow",
-      "Action": ["account:ListRegions"],
+      "Action": [
+        "account:ListRegions"
+      ],
       "Resource": "*"
     }
   ]

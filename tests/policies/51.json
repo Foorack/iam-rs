@@ -17,7 +17,9 @@
       "Action": "iam:GenerateOrganizationsAccessReport",
       "Resource": "*",
       "Condition": {
-        "StringEquals": { "iam:OrganizationsPolicyId": "p-policy123" }
+        "StringEquals": {
+          "iam:OrganizationsPolicyId": "p-policy123"
+        }
       }
     }
   ]

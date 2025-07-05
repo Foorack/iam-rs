@@ -4,13 +4,18 @@
     {
       "Sid": "AllowListActions",
       "Effect": "Allow",
-      "Action": ["iam:ListUsers", "iam:ListVirtualMFADevices"],
+      "Action": [
+        "iam:ListUsers",
+        "iam:ListVirtualMFADevices"
+      ],
       "Resource": "*"
     },
     {
       "Sid": "AllowUserToCreateVirtualMFADevice",
       "Effect": "Allow",
-      "Action": ["iam:CreateVirtualMFADevice"],
+      "Action": [
+        "iam:CreateVirtualMFADevice"
+      ],
       "Resource": "arn:aws:iam::*:mfa/*"
     },
     {
@@ -27,8 +32,12 @@
     {
       "Sid": "AllowUserToDeactivateTheirOwnMFAOnlyWhenUsingMFA",
       "Effect": "Allow",
-      "Action": ["iam:DeactivateMFADevice"],
-      "Resource": ["arn:aws:iam::*:user/${aws:username}"],
+      "Action": [
+        "iam:DeactivateMFADevice"
+      ],
+      "Resource": [
+        "arn:aws:iam::*:user/${aws:username}"
+      ],
       "Condition": {
         "Bool": {
           "aws:MultiFactorAuthPresent": "true"

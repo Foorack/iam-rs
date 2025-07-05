@@ -22,7 +22,11 @@
       "Resource": "arn:aws:s3:::amzn-s3-demo-bucket",
       "Condition": {
         "StringLike": {
-          "s3:prefix": ["", "home/", "home/${aws:userid}/*"]
+          "s3:prefix": [
+            "",
+            "home/",
+            "home/${aws:userid}/*"
+          ]
         }
       }
     },

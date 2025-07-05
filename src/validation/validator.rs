@@ -137,7 +137,7 @@ pub trait Validate {
     }
 
     /// Validate with detailed errors (same as regular validation)
-    fn validate_strict(&self) -> ValidationResult {
+    fn validate_result(&self) -> ValidationResult {
         let mut context = ValidationContext::new();
         self.validate(&mut context)
     }

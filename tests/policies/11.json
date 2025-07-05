@@ -4,13 +4,19 @@
     {
       "Sid": "AllowViewAccountInfo",
       "Effect": "Allow",
-      "Action": ["iam:GetAccountPasswordPolicy", "iam:GetAccountSummary"],
+      "Action": [
+        "iam:GetAccountPasswordPolicy",
+        "iam:GetAccountSummary"
+      ],
       "Resource": "*"
     },
     {
       "Sid": "AllowManageOwnPasswords",
       "Effect": "Allow",
-      "Action": ["iam:ChangePassword", "iam:GetUser"],
+      "Action": [
+        "iam:ChangePassword",
+        "iam:GetUser"
+      ],
       "Resource": "arn:aws:iam::*:user/${aws:username}"
     },
     {

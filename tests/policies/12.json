@@ -10,7 +10,9 @@
     {
       "Sid": "AllowManageOwnVirtualMFADevice",
       "Effect": "Allow",
-      "Action": ["iam:CreateVirtualMFADevice"],
+      "Action": [
+        "iam:CreateVirtualMFADevice"
+      ],
       "Resource": "arn:aws:iam::*:mfa/*"
     },
     {
@@ -40,7 +42,9 @@
       ],
       "Resource": "*",
       "Condition": {
-        "BoolIfExists": { "aws:MultiFactorAuthPresent": "false" }
+        "BoolIfExists": {
+          "aws:MultiFactorAuthPresent": "false"
+        }
       }
     }
   ]

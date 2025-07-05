@@ -10,10 +10,15 @@
     {
       "Sid": "DenyStopAndTerminateWhenMFAIsNotPresent",
       "Effect": "Deny",
-      "Action": ["ec2:StopInstances", "ec2:TerminateInstances"],
+      "Action": [
+        "ec2:StopInstances",
+        "ec2:TerminateInstances"
+      ],
       "Resource": "*",
       "Condition": {
-        "BoolIfExists": { "aws:MultiFactorAuthPresent": false }
+        "BoolIfExists": {
+          "aws:MultiFactorAuthPresent": false
+        }
       }
     }
   ]

@@ -1,15 +1,13 @@
 {
   "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "FullAccessPasswordPolicy",
-      "Effect": "Allow",
-      "Action": [
-        "iam:GetAccountPasswordPolicy",
-        "iam:DeleteAccountPasswordPolicy",
-        "iam:UpdateAccountPasswordPolicy"
-      ],
-      "Resource": "*"
-    }
-  ]
+  "Statement": {
+    "Sid": "FullAccessPasswordPolicy",
+    "Effect": "Allow",
+    "Action": [
+      "iam:GetAccountPasswordPolicy",
+      "iam:DeleteAccountPasswordPolicy",
+      "iam:UpdateAccountPasswordPolicy"
+    ],
+    "Resource": "*"
+  }
 }

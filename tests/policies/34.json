@@ -1,14 +1,14 @@
 {
   "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "AssumeTaggedRole",
-      "Effect": "Allow",
-      "Action": "sts:AssumeRole",
-      "Resource": "*",
-      "Condition": {
-        "StringEquals": { "iam:ResourceTag/Project": "ExampleCorpABC" }
+  "Statement": {
+    "Sid": "AssumeTaggedRole",
+    "Effect": "Allow",
+    "Action": "sts:AssumeRole",
+    "Resource": "*",
+    "Condition": {
+      "StringEquals": {
+        "iam:ResourceTag/Project": "ExampleCorpABC"
       }
     }
-  ]
+  }
 }

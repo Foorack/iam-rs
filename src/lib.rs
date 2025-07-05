@@ -257,7 +257,7 @@ mod tests {
             );
 
         assert!(valid_policy.is_valid());
-        assert!(valid_policy.validate_strict().is_ok());
+        assert!(valid_policy.validate_result().is_ok());
 
         // Test invalid policy - missing action
         let mut invalid_policy = IAMPolicy::new();
@@ -275,7 +275,7 @@ mod tests {
 
         assert!(!complex_invalid_policy.is_valid());
 
-        let validation_result = complex_invalid_policy.validate_strict();
+        let validation_result = complex_invalid_policy.validate_result();
         assert!(validation_result.is_err());
 
         let error = validation_result.unwrap_err();
@@ -314,7 +314,7 @@ mod tests {
         // Should pass basic validation (lenient)
         // Should fail validation due to type mismatch
         assert!(!invalid_condition_statement.is_valid());
-        assert!(invalid_condition_statement.validate_strict().is_err());
+        assert!(invalid_condition_statement.validate_result().is_err());
     }
 
     #[test]

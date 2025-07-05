@@ -19,13 +19,17 @@
       "Sid": "ListObjectsInBucket",
       "Effect": "Allow",
       "Action": "s3:ListBucket",
-      "Resource": ["arn:aws:s3:::amzn-s3-demo-bucket"]
+      "Resource": [
+        "arn:aws:s3:::amzn-s3-demo-bucket"
+      ]
     },
     {
       "Sid": "AllObjectActions",
       "Effect": "Allow",
       "Action": "s3:*Object",
-      "Resource": ["arn:aws:s3:::amzn-s3-demo-bucket/*"]
+      "Resource": [
+        "arn:aws:s3:::amzn-s3-demo-bucket/*"
+      ]
     }
   ]
 }

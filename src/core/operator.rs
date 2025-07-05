@@ -434,6 +434,16 @@ impl Operator {
         )
     }
 
+    /// Returns true if this operator supports multiple values (arrays)
+    /// Most operators in AWS IAM can accept arrays, not just ForAllValues/ForAnyValue
+    pub fn supports_multiple_values(&self) -> bool {
+        // Most operators support multiple values except for these specific ones
+        !matches!(
+            self,
+            Operator::Null | Operator::Bool | Operator::BoolIfExists
+        )
+    }
+
     /// Returns the operator category as a string
     pub fn category(&self) -> &'static str {
         if self.is_string_operator() {
@@ -684,6 +694,19 @@ mod tests {
         assert!(Operator::ForAllValuesStringEquals.is_multivalued_operator());
         assert!(Operator::StringEqualsIfExists.is_if_exists_operator());
         assert!(Operator::StringNotEquals.is_negated_operator());
+
+        // Test multiple values support
+        assert!(Operator::StringEquals.supports_multiple_values());
+        assert!(Operator::StringNotEquals.supports_multiple_values());
+        assert!(Operator::NumericEquals.supports_multiple_values());
+        assert!(Operator::DateEquals.supports_multiple_values());
+        assert!(Operator::IpAddress.supports_multiple_values());
+        assert!(Operator::ArnEquals.supports_multiple_values());
+
+        // These should not support multiple values
+        assert!(!Operator::Bool.supports_multiple_values());
+        assert!(!Operator::BoolIfExists.supports_multiple_values());
+        assert!(!Operator::Null.supports_multiple_values());
     }
 
     #[test]

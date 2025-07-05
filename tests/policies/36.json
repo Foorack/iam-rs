@@ -4,7 +4,10 @@
     {
       "Sid": "ListTagsForAllUsers",
       "Effect": "Allow",
-      "Action": ["iam:ListUserTags", "iam:ListUsers"],
+      "Action": [
+        "iam:ListUserTags",
+        "iam:ListUsers"
+      ],
       "Resource": "*"
     },
     {
@@ -13,15 +16,17 @@
       "Action": "iam:TagUser",
       "Resource": "*",
       "Condition": {
+        "ForAllValues:StringEquals": {
+          "aws:TagKeys": "Department"
+        },
         "StringEquals": {
-          "iam:ResourceTag/JobFunction": "Manager",
           "aws:RequestTag/Department": [
             "Marketing",
             "Development",
             "QualityAssurance"
-          ]
-        },
-        "ForAllValues:StringEquals": { "aws:TagKeys": "Department" }
+          ],
+          "iam:ResourceTag/JobFunction": "Manager"
+        }
       }
     }
   ]

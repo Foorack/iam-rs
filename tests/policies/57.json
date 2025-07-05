@@ -2,53 +2,73 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Action": ["rds:Describe*", "rds:List*"],
       "Effect": "Allow",
+      "Action": [
+        "rds:Describe*",
+        "rds:List*"
+      ],
       "Resource": "*"
     },
     {
+      "Effect": "Allow",
       "Action": [
         "rds:DeleteDBInstance",
         "rds:RebootDBInstance",
         "rds:ModifyDBInstance"
       ],
-      "Effect": "Allow",
       "Resource": "*",
       "Condition": {
-        "StringEqualsIgnoreCase": { "rds:db-tag/Owner": "${aws:username}" }
+        "StringEqualsIgnoreCase": {
+          "rds:db-tag/Owner": "${aws:username}"
+        }
       }
     },
     {
-      "Action": ["rds:ModifyOptionGroup", "rds:DeleteOptionGroup"],
       "Effect": "Allow",
+      "Action": [
+        "rds:ModifyOptionGroup",
+        "rds:DeleteOptionGroup"
+      ],
       "Resource": "*",
       "Condition": {
-        "StringEqualsIgnoreCase": { "rds:og-tag/Owner": "${aws:username}" }
+        "StringEqualsIgnoreCase": {
+          "rds:og-tag/Owner": "${aws:username}"
+        }
       }
     },
     {
-      "Action": ["rds:ModifyDBParameterGroup", "rds:ResetDBParameterGroup"],
       "Effect": "Allow",
+      "Action": [
+        "rds:ModifyDBParameterGroup",
+        "rds:ResetDBParameterGroup"
+      ],
       "Resource": "*",
       "Condition": {
-        "StringEqualsIgnoreCase": { "rds:pg-tag/Owner": "${aws:username}" }
+        "StringEqualsIgnoreCase": {
+          "rds:pg-tag/Owner": "${aws:username}"
+        }
       }
     },
     {
+      "Effect": "Allow",
       "Action": [
         "rds:AuthorizeDBSecurityGroupIngress",
         "rds:RevokeDBSecurityGroupIngress",
         "rds:DeleteDBSecurityGroup"
       ],
-      "Effect": "Allow",
       "Resource": "*",
       "Condition": {
-        "StringEqualsIgnoreCase": { "rds:secgrp-tag/Owner": "${aws:username}" }
+        "StringEqualsIgnoreCase": {
+          "rds:secgrp-tag/Owner": "${aws:username}"
+        }
       }
     },
     {
-      "Action": ["rds:DeleteDBSnapshot", "rds:RestoreDBInstanceFromDBSnapshot"],
       "Effect": "Allow",
+      "Action": [
+        "rds:DeleteDBSnapshot",
+        "rds:RestoreDBInstanceFromDBSnapshot"
+      ],
       "Resource": "*",
       "Condition": {
         "StringEqualsIgnoreCase": {
@@ -57,24 +77,31 @@
       }
     },
     {
-      "Action": ["rds:ModifyDBSubnetGroup", "rds:DeleteDBSubnetGroup"],
       "Effect": "Allow",
+      "Action": [
+        "rds:ModifyDBSubnetGroup",
+        "rds:DeleteDBSubnetGroup"
+      ],
       "Resource": "*",
       "Condition": {
-        "StringEqualsIgnoreCase": { "rds:subgrp-tag/Owner": "${aws:username}" }
+        "StringEqualsIgnoreCase": {
+          "rds:subgrp-tag/Owner": "${aws:username}"
+        }
       }
     },
     {
+      "Effect": "Allow",
       "Action": [
         "rds:ModifyEventSubscription",
         "rds:AddSourceIdentifierToSubscription",
         "rds:RemoveSourceIdentifierFromSubscription",
         "rds:DeleteEventSubscription"
       ],
-      "Effect": "Allow",
       "Resource": "*",
       "Condition": {
-        "StringEqualsIgnoreCase": { "rds:es-tag/Owner": "${aws:username}" }
+        "StringEqualsIgnoreCase": {
+          "rds:es-tag/Owner": "${aws:username}"
+        }
       }
     }
   ]

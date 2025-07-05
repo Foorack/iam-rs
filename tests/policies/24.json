@@ -21,7 +21,9 @@
         "ec2:UpdateSecurityGroupRuleDescriptionsIngress",
         "ec2:UpdateSecurityGroupRuleDescriptionsEgress"
       ],
-      "Resource": ["arn:aws:ec2:region:111122223333:security-group/*"],
+      "Resource": [
+        "arn:aws:ec2:region:111122223333:security-group/*"
+      ],
       "Condition": {
         "StringEquals": {
           "aws:ResourceTag/Department": "Test"
@@ -30,8 +32,12 @@
     },
     {
       "Effect": "Allow",
-      "Action": ["ec2:ModifySecurityGroupRules"],
-      "Resource": ["arn:aws:ec2:region:111122223333:security-group-rule/*"]
+      "Action": [
+        "ec2:ModifySecurityGroupRules"
+      ],
+      "Resource": [
+        "arn:aws:ec2:region:111122223333:security-group-rule/*"
+      ]
     }
   ]
 }

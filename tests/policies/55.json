@@ -4,12 +4,18 @@
     {
       "Effect": "Allow",
       "Action": "rds:*",
-      "Resource": ["arn:aws:rds:region:*:*"]
+      "Resource": [
+        "arn:aws:rds:region:*:*"
+      ]
     },
     {
       "Effect": "Allow",
-      "Action": ["rds:Describe*"],
-      "Resource": ["*"]
+      "Action": [
+        "rds:Describe*"
+      ],
+      "Resource": [
+        "*"
+      ]
     }
   ]
 }
