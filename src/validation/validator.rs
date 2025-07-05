@@ -438,7 +438,7 @@ mod tests {
 
         assert!(valid_statement.is_valid());
 
-        // Invalid condition - numeric operator with string value (strict mode)
+        // Invalid condition - numeric operator with string value
         let invalid_condition_statement = IAMStatement::new(Effect::Allow)
             .with_action(Action::Single("s3:GetObject".to_string()))
             .with_resource(Resource::Single("*".to_string()))

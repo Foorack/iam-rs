@@ -244,7 +244,7 @@ impl Validate for Condition {
                 _ => {} // Single values are generally OK
             }
 
-            // Validate operator-specific rules (always strict)
+            // Validate operator-specific rules
             match self.operator.category() {
                     "String" => {
                         // String operators should have string values

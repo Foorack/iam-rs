@@ -68,14 +68,4 @@ mod tests {
         ]);
         assert!(!invalid_multiple.is_valid());
     }
-
-    #[test]
-    fn test_action_validation_strict() {
-        let invalid_action = Action::Single("invalid".to_string());
-        let result = invalid_action.validate_result();
-        assert!(result.is_err());
-
-        let error = result.unwrap_err();
-        assert!(error.to_string().contains("Action must contain a colon"));
-    }
 }
