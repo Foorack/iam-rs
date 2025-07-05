@@ -345,39 +345,19 @@ impl PolicyEvaluator {
     ) -> Result<bool, EvaluationError> {
         match principal {
             Principal::Wildcard => Ok(true),
-            Principal::Single(p) => {
-                if p == "*" || p == request_principal {
-                    Ok(true)
-                } else if p.starts_with("arn:") {
-                    // ARN-based principal matching
-                    let matcher = ArnMatcher::from_pattern(p)
-                        .map_err(|e| EvaluationError::InvalidArn(e.to_string()))?;
-                    matcher
-                        .matches(request_principal)
-                        .map_err(|e| EvaluationError::InvalidArn(e.to_string()))
-                } else {
-                    Ok(false)
-                }
-            }
             Principal::Mapped(map) => {
                 // Handle mapped principals (e.g., {"AWS": "arn:aws:iam::123456789012:user/test"})
                 for values in map.values() {
                     match values {
                         serde_json::Value::String(s) => {
-                            if self.principal_matches(
-                                &Principal::Single(s.clone()),
-                                request_principal,
-                            )? {
+                            if self.principal_string_matches(s, request_principal)? {
                                 return Ok(true);
                             }
                         }
                         serde_json::Value::Array(arr) => {
                             for val in arr {
                                 if let serde_json::Value::String(s) = val {
-                                    if self.principal_matches(
-                                        &Principal::Single(s.clone()),
-                                        request_principal,
-                                    )? {
+                                    if self.principal_string_matches(s, request_principal)? {
                                         return Ok(true);
                                     }
                                 }
@@ -388,6 +368,26 @@ impl PolicyEvaluator {
                 }
                 Ok(false)
             }
+        }
+    }
+
+    /// Check if a principal string matches the request principal
+    fn principal_string_matches(
+        &self,
+        principal_str: &str,
+        request_principal: &str,
+    ) -> Result<bool, EvaluationError> {
+        if principal_str == "*" || principal_str == request_principal {
+            Ok(true)
+        } else if principal_str.starts_with("arn:") {
+            // ARN-based principal matching
+            let matcher = ArnMatcher::from_pattern(principal_str)
+                .map_err(|e| EvaluationError::InvalidArn(e.to_string()))?;
+            matcher
+                .matches(request_principal)
+                .map_err(|e| EvaluationError::InvalidArn(e.to_string()))
+        } else {
+            Ok(false)
         }
     }
 

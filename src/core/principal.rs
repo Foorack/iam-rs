@@ -13,8 +13,6 @@ use std::collections::HashMap;
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Principal {
-    /// A single principal (e.g., "AWS:arn:aws:iam::123456789012:user/username")
-    Single(String),
     /// Wildcard principal (*)
     Wildcard,
     /// Principal with service mapping (e.g., {"AWS": "arn:aws:iam::123456789012:user/username"})
@@ -25,7 +23,6 @@ impl Validate for Principal {
     fn validate(&self, context: &mut ValidationContext) -> ValidationResult {
         context.with_segment("Principal", |ctx| {
             match self {
-                Principal::Single(principal) => helpers::validate_principal(principal, ctx),
                 Principal::Wildcard => {
                     // Wildcard is always valid
                     Ok(())
@@ -117,12 +114,6 @@ mod tests {
 
     #[test]
     fn test_principal_validation() {
-        let valid_single = Principal::Single("arn:aws:iam::123456789012:user/alice".to_string());
-        assert!(valid_single.is_valid());
-
-        let valid_wildcard = Principal::Wildcard;
-        assert!(valid_wildcard.is_valid());
-
         let mut valid_mapped = HashMap::new();
         valid_mapped.insert(
             "AWS".to_string(),
@@ -131,8 +122,21 @@ mod tests {
         let valid_mapped = Principal::Mapped(valid_mapped);
         assert!(valid_mapped.is_valid());
 
-        let invalid_single = Principal::Single("invalid-principal".to_string());
-        assert!(!invalid_single.is_valid());
+        let valid_wildcard = Principal::Wildcard;
+        assert!(valid_wildcard.is_valid());
+
+        let mut another_valid_mapped = HashMap::new();
+        another_valid_mapped.insert(
+            "AWS".to_string(),
+            json!("arn:aws:iam::123456789012:user/alice"),
+        );
+        let another_valid_mapped = Principal::Mapped(another_valid_mapped);
+        assert!(another_valid_mapped.is_valid());
+
+        let mut invalid_mapped = HashMap::new();
+        invalid_mapped.insert("AWS".to_string(), json!("invalid-principal"));
+        let invalid_mapped = Principal::Mapped(invalid_mapped);
+        assert!(!invalid_mapped.is_valid());
 
         let empty_mapped = Principal::Mapped(HashMap::new());
         assert!(!empty_mapped.is_valid());

@@ -118,9 +118,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut logical_error_policy = IAMStatement::new(Effect::Allow);
     logical_error_policy.action = Some(Action::Single("s3:GetObject".to_string()));
     logical_error_policy.resource = Some(Resource::Single("*".to_string()));
-    logical_error_policy.not_principal = Some(Principal::Single(
-        "arn:aws:iam::123456789012:user/test".to_string(),
-    ));
+    let mut principal_map = std::collections::HashMap::new();
+    principal_map.insert(
+        "AWS".to_string(),
+        serde_json::json!("arn:aws:iam::123456789012:user/test"),
+    );
+    logical_error_policy.not_principal = Some(Principal::Mapped(principal_map));
 
     match logical_error_policy.validate_result() {
         Err(e) => println!("✗ Logical error detected: {}", e),
@@ -151,7 +154,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Invalid principal
-    let invalid_principal = Principal::Single("invalid-principal".to_string());
+    let mut invalid_map = std::collections::HashMap::new();
+    invalid_map.insert("AWS".to_string(), serde_json::json!("invalid-principal"));
+    let invalid_principal = Principal::Mapped(invalid_map);
     match invalid_principal.validate_result() {
         Err(e) => println!("✗ Invalid principal: {}", e),
         Ok(()) => println!("✓ Principal is valid"),

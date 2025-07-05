@@ -481,30 +481,42 @@ mod tests {
         let mut invalid_not_principal = IAMStatement::new(Effect::Allow);
         invalid_not_principal.action = Some(Action::Single("s3:GetObject".to_string()));
         invalid_not_principal.resource = Some(Resource::Single("*".to_string()));
-        invalid_not_principal.not_principal = Some(Principal::Single(
-            "arn:aws:iam::123456789012:user/test".to_string(),
-        ));
+        let mut principal_map = std::collections::HashMap::new();
+        principal_map.insert(
+            "AWS".to_string(),
+            serde_json::json!("arn:aws:iam::123456789012:user/test"),
+        );
+        invalid_not_principal.not_principal = Some(Principal::Mapped(principal_map));
         assert!(!invalid_not_principal.is_valid());
 
         // NotPrincipal with Deny effect (valid)
         let mut valid_not_principal = IAMStatement::new(Effect::Deny);
         valid_not_principal.action = Some(Action::Single("s3:GetObject".to_string()));
         valid_not_principal.resource = Some(Resource::Single("*".to_string()));
-        valid_not_principal.not_principal = Some(Principal::Single(
-            "arn:aws:iam::123456789012:user/test".to_string(),
-        ));
+        let mut principal_map = std::collections::HashMap::new();
+        principal_map.insert(
+            "AWS".to_string(),
+            serde_json::json!("arn:aws:iam::123456789012:user/test"),
+        );
+        valid_not_principal.not_principal = Some(Principal::Mapped(principal_map));
         assert!(valid_not_principal.is_valid());
 
         // Both Principal and NotPrincipal (invalid)
         let mut conflicting_principal = IAMStatement::new(Effect::Deny);
         conflicting_principal.action = Some(Action::Single("s3:GetObject".to_string()));
         conflicting_principal.resource = Some(Resource::Single("*".to_string()));
-        conflicting_principal.principal = Some(Principal::Single(
-            "arn:aws:iam::123456789012:user/test".to_string(),
-        ));
-        conflicting_principal.not_principal = Some(Principal::Single(
-            "arn:aws:iam::123456789012:user/other".to_string(),
-        ));
+        let mut principal_map1 = std::collections::HashMap::new();
+        principal_map1.insert(
+            "AWS".to_string(),
+            serde_json::json!("arn:aws:iam::123456789012:user/test"),
+        );
+        conflicting_principal.principal = Some(Principal::Mapped(principal_map1));
+        let mut principal_map2 = std::collections::HashMap::new();
+        principal_map2.insert(
+            "AWS".to_string(),
+            serde_json::json!("arn:aws:iam::123456789012:user/other"),
+        );
+        conflicting_principal.not_principal = Some(Principal::Mapped(principal_map2));
         assert!(!conflicting_principal.is_valid());
     }
 
@@ -562,9 +574,12 @@ mod tests {
         let mut invalid_not_principal = IAMStatement::new(Effect::Allow);
         invalid_not_principal.action = Some(Action::Single("s3:GetObject".to_string()));
         invalid_not_principal.resource = Some(Resource::Single("*".to_string()));
-        invalid_not_principal.not_principal = Some(Principal::Single(
-            "arn:aws:iam::123456789012:user/test".to_string(),
-        ));
+        let mut principal_map = std::collections::HashMap::new();
+        principal_map.insert(
+            "AWS".to_string(),
+            serde_json::json!("arn:aws:iam::123456789012:user/test"),
+        );
+        invalid_not_principal.not_principal = Some(Principal::Mapped(principal_map));
 
         assert!(!invalid_not_principal.is_valid());
 
@@ -580,9 +595,12 @@ mod tests {
         let mut valid_not_principal = IAMStatement::new(Effect::Deny);
         valid_not_principal.action = Some(Action::Single("*".to_string()));
         valid_not_principal.resource = Some(Resource::Single("*".to_string()));
-        valid_not_principal.not_principal = Some(Principal::Single(
-            "arn:aws:iam::123456789012:user/admin".to_string(),
-        ));
+        let mut principal_map = std::collections::HashMap::new();
+        principal_map.insert(
+            "AWS".to_string(),
+            serde_json::json!("arn:aws:iam::123456789012:user/admin"),
+        );
+        valid_not_principal.not_principal = Some(Principal::Mapped(principal_map));
 
         assert!(valid_not_principal.is_valid());
     }
