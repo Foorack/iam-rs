@@ -1,7 +1,7 @@
 /// Policy evaluation engine and authorization logic
-pub mod context;
-pub mod engine;
-pub mod matcher;
+mod context;
+mod engine;
+mod matcher;
 
 // Re-export evaluation types
 pub use context::{ContextValue, RequestContext};

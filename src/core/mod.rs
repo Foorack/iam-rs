@@ -1,11 +1,11 @@
 /// Core IAM types and fundamental data structures
-pub mod action;
-pub mod arn;
-pub mod effect;
-pub mod operator;
-pub mod principal;
-pub mod resource;
-pub mod version;
+mod action;
+mod arn;
+mod effect;
+mod operator;
+mod principal;
+mod resource;
+mod version;
 
 // Re-export core types
 pub use action::Action;

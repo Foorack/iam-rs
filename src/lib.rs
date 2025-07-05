@@ -1,8 +1,8 @@
 // Module organization
-pub mod core;
-pub mod evaluation;
-pub mod policy;
-pub mod validation;
+mod core;
+mod evaluation;
+mod policy;
+mod validation;
 
 // Re-export all the main types for easy access
 pub use core::*;

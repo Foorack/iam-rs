@@ -785,7 +785,7 @@ impl PolicyEvaluator {
     /// Simple wildcard matching for actions and strings
     fn wildcard_match(&self, text: &str, pattern: &str) -> bool {
         // Use the ARN wildcard matching logic
-        crate::core::arn::Arn::wildcard_match(text, pattern)
+        crate::Arn::wildcard_match(text, pattern)
     }
 }
 
