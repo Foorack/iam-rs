@@ -57,13 +57,7 @@ impl std::error::Error for ArnError {}
 
 impl Arn {
     /// Parse an ARN string into an Arn struct
-    /// If allow_wildcards is true, wildcards in account_id and other fields are allowed
     pub fn parse(arn_str: &str) -> Result<Self, ArnError> {
-        Self::parse_with_options(arn_str, false)
-    }
-
-    /// Parse an ARN string with options for wildcard handling
-    pub fn parse_with_options(arn_str: &str, allow_wildcards: bool) -> Result<Self, ArnError> {
         let parts: Vec<&str> = arn_str.split(':').collect();
 
         if parts.len() < 6 {
@@ -87,11 +81,8 @@ impl Arn {
         let region = parts[3].to_string();
         let account_id = parts[4].to_string();
 
-        // Validate account ID format (should be 12 digits or empty for some services)
-        // Allow wildcards if explicitly enabled
-        if !account_id.is_empty()
-            && !Self::is_valid_account_id_or_pattern(&account_id, allow_wildcards)
-        {
+        // Validate account ID format
+        if !account_id.is_empty() && !Self::is_valid_account_id(&account_id) {
             return Err(ArnError::InvalidAccountId(account_id));
         }
 
@@ -111,17 +102,11 @@ impl Arn {
     }
 
     /// Validate if a string is a valid account ID (12 digits) or a wildcard pattern
-    fn is_valid_account_id_or_pattern(account_id: &str, allow_wildcards: bool) -> bool {
-        if allow_wildcards && (account_id.contains('*') || account_id.contains('?')) {
-            // If wildcards are allowed and present, we're more lenient
-            true
-        } else {
-            Self::is_valid_account_id(account_id)
-        }
-    }
-
-    /// Validate if a string is a valid account ID (12 digits)
     fn is_valid_account_id(account_id: &str) -> bool {
+        // If wildcards are present, we're more lenient
+        if account_id.contains('*') || account_id.contains('?') {
+            return true;
+        }
         account_id.len() == 12 && account_id.chars().all(|c| c.is_ascii_digit())
     }
 
@@ -136,7 +121,7 @@ impl Arn {
     /// Check if this ARN matches another ARN or pattern
     /// Supports wildcards (* and ?) in any component except service
     pub fn matches(&self, pattern: &str) -> Result<bool, ArnError> {
-        let pattern_arn = Arn::parse_with_options(pattern, true)?;
+        let pattern_arn = Arn::parse(pattern)?;
 
         // Service cannot contain wildcards
         if pattern_arn.service.contains('*') || pattern_arn.service.contains('?') {
@@ -221,11 +206,12 @@ impl Arn {
             return false;
         }
 
-        // Validate partition (common AWS partitions)
-        if !matches!(
-            self.partition.as_str(),
-            "aws" | "aws-cn" | "aws-us-gov" | "aws-iso" | "aws-iso-b"
-        ) {
+        // Validate partition (alphanumeric and dash, no special characters)
+        if !self
+            .partition
+            .chars()
+            .all(|c| c.is_alphanumeric() || c == '-')
+        {
             return false;
         }
 
@@ -419,7 +405,7 @@ mod tests {
         assert!(result.is_err());
 
         // Test that wildcards are allowed with wildcard parsing
-        let arn = Arn::parse_with_options("arn:aws:s3:*:*:bucket/*", true).unwrap();
+        let arn = Arn::parse("arn:aws:s3:*:*:bucket/*").unwrap();
         assert_eq!(arn.region, "*");
         assert_eq!(arn.account_id, "*");
         assert_eq!(arn.resource, "bucket/*");
@@ -589,12 +575,10 @@ mod tests {
         let arns: Vec<String> =
             serde_json::from_str(&json_content).expect("Failed to parse JSON content");
 
+        // Check if we have any ARNs to test
+        assert!(!arns.is_empty(), "No ARNs found in tests/arns.json");
+
         println!("Testing {} ARNs from tests/arns.json", arns.len());
-
-        let mut successful_parses = 0;
-        let mut failed_parses = 0;
-        let mut validation_failures = 0;
-
         for (index, arn_string) in arns.iter().enumerate() {
             // Trim any whitespace (some ARNs in the JSON might have trailing spaces)
             let arn_string = arn_string.trim();
@@ -603,84 +587,49 @@ mod tests {
                 continue;
             }
 
-            print!("Testing ARN {}: {} ... ", index + 1, arn_string);
+            println!("Testing ARN {}: {} ", index + 1, arn_string);
+            let arn = Arn::parse(arn_string).unwrap();
 
-            match Arn::parse(arn_string) {
-                Ok(arn) => {
-                    successful_parses += 1;
+            // Verify the ARN can be serialized back to string
+            let reconstructed = arn.to_string();
+            assert_eq!(
+                reconstructed, arn_string,
+                "Reconstructed ARN does not match original: {}",
+                arn_string
+            );
 
-                    // Verify the ARN can be serialized back to string
-                    let reconstructed = arn.to_string();
+            // Check if the ARN passes validation
+            if arn.is_valid() {
+                // Additional checks for well-formed ARNs
+                assert!(
+                    !arn.partition.is_empty(),
+                    "Partition should not be empty for ARN: {}",
+                    arn_string
+                );
+                assert!(
+                    !arn.service.is_empty(),
+                    "Service should not be empty for ARN: {}",
+                    arn_string
+                );
+                assert!(
+                    !arn.resource.is_empty(),
+                    "Resource should not be empty for ARN: {}",
+                    arn_string
+                );
 
-                    // Check if the ARN passes validation
-                    if arn.is_valid() {
-                        println!("✓ PASSED (valid)");
-
-                        // Additional checks for well-formed ARNs
-                        assert!(
-                            !arn.partition.is_empty(),
-                            "Partition should not be empty for ARN: {}",
-                            arn_string
-                        );
-                        assert!(
-                            !arn.service.is_empty(),
-                            "Service should not be empty for ARN: {}",
-                            arn_string
-                        );
-                        assert!(
-                            !arn.resource.is_empty(),
-                            "Resource should not be empty for ARN: {}",
-                            arn_string
-                        );
-
-                        // Test that the ARN can be round-tripped
-                        let reparsed = Arn::parse(&reconstructed).expect(&format!(
-                            "Failed to reparse reconstructed ARN: {}",
-                            reconstructed
-                        ));
-                        assert_eq!(
-                            arn, reparsed,
-                            "Round-trip parsing failed for ARN: {}",
-                            arn_string
-                        );
-                    } else {
-                        validation_failures += 1;
-                        println!("⚠ PARSED but invalid");
-                    }
-                }
-                Err(e) => {
-                    failed_parses += 1;
-                    println!("✗ FAILED to parse: {:?}", e);
-
-                    // Some ARNs in the test set might be intentionally invalid or use placeholder values
-                    // We'll allow some failures but track them for analysis
-                }
+                // Test that the ARN can be round-tripped
+                let reparsed = Arn::parse(&reconstructed).expect(&format!(
+                    "Failed to reparse reconstructed ARN: {}",
+                    reconstructed
+                ));
+                assert_eq!(
+                    arn, reparsed,
+                    "Round-trip parsing failed for ARN: {}",
+                    arn_string
+                );
+            } else {
+                panic!("ARN parsed but failed validation: {}", arn_string);
             }
         }
-
-        println!("\n=== ARN Test Summary ===");
-        println!("Total ARNs tested: {}", arns.len());
-        println!("Successfully parsed: {}", successful_parses);
-        println!("Failed to parse: {}", failed_parses);
-        println!("Parsed but invalid: {}", validation_failures);
-        println!(
-            "Success rate: {:.1}%",
-            (successful_parses as f64 / arns.len() as f64) * 100.0
-        );
-
-        // We expect a high success rate, but some ARNs might be intentionally malformed
-        // or use placeholder values that don't conform to strict validation rules
-        assert!(
-            successful_parses > 0,
-            "At least some ARNs should parse successfully"
-        );
-
-        // Most of the ARNs should be valid AWS ARNs, so we expect a reasonable success rate
-        let success_rate = (successful_parses as f64 / arns.len() as f64) * 100.0;
-        assert!(
-            success_rate > 80.0,
-            "Expected success rate > 80%, got {:.1}%",
-            success_rate
-        );
     }
 }

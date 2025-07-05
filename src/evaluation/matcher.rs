@@ -138,7 +138,7 @@ impl ArnPattern {
             });
         }
 
-        let arn = Arn::parse_with_options(pattern, true)?;
+        let arn = Arn::parse(pattern)?;
         let has_wildcards = pattern.contains('*') || pattern.contains('?');
 
         Ok(ArnPattern {
