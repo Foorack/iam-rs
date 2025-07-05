@@ -230,7 +230,8 @@ pub mod helpers {
         if principal.contains('.')
             && (principal.ends_with(".amazonaws.com")
                 || principal.ends_with(".amazonaws.com.cn")
-                || principal.ends_with(".aws.internal"))
+                || principal.ends_with(".api.aws")
+                || principal.ends_with(".internal"))
         {
             return Ok(());
         }
