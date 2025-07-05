@@ -12,6 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0",
         "arn:aws:lambda:us-east-1:123456789012:function:MyFunction",
         "arn:aws:dynamodb:us-east-1:123456789012:table/MyTable",
+        "arn:aws-eu-gov:dynamodb:us-east-1:123456789012:table/MyTable",
     ];
 
     for arn_str in &valid_arns {
