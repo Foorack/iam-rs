@@ -6,11 +6,26 @@ use chrono::{DateTime, Utc};
 ///
 ///
 /// Important!: If the key that you specify in a policy condition is not present in the request context,
-/// the values do not match and the condition is false. If the policy condition requires that the key is
-/// not matched, such as StringNotLike or ArnNotLike, and the right key is not present, the condition is true.
+///     the values do not match and the condition is false. If the policy condition requires that the key is
+///     not matched, such as StringNotLike or ArnNotLike, and the right key is not present, the condition is true.
+///     This logic applies to all condition operators except `...IfExists` and `Null` check.
+///     These operators test whether the key is present (exists) in the request context.
 ///
-/// This logic applies to all condition operators except `...IfExists` and `Null` check.
-/// These operators test whether the key is present (exists) in the request context.
+/// ## Example:
+///
+/// ```json
+/// "StringEquals": {
+///   "aws:PrincipalTag/job-category": "iamuser-admin"
+/// }
+/// ```
+///
+/// ```text
+/// aws:PrincipalTag/job-category:
+///   – iamuser-admin
+/// ```
+///
+/// Result: Match
+///
 pub(super) fn evaluate_condition(
     operator: &Operator,
     key: &str,

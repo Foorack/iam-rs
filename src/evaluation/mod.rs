@@ -4,6 +4,7 @@ mod engine;
 mod matcher;
 mod operator_eval;
 mod request;
+mod variable;
 
 // Re-export evaluation types
 pub use context::{Context, ContextValue};

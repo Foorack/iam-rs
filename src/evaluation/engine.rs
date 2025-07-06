@@ -1,7 +1,10 @@
 use super::{context::Context, matcher::ArnMatcher, request::IAMRequest};
 use crate::{
     core::{Action, Effect, Principal, Resource},
-    evaluation::operator_eval::{evaluate_condition, wildcard_match},
+    evaluation::{
+        operator_eval::{evaluate_condition, wildcard_match},
+        variable::interpolate_variables,
+    },
     policy::{ConditionBlock, IAMPolicy, IAMStatement},
 };
 use serde::{Deserialize, Serialize};
@@ -26,6 +29,8 @@ pub enum EvaluationError {
     InvalidPolicy(String),
     /// ARN format error during evaluation
     InvalidArn(String),
+    /// Invalid variable reference
+    InvalidVariable(String),
     /// Condition evaluation error
     ConditionError(String),
     /// Internal evaluation error
@@ -38,6 +43,7 @@ impl std::fmt::Display for EvaluationError {
             EvaluationError::InvalidContext(msg) => write!(f, "Invalid context: {}", msg),
             EvaluationError::InvalidPolicy(msg) => write!(f, "Invalid policy: {}", msg),
             EvaluationError::InvalidArn(msg) => write!(f, "Invalid ARN: {}", msg),
+            EvaluationError::InvalidVariable(msg) => write!(f, "Invalid variable: {}", msg),
             EvaluationError::ConditionError(msg) => write!(f, "Condition error: {}", msg),
             EvaluationError::InternalError(msg) => write!(f, "Internal error: {}", msg),
         }
@@ -249,9 +255,9 @@ impl PolicyEvaluator {
 
         // Check if resource matches
         let resource_matches = if let Some(ref resource) = statement.resource {
-            self.resource_matches(resource, &request.resource)?
+            self.resource_matches(resource, &request.resource, &request.context)?
         } else if let Some(ref not_resource) = statement.not_resource {
-            !self.resource_matches(not_resource, &request.resource)?
+            !self.resource_matches(not_resource, &request.resource, &request.context)?
         } else {
             return Ok(StatementMatch {
                 sid: statement.sid.clone(),
@@ -371,14 +377,18 @@ impl PolicyEvaluator {
         &self,
         resource: &Resource,
         request_resource: &str,
+        context: &Context,
     ) -> Result<bool, EvaluationError> {
         match resource {
             Resource::Single(r) => {
                 if r == "*" || r == request_resource {
                     Ok(true)
                 } else {
-                    // Use ARN matcher for resource patterns
-                    let matcher = ArnMatcher::from_pattern(r)
+                    // First, interpolate variables
+                    let interpolated = interpolate_variables(r, context)?;
+
+                    // Then use ARN matcher for pattern matching
+                    let matcher = ArnMatcher::from_pattern(&interpolated)
                         .map_err(|e| EvaluationError::InvalidArn(e.to_string()))?;
                     matcher
                         .matches(request_resource)
@@ -387,7 +397,11 @@ impl PolicyEvaluator {
             }
             Resource::Multiple(resources) => {
                 for r in resources {
-                    if self.resource_matches(&Resource::Single(r.clone()), request_resource)? {
+                    if self.resource_matches(
+                        &Resource::Single(r.clone()),
+                        request_resource,
+                        context,
+                    )? {
                         return Ok(true);
                     }
                 }
