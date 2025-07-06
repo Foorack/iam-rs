@@ -191,6 +191,7 @@ pub enum Operator {
 
 impl Operator {
     /// Returns true if this operator is a string-based operator
+    #[must_use]
     pub fn is_string_operator(&self) -> bool {
         matches!(
             self,
@@ -222,6 +223,7 @@ impl Operator {
     }
 
     /// Returns true if this operator is a numeric-based operator
+    #[must_use]
     pub fn is_numeric_operator(&self) -> bool {
         matches!(
             self,
@@ -241,6 +243,7 @@ impl Operator {
     }
 
     /// Returns true if this operator is a date-based operator
+    #[must_use]
     pub fn is_date_operator(&self) -> bool {
         matches!(
             self,
@@ -260,6 +263,7 @@ impl Operator {
     }
 
     /// Returns true if this operator is a boolean-based operator
+    #[must_use]
     pub fn is_boolean_operator(&self) -> bool {
         matches!(
             self,
@@ -271,6 +275,7 @@ impl Operator {
     }
 
     /// Returns true if this operator is an ARN-based operator
+    #[must_use]
     pub fn is_arn_operator(&self) -> bool {
         matches!(
             self,
@@ -294,6 +299,7 @@ impl Operator {
     }
 
     /// Returns true if this operator is an IP address-based operator
+    #[must_use]
     pub fn is_ip_operator(&self) -> bool {
         matches!(
             self,
@@ -305,6 +311,7 @@ impl Operator {
     }
 
     /// Returns true if this operator is a binary-based operator
+    #[must_use]
     pub fn is_binary_operator(&self) -> bool {
         matches!(
             self,
@@ -313,6 +320,7 @@ impl Operator {
     }
 
     /// Returns true if this operator supports wildcards
+    #[must_use]
     pub fn supports_wildcards(&self) -> bool {
         matches!(
             self,
@@ -344,6 +352,7 @@ impl Operator {
     }
 
     /// Returns true if this operator supports policy variables
+    #[must_use]
     pub fn supports_policy_variables(&self) -> bool {
         !self.is_numeric_operator()
             && !self.is_date_operator()
@@ -352,17 +361,20 @@ impl Operator {
     }
 
     /// Returns true if this operator is a multivalued operator (ForAllValues/ForAnyValue)
+    #[must_use]
     pub fn is_multivalued_operator(&self) -> bool {
         self.to_string().starts_with("ForAllValues:")
             || self.to_string().starts_with("ForAnyValue:")
     }
 
-    /// Returns true if this operator is an "IfExists" variant
+    /// Returns true if this operator is an "`IfExists`" variant
+    #[must_use]
     pub fn is_if_exists_operator(&self) -> bool {
         self.to_string().ends_with("IfExists")
     }
 
     /// Returns true if this operator is a negated operator (Not*)
+    #[must_use]
     pub fn is_negated_operator(&self) -> bool {
         matches!(
             self,
@@ -397,6 +409,7 @@ impl Operator {
 
     /// Returns true if this operator supports multiple values (arrays)
     /// Most operators in AWS IAM can accept arrays, not just ForAllValues/ForAnyValue
+    #[must_use]
     pub fn supports_multiple_values(&self) -> bool {
         // Most operators support multiple values except for these specific ones
         !matches!(
@@ -406,6 +419,12 @@ impl Operator {
     }
 
     /// Returns the operator category as a string
+    /// Determine the category of this operator
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if the operator is not recognized (this should never happen)
+    #[must_use]
     pub fn category(&self) -> OperatorType {
         if self.is_string_operator() {
             OperatorType::String
@@ -429,6 +448,7 @@ impl Operator {
     }
 
     /// Returns the string representation of the operator for use in JSON
+    #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
             Operator::StringEquals => "StringEquals",
@@ -606,7 +626,7 @@ impl std::str::FromStr for Operator {
             "ArnLikeIfExists" => Ok(Operator::ArnLikeIfExists),
             "ArnNotEqualsIfExists" => Ok(Operator::ArnNotEqualsIfExists),
             "ArnNotLikeIfExists" => Ok(Operator::ArnNotLikeIfExists),
-            _ => Err(format!("Unknown operator: {}", s)),
+            _ => Err(format!("Unknown operator: {s}")),
         }
     }
 }
