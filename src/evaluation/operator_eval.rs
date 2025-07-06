@@ -3,6 +3,14 @@ use base64::{Engine as _, prelude::BASE64_STANDARD};
 use chrono::{DateTime, Utc};
 
 /// Evaluate a single condition
+///
+///
+/// Important!: If the key that you specify in a policy condition is not present in the request context,
+/// the values do not match and the condition is false. If the policy condition requires that the key is
+/// not matched, such as StringNotLike or ArnNotLike, and the right key is not present, the condition is true.
+///
+/// This logic applies to all condition operators except `...IfExists` and `Null` check.
+/// These operators test whether the key is present (exists) in the request context.
 pub(super) fn evaluate_condition(
     operator: &Operator,
     key: &str,
@@ -144,7 +152,7 @@ pub(super) fn evaluate_condition(
     }
 }
 
-/// Helper for string condition evaluation
+/// Helper for single string condition evaluation
 fn ev_single_string<F>(
     context_value: Option<&ContextValue>,
     condition_value: &serde_json::Value,

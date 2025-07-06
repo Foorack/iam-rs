@@ -674,11 +674,13 @@ mod tests {
     }
 
     #[test]
-    fn test_evaluation_testset() {
-        // List filenames in the tests/evals directory
-        let eval_dir = "tests/evals";
-        let mut eval_files = std::fs::read_dir(eval_dir)
-            .unwrap_or_else(|e| panic!("Failed to read evals directory '{}': {}", eval_dir, e))
+    fn test_requests_testset() {
+        // List filenames in the tests/requests directory
+        let request_dir = "tests/requests";
+        let mut request_files = std::fs::read_dir(request_dir)
+            .unwrap_or_else(|e| {
+                panic!("Failed to read requests directory '{}': {}", request_dir, e)
+            })
             .filter_map(|entry| {
                 let entry = entry.ok()?;
                 let path = entry.path();
@@ -690,41 +692,46 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        // Verify we actually found eval files to test
+        // Verify we actually found request files to test
         assert!(
-            !eval_files.is_empty(),
-            "No eval JSON files found in {}/",
-            eval_dir
+            !request_files.is_empty(),
+            "No request JSON files found in {}/",
+            request_dir
         );
 
         // Sort files by name for consistent test order
         // All files are called 1.json, 2.json, ..., 10.json, etc.
-        eval_files.sort_by_key(|p| {
+        request_files.sort_by_key(|p| {
             p.file_name()
                 .and_then(|n| n.to_str())
                 .map(|s| s.split(".").next().unwrap().parse::<u32>().unwrap())
                 .map(|n| format!("{:010}", n))
         });
 
-        println!("Testing {} eval files from {}/", eval_files.len(), eval_dir);
+        println!(
+            "Testing {} request files from {}/",
+            request_files.len(),
+            request_dir
+        );
 
-        for (index, eval_file) in eval_files.iter().enumerate() {
-            let filename = eval_file
+        for (index, request_file) in request_files.iter().enumerate() {
+            let filename = request_file
                 .file_name()
                 .and_then(|n| n.to_str())
                 .unwrap_or("unknown");
 
-            println!("Testing eval #{}: {} ... ", index + 1, filename);
+            println!("Testing request #{}: {} ... ", index + 1, filename);
 
             // Read the JSON file
-            let json_content = std::fs::read_to_string(&eval_file)
-                .unwrap_or_else(|e| panic!("Failed to read file '{}': {}", eval_file.display(), e));
+            let json_content = std::fs::read_to_string(&request_file).unwrap_or_else(|e| {
+                panic!("Failed to read file '{}': {}", request_file.display(), e)
+            });
 
             // Parse the test case from JSON
             let test: TestCase = serde_json::from_str(&json_content).unwrap_or_else(|e| {
                 panic!(
                     "Failed to parse JSON from file '{}': {:?}",
-                    eval_file.display(),
+                    request_file.display(),
                     e
                 )
             });
