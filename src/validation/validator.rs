@@ -35,49 +35,41 @@ impl fmt::Display for ValidationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ValidationError::MissingField { field, context } => {
-                write!(f, "Missing required field '{}' in {}", field, context)
+                write!(f, "Missing required field '{field}' in {context}")
             }
             ValidationError::InvalidValue {
                 field,
                 value,
                 reason,
             } => {
-                write!(
-                    f,
-                    "Invalid value '{}' for field '{}': {}",
-                    value, field, reason
-                )
+                write!(f, "Invalid value '{value}' for field '{field}': {reason}")
             }
             ValidationError::LogicalError { message } => {
-                write!(f, "Logical error: {}", message)
+                write!(f, "Logical error: {message}")
             }
             ValidationError::InvalidArn { arn, reason } => {
-                write!(f, "Invalid ARN '{}': {}", arn, reason)
+                write!(f, "Invalid ARN '{arn}': {reason}")
             }
             ValidationError::InvalidCondition {
                 operator,
                 key,
                 reason,
             } => {
-                write!(
-                    f,
-                    "Invalid condition '{}' for key '{}': {}",
-                    operator, key, reason
-                )
+                write!(f, "Invalid condition '{operator}' for key '{key}': {reason}")
             }
             ValidationError::InvalidPrincipal { principal, reason } => {
-                write!(f, "Invalid principal '{}': {}", principal, reason)
+                write!(f, "Invalid principal '{principal}': {reason}")
             }
             ValidationError::InvalidAction { action, reason } => {
-                write!(f, "Invalid action '{}': {}", action, reason)
+                write!(f, "Invalid action '{action}': {reason}")
             }
             ValidationError::InvalidResource { resource, reason } => {
-                write!(f, "Invalid resource '{}': {}", resource, reason)
+                write!(f, "Invalid resource '{resource}': {reason}")
             }
             ValidationError::Multiple(errors) => {
-                write!(f, "Multiple validation errors:\n")?;
+                writeln!(f, "Multiple validation errors:")?;
                 for (i, error) in errors.iter().enumerate() {
-                    write!(f, "  {}: {}\n", i + 1, error)?;
+                    writeln!(f, "  {}: {error}", i + 1)?;
                 }
                 Ok(())
             }
@@ -96,7 +88,14 @@ pub struct ValidationContext {
     pub path: Vec<String>,
 }
 
+impl Default for ValidationContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ValidationContext {
+    #[must_use]
     pub fn new() -> Self {
         Self { path: Vec::new() }
     }
@@ -109,6 +108,7 @@ impl ValidationContext {
         self.path.pop();
     }
 
+    #[must_use]
     pub fn current_path(&self) -> String {
         if self.path.is_empty() {
             "root".to_string()
@@ -128,6 +128,11 @@ impl ValidationContext {
 /// Trait for validating IAM policy components
 /// All validation is strict and enforces high quality standards
 pub trait Validate {
+    /// Validate the component within the given context
+    /// 
+    /// # Errors
+    /// 
+    /// Returns `ValidationError` if the component is invalid
     fn validate(&self, context: &mut ValidationContext) -> ValidationResult;
 
     /// Convenience method for basic validation
@@ -137,6 +142,10 @@ pub trait Validate {
     }
 
     /// Validate with detailed errors (same as regular validation)
+    /// 
+    /// # Errors
+    /// 
+    /// Returns `ValidationError` if the component is invalid
     fn validate_result(&self) -> ValidationResult {
         let mut context = ValidationContext::new();
         self.validate(&mut context)
@@ -145,7 +154,7 @@ pub trait Validate {
 
 /// Helper functions for common validation patterns
 pub(crate) mod helpers {
-    use super::*;
+    use super::{ValidationContext, ValidationError, ValidationResult};
     use crate::core::Arn;
 
     /// Validate that a string is not empty
@@ -168,14 +177,14 @@ pub(crate) mod helpers {
     pub fn validate_arn(arn: &str, _context: &ValidationContext) -> ValidationResult {
         match Arn::parse(arn) {
             Ok(parsed_arn) => {
-                if !parsed_arn.is_valid() {
+                if parsed_arn.is_valid() {
+                    Ok(())
+                } else {
                     Err(ValidationError::InvalidArn {
                         arn: arn.to_string(),
                         reason: "ARN format is valid but does not conform to AWS standards"
                             .to_string(),
                     })
-                } else {
-                    Ok(())
                 }
             }
             Err(e) => Err(ValidationError::InvalidArn {
@@ -211,14 +220,14 @@ pub(crate) mod helpers {
     }
 
     /// Validate principal ARN or special values
-    pub fn validate_principal(principal: &str, _context: &ValidationContext) -> ValidationResult {
+    pub fn validate_principal(principal: &str, context: &ValidationContext) -> ValidationResult {
         if principal == "*" || principal == "AWS" || principal == "Federated" {
             return Ok(());
         }
 
         // Check if it's an ARN
         if principal.starts_with("arn:") {
-            return validate_arn(principal, _context);
+            return validate_arn(principal, context);
         }
 
         // Check if it's an account ID
@@ -281,7 +290,7 @@ pub(crate) mod helpers {
 
     /// Collect multiple validation errors
     pub fn collect_errors(results: Vec<ValidationResult>) -> ValidationResult {
-        let errors: Vec<ValidationError> = results.into_iter().filter_map(|r| r.err()).collect();
+        let errors: Vec<ValidationError> = results.into_iter().filter_map(std::result::Result::err).collect();
 
         if errors.is_empty() {
             Ok(())
