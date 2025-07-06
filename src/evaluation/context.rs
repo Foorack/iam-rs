@@ -14,6 +14,8 @@ pub enum ContextValue {
     Number(f64),
     /// DateTime value (e.g., request time)
     DateTime(DateTime<Utc>),
+    /// List of strings (e.g., list of ARNs)
+    ListOfStrings(Vec<String>),
 }
 
 impl ContextValue {
@@ -40,13 +42,49 @@ impl ContextValue {
             _ => None,
         }
     }
+
+    /// Converts the context value to a DateTime
+    pub fn as_datetime(&self) -> Option<&DateTime<Utc>> {
+        match self {
+            ContextValue::DateTime(dt) => Some(dt),
+            _ => None,
+        }
+    }
+
+    /// Converts the context value to a list of strings
+    pub fn as_string_list(&self) -> Option<&Vec<String>> {
+        match self {
+            ContextValue::ListOfStrings(list) => Some(list),
+            _ => None,
+        }
+    }
 }
 
 /// Context for IAM evaluation containing key-value pairs
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Context {
     /// Context keys and their values
     pub data: HashMap<String, ContextValue>,
+}
+
+// Impl serialization and deserialization for Context (hide the data internal structure)
+impl Serialize for Context {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        self.data.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for Context {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let data = HashMap::<String, ContextValue>::deserialize(deserializer)?;
+        Ok(Context { data })
+    }
 }
 
 impl Context {

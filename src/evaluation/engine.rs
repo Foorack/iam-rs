@@ -1,7 +1,7 @@
 use super::{context::Context, matcher::ArnMatcher, request::IAMRequest};
 use crate::{
     core::{Action, Effect, Principal, Resource},
-    evaluation::operator_eval::{evaluate_single_condition, wildcard_match},
+    evaluation::operator_eval::{evaluate_condition, wildcard_match},
     policy::{ConditionBlock, IAMPolicy, IAMStatement},
 };
 use serde::{Deserialize, Serialize};
@@ -405,7 +405,7 @@ impl PolicyEvaluator {
         // All conditions in a block must be satisfied (AND logic)
         for (operator, condition_map) in &condition_block.conditions {
             for (key, value) in condition_map {
-                if !evaluate_single_condition(operator, key, value, context)? {
+                if !evaluate_condition(operator, key, value, context)? {
                     return Ok(false);
                 }
             }
@@ -664,5 +664,74 @@ mod tests {
             result.matched_statements[0].sid,
             Some("AllowS3Read".to_string())
         );
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    struct TestCase {
+        result: Decision,
+        request: IAMRequest,
+        policy: IAMPolicy,
+    }
+
+    #[test]
+    fn test_evaluation_testset() {
+        // List filenames in the tests/evals directory
+        let eval_dir = "tests/evals";
+        let mut eval_files = std::fs::read_dir(eval_dir)
+            .unwrap_or_else(|e| panic!("Failed to read evals directory '{}': {}", eval_dir, e))
+            .filter_map(|entry| {
+                let entry = entry.ok()?;
+                let path = entry.path();
+                if path.extension()? == "json" {
+                    Some(path)
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        // Verify we actually found eval files to test
+        assert!(
+            !eval_files.is_empty(),
+            "No eval JSON files found in {}/",
+            eval_dir
+        );
+
+        // Sort files by name for consistent test order
+        // All files are called 1.json, 2.json, ..., 10.json, etc.
+        eval_files.sort_by_key(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .map(|s| s.split(".").next().unwrap().parse::<u32>().unwrap())
+                .map(|n| format!("{:010}", n))
+        });
+
+        println!("Testing {} eval files from {}/", eval_files.len(), eval_dir);
+
+        for (index, eval_file) in eval_files.iter().enumerate() {
+            let filename = eval_file
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown");
+
+            println!("Testing eval #{}: {} ... ", index + 1, filename);
+
+            // Read the JSON file
+            let json_content = std::fs::read_to_string(&eval_file)
+                .unwrap_or_else(|e| panic!("Failed to read file '{}': {}", eval_file.display(), e));
+
+            // Parse the test case from JSON
+            let test: TestCase = serde_json::from_str(&json_content).unwrap_or_else(|e| {
+                panic!(
+                    "Failed to parse JSON from file '{}': {:?}",
+                    eval_file.display(),
+                    e
+                )
+            });
+
+            // Evaluate the policy against the request
+            let result = evaluate_policy(&test.policy, &test.request).unwrap();
+            assert_eq!(result, test.result);
+        }
     }
 }

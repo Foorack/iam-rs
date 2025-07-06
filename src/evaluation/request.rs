@@ -38,15 +38,19 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct IAMRequest {
     /// The principal making the request (e.g., AROA123456789EXAMPLE)
+    #[serde(rename = "Principal")]
     pub principal: String,
 
     /// The action being requested (e.g., iam:DeactivateMFADevice)
+    #[serde(rename = "Action")]
     pub action: String,
 
     /// The resource being accessed (e.g., arn:aws:iam::user/martha)
+    #[serde(rename = "Resource")]
     pub resource: String,
 
     /// Additional context for condition evaluation
+    #[serde(rename = "Context", default)]
     pub context: Context,
 }
 

@@ -1,0 +1,24 @@
+{
+  "result": "NotApplicable",
+  "request": {
+    "Principal": "AIDA123456789EXAMPLE",
+    "Action": "s3:CreateBucket",
+    "Resource": "arn:aws:s3:::amzn-s3-demo-bucket1",
+    "Context": {}
+  },
+  "policy": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": "s3:CreateBucket",
+        "Resource": "arn:aws:s3:::amzn-s3-demo-bucket1",
+        "Condition": {
+          "StringEquals": {
+            "aws:PrincipalTag/dept": "321"
+          }
+        }
+      }
+    ]
+  }
+}

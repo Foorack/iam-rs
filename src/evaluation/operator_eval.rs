@@ -3,7 +3,7 @@ use base64::{Engine as _, prelude::BASE64_STANDARD};
 use chrono::{DateTime, Utc};
 
 /// Evaluate a single condition
-pub(super) fn evaluate_single_condition(
+pub(super) fn evaluate_condition(
     operator: &Operator,
     key: &str,
     value: &serde_json::Value,
@@ -14,13 +14,17 @@ pub(super) fn evaluate_single_condition(
 
     match operator {
         // String conditions
-        Operator::StringEquals => evaluate_string_condition(context_value, value, |a, b| a == b),
-        Operator::StringNotEquals => evaluate_string_condition(context_value, value, |a, b| a != b),
-        Operator::StringLike => {
-            evaluate_string_condition(context_value, value, |a, b| wildcard_match(a, b))
+        Operator::StringEquals => ev_single_string(context_value, value, |a, b| a == b),
+        Operator::StringNotEquals => ev_single_string(context_value, value, |a, b| a != b),
+        Operator::StringEqualsIgnoreCase => {
+            ev_single_string(context_value, value, |a, b| a.eq_ignore_ascii_case(b))
         }
+        Operator::StringNotEqualsIgnoreCase => {
+            ev_single_string(context_value, value, |a, b| !a.eq_ignore_ascii_case(b))
+        }
+        Operator::StringLike => ev_single_string(context_value, value, |a, b| wildcard_match(a, b)),
         Operator::StringNotLike => {
-            evaluate_string_condition(context_value, value, |a, b| !wildcard_match(a, b))
+            ev_single_string(context_value, value, |a, b| !wildcard_match(a, b))
         }
 
         // Numeric conditions
@@ -90,18 +94,58 @@ pub(super) fn evaluate_single_condition(
         | Operator::ForAnyValueStringLike
         | Operator::ForAllValuesStringLike => {
             // TODO: Treat these as regular string conditions for now. Full implementation should handle set logic.
-            evaluate_string_condition(context_value, value, |a, b| a == b)
+            ev_single_string(context_value, value, |a, b| a == b)
         }
 
-        _ => Err(EvaluationError::ConditionError(format!(
-            "Unsupported operator: {:?}",
-            operator
-        ))),
+        Operator::ForAllValuesStringEqualsIgnoreCase => todo!(),
+        Operator::ForAnyValueStringEqualsIgnoreCase => todo!(),
+        Operator::ForAllValuesStringNotEquals => todo!(),
+        Operator::ForAllValuesStringNotEqualsIgnoreCase => todo!(),
+        Operator::ForAnyValueStringNotEquals => todo!(),
+        Operator::ForAnyValueStringNotEqualsIgnoreCase => todo!(),
+        Operator::ForAllValuesStringNotLike => todo!(),
+        Operator::ForAnyValueStringNotLike => todo!(),
+        Operator::ForAllValuesBool => todo!(),
+        Operator::ForAnyValueBool => todo!(),
+        Operator::ForAllValuesArnEquals => todo!(),
+        Operator::ForAllValuesArnLike => todo!(),
+        Operator::ForAnyValueArnEquals => todo!(),
+        Operator::ForAnyValueArnLike => todo!(),
+        Operator::ForAllValuesArnNotEquals => todo!(),
+        Operator::ForAllValuesArnNotLike => todo!(),
+        Operator::ForAnyValueArnNotEquals => todo!(),
+        Operator::ForAnyValueArnNotLike => todo!(),
+        Operator::StringEqualsIfExists => todo!(),
+        Operator::StringNotEqualsIfExists => todo!(),
+        Operator::StringEqualsIgnoreCaseIfExists => todo!(),
+        Operator::StringNotEqualsIgnoreCaseIfExists => todo!(),
+        Operator::StringLikeIfExists => todo!(),
+        Operator::StringNotLikeIfExists => todo!(),
+        Operator::NumericEqualsIfExists => todo!(),
+        Operator::NumericNotEqualsIfExists => todo!(),
+        Operator::NumericLessThanIfExists => todo!(),
+        Operator::NumericLessThanEqualsIfExists => todo!(),
+        Operator::NumericGreaterThanIfExists => todo!(),
+        Operator::NumericGreaterThanEqualsIfExists => todo!(),
+        Operator::DateEqualsIfExists => todo!(),
+        Operator::DateNotEqualsIfExists => todo!(),
+        Operator::DateLessThanIfExists => todo!(),
+        Operator::DateLessThanEqualsIfExists => todo!(),
+        Operator::DateGreaterThanIfExists => todo!(),
+        Operator::DateGreaterThanEqualsIfExists => todo!(),
+        Operator::BoolIfExists => todo!(),
+        Operator::BinaryEqualsIfExists => todo!(),
+        Operator::IpAddressIfExists => todo!(),
+        Operator::NotIpAddressIfExists => todo!(),
+        Operator::ArnEqualsIfExists => todo!(),
+        Operator::ArnLikeIfExists => todo!(),
+        Operator::ArnNotEqualsIfExists => todo!(),
+        Operator::ArnNotLikeIfExists => todo!(),
     }
 }
 
 /// Helper for string condition evaluation
-fn evaluate_string_condition<F>(
+fn ev_single_string<F>(
     context_value: Option<&ContextValue>,
     condition_value: &serde_json::Value,
     predicate: F,
@@ -303,7 +347,7 @@ fn evaluate_ip_condition(
     should_match: bool,
 ) -> Result<bool, EvaluationError> {
     // TODO: Simplified IP matching - real implementation would use IP parsing
-    let result = evaluate_string_condition(context_value, condition_value, |a, b| a == b)?;
+    let result = ev_single_string(context_value, condition_value, |a, b| a == b)?;
     Ok(if should_match { result } else { !result })
 }
 
@@ -317,7 +361,7 @@ where
     F: Fn(&str, &str) -> bool,
 {
     // Use the same logic as string conditions for ARN comparison
-    evaluate_string_condition(context_value, condition_value, predicate)
+    ev_single_string(context_value, condition_value, predicate)
 }
 
 /// Simple wildcard matching for actions and strings
