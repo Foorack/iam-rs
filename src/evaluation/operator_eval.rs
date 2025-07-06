@@ -1,5 +1,6 @@
 use crate::{Arn, Context, ContextValue, EvaluationError, Operator, OperatorType};
 use chrono::{DateTime, Utc};
+use ipnet::IpNet;
 
 #[derive(Copy, Debug, Clone, PartialEq, Eq, Hash)]
 enum SetOperatorType {
@@ -47,12 +48,16 @@ pub(super) fn evaluate_condition(
         SetOperatorType::None
     };
 
-    let mut predicate_str: Box<dyn Fn(&str, &str) -> bool> = Box::new(|_a, _b| todo!());
-    let mut predicate_num: Box<dyn Fn(&f64, &f64) -> bool> = Box::new(|_a, _b| todo!());
+    let mut predicate_str: Box<dyn Fn(&str, &str) -> bool> =
+        Box::new(|_a, _b| panic!("Logic error, predicate not set before use"));
+    let mut predicate_num: Box<dyn Fn(&f64, &f64) -> bool> =
+        Box::new(|_a, _b| panic!("Logic error, predicate not set before use"));
     let mut predicate_date: Box<dyn Fn(&DateTime<Utc>, &DateTime<Utc>) -> bool> =
-        Box::new(|_a, _b| todo!());
-    let mut predicate_bool: Box<dyn Fn(bool, bool) -> bool> = Box::new(|_a, _b| todo!());
-    let mut predicate_ip: Box<dyn Fn(&str, &str) -> bool> = Box::new(|_a, _b| todo!());
+        Box::new(|_a, _b| panic!("Logic error, predicate not set before use"));
+    let mut predicate_bool: Box<dyn Fn(bool, bool) -> bool> =
+        Box::new(|_a, _b| panic!("Logic error, predicate not set before use"));
+    let mut predicate_ip: Box<dyn Fn(&IpNet, &IpNet) -> bool> =
+        Box::new(|_a, _b| panic!("Logic error, predicate not set before use"));
 
     type O = Operator;
     match operator {
@@ -145,8 +150,8 @@ pub(super) fn evaluate_condition(
         }
 
         // IP address conditions
-        O::IpAddress | O::IpAddressIfExists => predicate_ip = Box::new(|a, b| a == b),
-        O::NotIpAddress | O::NotIpAddressIfExists => predicate_ip = Box::new(|a, b| a != b),
+        O::IpAddress | O::IpAddressIfExists => predicate_ip = Box::new(|a, b| b.contains(a)),
+        O::NotIpAddress | O::NotIpAddressIfExists => predicate_ip = Box::new(|a, b| !b.contains(a)),
 
         O::Null => {
             // None
@@ -170,10 +175,7 @@ pub(super) fn evaluate_condition(
             OperatorType::Boolean => {
                 ev_bool(ctx, key, value, &predicate_bool, if_exists, set_operator)?
             }
-            OperatorType::IpAddress => {
-                // TODO: Simplified IP matching - real implementation would use IP parsing
-                ev_str(ctx, key, value, &predicate_ip, if_exists, set_operator)?
-            }
+            OperatorType::IpAddress => ev_ip(ctx, key, value, &predicate_ip, if_exists)?,
             OperatorType::Null => {
                 // Null check
                 match value {
@@ -331,6 +333,40 @@ fn ev_bool(
         Some(_) => Ok(false),  // Type mismatch
         None => Ok(if_exists), // Missing context (return true if operator is IfExists)
     }
+}
+
+/// Helper for IP address condition evaluation
+///
+/// IP address condition operators let you construct Condition elements that restrict access based on comparing a key to an IPv4 or IPv6 address or range of IP addresses.
+/// You use these with the aws:SourceIp key. The value must be in the standard CIDR format (for example, 203.0.113.0/24 or 2001:DB8:1234:5678::/64).
+/// If you specify an IP address without the associated routing prefix, IAM uses the default prefix value of /32.
+///
+/// Some AWS services support IPv6, using :: to represent a range of 0s.
+/// To learn whether a service supports IPv6, see the documentation for that service.
+fn ev_ip(
+    ctx: &Context,
+    key: &str,
+    value: &serde_json::Value,
+    predicate: &Box<dyn Fn(&IpNet, &IpNet) -> bool>,
+    if_exists: bool,
+) -> Result<bool, EvaluationError> {
+    // "ipnet" crate is added to workspace.
+    let value = value.as_str().ok_or_else(|| {
+        EvaluationError::ConditionError("IP condition value must be a string".to_string())
+    })?;
+    let value: IpNet = value
+        .parse()
+        .map_err(|_| EvaluationError::ConditionError("Invalid IP condition value".to_string()))?;
+
+    let context_value = match ctx.get(key) {
+        Some(ContextValue::String(ip_addr)) => ip_addr
+            .parse::<IpNet>()
+            .map_err(|_| EvaluationError::ConditionError("Invalid IP context value".to_string()))?,
+        Some(_) => return Ok(false),  // Type mismatch
+        None => return Ok(if_exists), // Missing context (return true if operator is IfExists)
+    };
+
+    return Ok(predicate(&context_value, &value));
 }
 
 /// Simple wildcard matching for actions and strings
