@@ -45,10 +45,10 @@ impl fmt::Display for ArnError {
         match self {
             ArnError::InvalidPrefix => write!(f, "ARN must start with 'arn:'"),
             ArnError::InvalidFormat => write!(f, "ARN must have exactly 6 parts separated by ':'"),
-            ArnError::InvalidPartition(p) => write!(f, "Invalid partition: '{}'", p),
-            ArnError::InvalidService(s) => write!(f, "Invalid service: '{}'", s),
-            ArnError::InvalidAccountId(id) => write!(f, "Invalid account ID: '{}'", id),
-            ArnError::InvalidResource(r) => write!(f, "Invalid resource: '{}'", r),
+            ArnError::InvalidPartition(p) => write!(f, "Invalid partition: '{p}'"),
+            ArnError::InvalidService(s) => write!(f, "Invalid service: '{s}'"),
+            ArnError::InvalidAccountId(id) => write!(f, "Invalid account ID: '{id}'"),
+            ArnError::InvalidResource(r) => write!(f, "Invalid resource: '{r}'"),
         }
     }
 }
@@ -59,6 +59,11 @@ impl Arn {
     /// Parse an ARN string into an Arn struct
     /// This method is extremely lenient and only validates bare format requirements.
     /// Use `is_valid()` to perform comprehensive validation.
+    /// 
+    /// # Errors
+    /// 
+    /// Returns `ArnError::InvalidPrefix` if the string doesn't start with "arn:"
+    /// Returns `ArnError::InvalidFormat` if the ARN has incorrect number of components
     pub fn parse(arn_str: &str) -> Result<Self, ArnError> {
         let parts: Vec<&str> = arn_str.split(':').collect();
 
@@ -87,16 +92,12 @@ impl Arn {
         })
     }
 
-    /// Convert the ARN back to string format
-    pub fn to_string(&self) -> String {
-        format!(
-            "arn:{}:{}:{}:{}:{}",
-            self.partition, self.service, self.region, self.account_id, self.resource
-        )
-    }
-
     /// Check if this ARN matches another ARN or pattern
     /// Supports wildcards (* and ?) in any component except service
+    /// 
+    /// # Errors
+    /// 
+    /// Returns `ArnError` if the pattern is not a valid ARN format
     pub fn matches(&self, pattern: &str) -> Result<bool, ArnError> {
         let pattern_arn = Arn::parse(pattern)?;
 
@@ -116,7 +117,8 @@ impl Arn {
 
     /// Check if a string matches a pattern with wildcards
     /// * matches any sequence of characters
-    /// ? matches any single character
+    ///   ? matches any single character
+    #[must_use]
     pub fn wildcard_match(text: &str, pattern: &str) -> bool {
         Self::wildcard_match_recursive(text, pattern, 0, 0)
     }
@@ -177,6 +179,7 @@ impl Arn {
     }
 
     /// Check if this ARN is valid according to AWS ARN rules
+    #[must_use]
     pub fn is_valid(&self) -> bool {
         // Basic format validation rules
         if self.partition.is_empty() {
@@ -236,6 +239,7 @@ impl Arn {
     /// Get the resource type from the resource string
     /// For resources like "bucket/object", returns "bucket"
     /// For resources like "user/username", returns "user"
+    #[must_use]
     pub fn resource_type(&self) -> Option<&str> {
         if let Some(slash_pos) = self.resource.find('/') {
             Some(&self.resource[..slash_pos])
@@ -250,6 +254,7 @@ impl Arn {
     /// Get the resource ID from the resource string
     /// For resources like "bucket/object", returns "object"
     /// For resources like "user/username", returns "username"
+    #[must_use]
     pub fn resource_id(&self) -> Option<&str> {
         if let Some(slash_pos) = self.resource.find('/') {
             Some(&self.resource[slash_pos + 1..])
@@ -264,7 +269,11 @@ impl Arn {
 
 impl fmt::Display for Arn {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.to_string())
+        write!(
+            f,
+            "arn:{}:{}:{}:{}:{}",
+            self.partition, self.service, self.region, self.account_id, self.resource
+        )
     }
 }
 
