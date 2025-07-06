@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Resource {
-    /// A single resource (e.g., "arn:aws:s3:::bucket/*")
+    /// A single resource (e.g., "`arn:aws:s3:::bucket/*`")
     Single(String),
     /// Multiple resources
     Multiple(Vec<String>),
@@ -28,7 +28,7 @@ impl Validate for Resource {
                     .iter()
                     .enumerate()
                     .map(|(i, resource)| {
-                        ctx.with_segment(&format!("[{}]", i), |nested_ctx| {
+                        ctx.with_segment(&format!("[{i}]"), |nested_ctx| {
                             helpers::validate_resource(resource, nested_ctx)
                         })
                     })

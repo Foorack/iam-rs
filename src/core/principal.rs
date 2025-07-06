@@ -32,18 +32,18 @@ impl std::fmt::Display for PrincipalType {
 
 /// Represents a principal in an IAM policy
 ///
-/// <principal_block> = ("Principal" | "NotPrincipal") : ("*" | <principal_map>)
-/// <principal_map> = { <principal_map_entry>, <principal_map_entry>, ... }
-/// <principal_map_entry> = ("AWS" | "Federated" | "Service" | "CanonicalUser") :
-///     [<principal_id_string>, <principal_id_string>, ...]
+/// `<principal_block>` = ("Principal" | "`NotPrincipal`") : ("*" | `<principal_map>`)
+/// `<principal_map>` = { `<principal_map_entry>`, `<principal_map_entry>`, ... }
+/// `<principal_map_entry>` = ("AWS" | "Federated" | "Service" | "`CanonicalUser`") :
+///     [`<principal_id_string>`, `<principal_id_string>`, ...]
 ///
-/// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_principal.html
+/// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_principal.html>
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum Principal {
     /// Wildcard principal (*)
     Wildcard,
-    /// Principal with service mapping (e.g., {"AWS": "arn:aws:iam::123456789012:user/username"})
+    /// Principal with service mapping (e.g., {"AWS": "`arn:aws:iam::123456789012:user/username`"})
     Mapped(HashMap<PrincipalType, serde_json::Value>),
 }
 
@@ -78,7 +78,7 @@ impl Validate for Principal {
                                     for (i, item) in arr.iter().enumerate() {
                                         if let serde_json::Value::String(s) = item {
                                             nested_ctx.with_segment(
-                                                &format!("[{}]", i),
+                                                &format!("[{i}]"),
                                                 |item_ctx| {
                                                     results.push(helpers::validate_principal(
                                                         s, item_ctx,

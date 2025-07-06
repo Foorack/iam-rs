@@ -28,7 +28,7 @@ impl Validate for Action {
                     .iter()
                     .enumerate()
                     .map(|(i, action)| {
-                        ctx.with_segment(&format!("[{}]", i), |nested_ctx| {
+                        ctx.with_segment(&format!("[{i}]"), |nested_ctx| {
                             helpers::validate_action(action, nested_ctx)
                         })
                     })

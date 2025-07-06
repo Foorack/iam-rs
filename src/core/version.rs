@@ -8,6 +8,7 @@ pub enum IAMVersion {
     #[serde(rename = "2012-10-17")]
     V20121017,
     #[serde(rename = "2008-10-17")]
+    #[allow(clippy::deprecated_semver)]
     #[deprecated(since = "2012-10-17", note = "Use V20121017 instead")]
     V20081017,
 }
