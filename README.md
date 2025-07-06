@@ -31,15 +31,14 @@ A complete Rust library for parsing, validating, and evaluating IAM (Identity an
 - 🔧 **Builder Pattern**: Fluent API for constructing policies programmatically
 - 📦 **Serde Integration**: Built-in JSON serialization and deserialization
 - ⚡ **Zero Dependencies**: Minimal dependencies (only `serde` and serde-libs)
-- 🧪 **Well Tested**: Comprehensive test suite with 72+ tests
+- 🧪 **Well Tested**: Comprehensive test suite with 100+ tests
 
 ## Installation
 
-Add this to your `Cargo.toml`:
+Add `iam-rs` to your Cargo project:
 
-```toml
-[dependencies]
-iam-rs = "0.0.1"
+```bash
+cargo add iam-rs
 ```
 
 ## Quick Start
