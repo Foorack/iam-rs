@@ -137,8 +137,7 @@ impl Validate for IAMPolicy {
                     if seen_sids.contains(sid) {
                         results.push(Err(ValidationError::LogicalError {
                             message: format!(
-                                "Duplicate statement ID '{}' found at position {}",
-                                sid, i
+                                "Duplicate statement ID '{sid}' found at position {i}"
                             ),
                         }));
                     } else {
