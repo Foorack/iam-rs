@@ -28,8 +28,6 @@ chrono = { version = "0.4.41", features = [
     "alloc",
     "serde",
 ], default-features = false }
-base64 = { version = "0.22.1" }
-regex = "1.11.1"
 
 [lints.clippy]
 correctness = { level = "deny", priority = 1 }

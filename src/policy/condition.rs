@@ -1,6 +1,6 @@
 use crate::{
     core::Operator,
-    validation::{Validate, ValidationContext, ValidationResult, ValidationError, helpers},
+    validation::{helpers, Validate, ValidationContext, ValidationError, ValidationResult}, OperatorType,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};
@@ -246,7 +246,7 @@ impl Validate for Condition {
 
             // Validate operator-specific rules
             match self.operator.category() {
-                    "String" => {
+                    OperatorType::String => {
                         // String operators should have string values
                         match &self.value {
                             serde_json::Value::String(_) => {},
@@ -270,7 +270,7 @@ impl Validate for Condition {
                             }
                         }
                     },
-                    "Numeric" => {
+                    OperatorType::Numeric => {
                         // Numeric operators should have numeric values
                         match &self.value {
                             serde_json::Value::Number(_) => {},
@@ -316,7 +316,7 @@ impl Validate for Condition {
                             }
                         }
                     },
-                    "Date" => {
+                    OperatorType::Date => {
                         // Date operators should have valid date strings
                         match &self.value {
                             serde_json::Value::String(s) => {
@@ -338,7 +338,7 @@ impl Validate for Condition {
                             }
                         }
                     },
-                    "Boolean" => {
+                    OperatorType::Boolean => {
                         // Boolean operators should have boolean values
                         match &self.value {
                             serde_json::Value::Bool(_) => {},

@@ -419,7 +419,7 @@ impl PolicyEvaluator {
         // All conditions in a block must be satisfied (AND logic)
         for (operator, condition_map) in &condition_block.conditions {
             for (key, value) in condition_map {
-                if !evaluate_condition(operator, key, value, context)? {
+                if !evaluate_condition(context, operator, key, value)? {
                     return Ok(false);
                 }
             }

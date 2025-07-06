@@ -1,6 +1,12 @@
-use crate::{Context, ContextValue, EvaluationError, Operator};
-use base64::{Engine as _, prelude::BASE64_STANDARD};
+use crate::{Arn, Context, ContextValue, EvaluationError, Operator, OperatorType};
 use chrono::{DateTime, Utc};
+
+#[derive(Copy, Debug, Clone, PartialEq, Eq, Hash)]
+enum SetOperatorType {
+    ForAnyValue,
+    ForAllValues,
+    None,
+}
 
 /// Evaluate a single condition
 ///
@@ -27,368 +33,308 @@ use chrono::{DateTime, Utc};
 /// Result: Match
 ///
 pub(super) fn evaluate_condition(
+    ctx: &Context,
     operator: &Operator,
     key: &str,
     value: &serde_json::Value,
-    context: &Context,
 ) -> Result<bool, EvaluationError> {
-    // Get the context value for the key
-    let context_value = context.get(key);
+    let if_exists = operator.is_if_exists_operator();
+    let set_operator = if operator.to_string().starts_with("ForAnyValue:") {
+        SetOperatorType::ForAnyValue
+    } else if operator.to_string().starts_with("ForAllValues:") {
+        SetOperatorType::ForAllValues
+    } else {
+        SetOperatorType::None
+    };
 
+    let mut predicate_str: Box<dyn Fn(&str, &str) -> bool> = Box::new(|_a, _b| todo!());
+    let mut predicate_num: Box<dyn Fn(&f64, &f64) -> bool> = Box::new(|_a, _b| todo!());
+    let mut predicate_date: Box<dyn Fn(&DateTime<Utc>, &DateTime<Utc>) -> bool> =
+        Box::new(|_a, _b| todo!());
+    let mut predicate_bool: Box<dyn Fn(bool, bool) -> bool> = Box::new(|_a, _b| todo!());
+    let mut predicate_ip: Box<dyn Fn(&str, &str) -> bool> = Box::new(|_a, _b| todo!());
+
+    type O = Operator;
     match operator {
         // String conditions
-        Operator::StringEquals => ev_single_string(context_value, value, |a, b| a == b),
-        Operator::StringNotEquals => ev_single_string(context_value, value, |a, b| a != b),
-        Operator::StringEqualsIgnoreCase => {
-            ev_single_string(context_value, value, |a, b| a.eq_ignore_ascii_case(b))
+        O::StringEquals
+        | O::ForAllValuesStringEquals
+        | O::ForAnyValueStringEquals
+        | O::StringEqualsIfExists
+        | O::ArnEquals
+        | O::ForAllValuesArnEquals
+        | O::ForAnyValueArnEquals
+        | O::ArnEqualsIfExists => predicate_str = Box::new(|a, b| a == b),
+        O::StringNotEquals
+        | O::ForAllValuesStringNotEquals
+        | O::ForAnyValueStringNotEquals
+        | O::StringNotEqualsIfExists
+        | O::ArnNotEquals
+        | O::ForAllValuesArnNotEquals
+        | O::ForAnyValueArnNotEquals
+        | O::ArnNotEqualsIfExists => predicate_str = Box::new(|a, b| a != b),
+        O::StringEqualsIgnoreCase
+        | O::ForAllValuesStringEqualsIgnoreCase
+        | O::ForAnyValueStringEqualsIgnoreCase
+        | O::StringEqualsIgnoreCaseIfExists => {
+            predicate_str = Box::new(|a, b| a.eq_ignore_ascii_case(b))
         }
-        Operator::StringNotEqualsIgnoreCase => {
-            ev_single_string(context_value, value, |a, b| !a.eq_ignore_ascii_case(b))
+        O::StringNotEqualsIgnoreCase
+        | O::ForAllValuesStringNotEqualsIgnoreCase
+        | O::ForAnyValueStringNotEqualsIgnoreCase
+        | O::StringNotEqualsIgnoreCaseIfExists => {
+            predicate_str = Box::new(|a, b| !a.eq_ignore_ascii_case(b))
         }
-        Operator::StringLike => ev_single_string(context_value, value, |a, b| wildcard_match(a, b)),
-        Operator::StringNotLike => {
-            ev_single_string(context_value, value, |a, b| !wildcard_match(a, b))
-        }
+        O::StringLike
+        | O::ForAllValuesStringLike
+        | O::ForAnyValueStringLike
+        | O::StringLikeIfExists
+        | O::ArnLike
+        | O::ForAllValuesArnLike
+        | O::ForAnyValueArnLike
+        | O::ArnLikeIfExists => predicate_str = Box::new(|a, b| wildcard_match(a, b)),
+        O::StringNotLike
+        | O::ForAllValuesStringNotLike
+        | O::ForAnyValueStringNotLike
+        | O::StringNotLikeIfExists
+        | O::ArnNotLike
+        | O::ForAllValuesArnNotLike
+        | O::ForAnyValueArnNotLike
+        | O::ArnNotLikeIfExists => predicate_str = Box::new(|a, b| !wildcard_match(a, b)),
 
         // Numeric conditions
-        Operator::NumericEquals => {
-            evaluate_numeric_condition(context_value, value, |a, b| (a - b).abs() < f64::EPSILON)
+        O::NumericEquals | O::NumericEqualsIfExists => {
+            predicate_num = Box::new(|a, b| (a - b).abs() < f64::EPSILON)
         }
-        Operator::NumericNotEquals => {
-            evaluate_numeric_condition(context_value, value, |a, b| (a - b).abs() >= f64::EPSILON)
+        O::NumericNotEquals | O::NumericNotEqualsIfExists => {
+            predicate_num = Box::new(|a, b| (a - b).abs() >= f64::EPSILON)
         }
-        Operator::NumericLessThan => evaluate_numeric_condition(context_value, value, |a, b| a < b),
-        Operator::NumericLessThanEquals => {
-            evaluate_numeric_condition(context_value, value, |a, b| a <= b)
+        O::NumericLessThan | O::NumericLessThanIfExists => predicate_num = Box::new(|a, b| a < b),
+        O::NumericLessThanEquals | O::NumericLessThanEqualsIfExists => {
+            predicate_num = Box::new(|a, b| a <= b)
         }
-        Operator::NumericGreaterThan => {
-            evaluate_numeric_condition(context_value, value, |a, b| a > b)
+        O::NumericGreaterThan | O::NumericGreaterThanIfExists => {
+            predicate_num = Box::new(|a, b| a > b)
         }
-        Operator::NumericGreaterThanEquals => {
-            evaluate_numeric_condition(context_value, value, |a, b| a >= b)
+        O::NumericGreaterThanEquals | O::NumericGreaterThanEqualsIfExists => {
+            predicate_num = Box::new(|a, b| a >= b)
         }
 
         // Date conditions
-        Operator::DateEquals => evaluate_date_condition(context_value, value, |a, b| a == b),
-        Operator::DateNotEquals => evaluate_date_condition(context_value, value, |a, b| a != b),
-        Operator::DateLessThan => evaluate_date_condition(context_value, value, |a, b| a < b),
-        Operator::DateLessThanEquals => {
-            evaluate_date_condition(context_value, value, |a, b| a <= b)
+        O::DateEquals | O::DateEqualsIfExists => predicate_date = Box::new(|a, b| a == b),
+        O::DateNotEquals | O::DateNotEqualsIfExists => predicate_date = Box::new(|a, b| a != b),
+        O::DateLessThan | O::DateLessThanIfExists => predicate_date = Box::new(|a, b| a < b),
+        O::DateLessThanEquals | O::DateLessThanEqualsIfExists => {
+            predicate_date = Box::new(|a, b| a <= b)
         }
-        Operator::DateGreaterThan => evaluate_date_condition(context_value, value, |a, b| a > b),
-        Operator::DateGreaterThanEquals => {
-            evaluate_date_condition(context_value, value, |a, b| a >= b)
+        O::DateGreaterThan | O::DateGreaterThanIfExists => predicate_date = Box::new(|a, b| a > b),
+        O::DateGreaterThanEquals | O::DateGreaterThanEqualsIfExists => {
+            predicate_date = Box::new(|a, b| a >= b)
         }
 
         // Boolean conditions
-        Operator::Bool => evaluate_boolean_condition(context_value, value),
+        O::Bool | O::ForAllValuesBool | O::ForAnyValueBool | O::BoolIfExists => {
+            predicate_bool = Box::new(|a, b| a == b)
+        }
 
         // Binary conditions
-        Operator::BinaryEquals => evaluate_binary_condition(context_value, value),
+        O::BinaryEquals | O::BinaryEqualsIfExists => {
+            predicate_str = Box::new(|a, b| {
+                a.to_lowercase().trim_end_matches('=') == b.to_lowercase().trim_end_matches('=')
+            });
+        }
 
         // IP address conditions
-        Operator::IpAddress => evaluate_ip_condition(context_value, value, true),
-        Operator::NotIpAddress => evaluate_ip_condition(context_value, value, false),
+        O::IpAddress | O::IpAddressIfExists => predicate_ip = Box::new(|a, b| a == b),
+        O::NotIpAddress | O::NotIpAddressIfExists => predicate_ip = Box::new(|a, b| a != b),
 
-        // ARN conditions
-        Operator::ArnEquals => evaluate_arn_condition(context_value, value, |a, b| a == b),
-        Operator::ArnNotEquals => evaluate_arn_condition(context_value, value, |a, b| a != b),
-        Operator::ArnLike => {
-            evaluate_arn_condition(context_value, value, |a, b| wildcard_match(a, b))
+        O::Null => {
+            // None
         }
-        Operator::ArnNotLike => {
-            evaluate_arn_condition(context_value, value, |a, b| !wildcard_match(a, b))
-        }
+    };
 
-        // Null check
-        Operator::Null => match value {
-            serde_json::Value::Bool(should_be_null) => {
-                let is_null = context_value.is_none();
-                Ok(is_null == *should_be_null)
+    let values = match value {
+        // Keep array as is
+        serde_json::Value::Array(arr) => arr,
+        // Convert single value to array for consistency
+        _ => &{ vec![value.clone()] },
+    };
+
+    for value in values {
+        let result = match operator.category() {
+            OperatorType::String | OperatorType::Arn | OperatorType::Binary => {
+                ev_str(ctx, key, value, &predicate_str, if_exists, set_operator)?
             }
-            _ => Err(EvaluationError::ConditionError(
-                "Null operator requires boolean value".to_string(),
-            )),
-        },
-
-        // Set operators (for multivalued context)
-        Operator::ForAnyValueStringEquals
-        | Operator::ForAllValuesStringEquals
-        | Operator::ForAnyValueStringLike
-        | Operator::ForAllValuesStringLike => {
-            // TODO: Treat these as regular string conditions for now. Full implementation should handle set logic.
-            ev_single_string(context_value, value, |a, b| a == b)
+            OperatorType::Numeric => ev_numeric(ctx, key, value, &predicate_num, if_exists)?,
+            OperatorType::Date => ev_date(ctx, key, value, &predicate_date, if_exists)?,
+            OperatorType::Boolean => {
+                ev_bool(ctx, key, value, &predicate_bool, if_exists, set_operator)?
+            }
+            OperatorType::IpAddress => {
+                // TODO: Simplified IP matching - real implementation would use IP parsing
+                ev_str(ctx, key, value, &predicate_ip, if_exists, set_operator)?
+            }
+            OperatorType::Null => {
+                // Null check
+                match value {
+                    serde_json::Value::Bool(should_be_null) => {
+                        let is_null = ctx.get(key).is_none();
+                        return Ok(is_null == *should_be_null);
+                    }
+                    _ => {
+                        return Err(EvaluationError::ConditionError(
+                            "Null operator requires boolean value".to_string(),
+                        ));
+                    }
+                }
+            }
+        };
+        if result {
+            return Ok(true);
         }
-
-        Operator::ForAllValuesStringEqualsIgnoreCase => todo!(),
-        Operator::ForAnyValueStringEqualsIgnoreCase => todo!(),
-        Operator::ForAllValuesStringNotEquals => todo!(),
-        Operator::ForAllValuesStringNotEqualsIgnoreCase => todo!(),
-        Operator::ForAnyValueStringNotEquals => todo!(),
-        Operator::ForAnyValueStringNotEqualsIgnoreCase => todo!(),
-        Operator::ForAllValuesStringNotLike => todo!(),
-        Operator::ForAnyValueStringNotLike => todo!(),
-        Operator::ForAllValuesBool => todo!(),
-        Operator::ForAnyValueBool => todo!(),
-        Operator::ForAllValuesArnEquals => todo!(),
-        Operator::ForAllValuesArnLike => todo!(),
-        Operator::ForAnyValueArnEquals => todo!(),
-        Operator::ForAnyValueArnLike => todo!(),
-        Operator::ForAllValuesArnNotEquals => todo!(),
-        Operator::ForAllValuesArnNotLike => todo!(),
-        Operator::ForAnyValueArnNotEquals => todo!(),
-        Operator::ForAnyValueArnNotLike => todo!(),
-        Operator::StringEqualsIfExists => todo!(),
-        Operator::StringNotEqualsIfExists => todo!(),
-        Operator::StringEqualsIgnoreCaseIfExists => todo!(),
-        Operator::StringNotEqualsIgnoreCaseIfExists => todo!(),
-        Operator::StringLikeIfExists => todo!(),
-        Operator::StringNotLikeIfExists => todo!(),
-        Operator::NumericEqualsIfExists => todo!(),
-        Operator::NumericNotEqualsIfExists => todo!(),
-        Operator::NumericLessThanIfExists => todo!(),
-        Operator::NumericLessThanEqualsIfExists => todo!(),
-        Operator::NumericGreaterThanIfExists => todo!(),
-        Operator::NumericGreaterThanEqualsIfExists => todo!(),
-        Operator::DateEqualsIfExists => todo!(),
-        Operator::DateNotEqualsIfExists => todo!(),
-        Operator::DateLessThanIfExists => todo!(),
-        Operator::DateLessThanEqualsIfExists => todo!(),
-        Operator::DateGreaterThanIfExists => todo!(),
-        Operator::DateGreaterThanEqualsIfExists => todo!(),
-        Operator::BoolIfExists => todo!(),
-        Operator::BinaryEqualsIfExists => todo!(),
-        Operator::IpAddressIfExists => todo!(),
-        Operator::NotIpAddressIfExists => todo!(),
-        Operator::ArnEqualsIfExists => todo!(),
-        Operator::ArnLikeIfExists => todo!(),
-        Operator::ArnNotEqualsIfExists => todo!(),
-        Operator::ArnNotLikeIfExists => todo!(),
     }
+
+    return Ok(false);
 }
 
 /// Helper for single string condition evaluation
-fn ev_single_string<F>(
-    context_value: Option<&ContextValue>,
-    condition_value: &serde_json::Value,
-    predicate: F,
-) -> Result<bool, EvaluationError>
-where
-    F: Fn(&str, &str) -> bool,
-{
-    let context_str = match context_value {
-        Some(ContextValue::String(s)) => s,
-        Some(_) => return Ok(false), // Type mismatch
-        None => return Ok(false),    // Missing context
-    };
+///
+/// String condition operators let you construct Condition elements that restrict access based on comparing a key to a string value.
+fn ev_str(
+    ctx: &Context,
+    key: &str,
+    value: &serde_json::Value,
+    predicate: &Box<dyn Fn(&str, &str) -> bool>,
+    if_exists: bool,
+    set_operator: SetOperatorType,
+) -> Result<bool, EvaluationError> {
+    let value = value.as_str().ok_or_else(|| {
+        EvaluationError::ConditionError("String condition value must be a string".to_string())
+    })?;
 
-    match condition_value {
-        serde_json::Value::String(s) => Ok(predicate(context_str, s)),
-        serde_json::Value::Array(arr) => {
-            // Any value in the array can match
-            for val in arr {
-                if let serde_json::Value::String(s) = val {
-                    if predicate(context_str, s) {
-                        return Ok(true);
-                    }
-                }
-            }
-            Ok(false)
-        }
-        _ => Err(EvaluationError::ConditionError(
-            "String condition requires string value".to_string(),
-        )),
+    match ctx.get(key) {
+        Some(ContextValue::String(s)) => Ok(predicate(s, value)),
+        Some(ContextValue::StringList(list)) => match set_operator {
+            // ForAnyValue: return true if any value matches
+            SetOperatorType::ForAnyValue => Ok(list.iter().any(|val| predicate(val, value))),
+            // ForAllValues: return true only if all values match
+            SetOperatorType::ForAllValues => Ok(list.iter().all(|val| predicate(val, value))),
+            SetOperatorType::None => Err(EvaluationError::ConditionError(
+                "Multivalued context keys require a condition set operator.".to_string(),
+            )),
+        },
+        Some(_) => Ok(false),  // Type mismatch
+        None => Ok(if_exists), // Missing context (return true if operator is IfExists)
     }
 }
 
-/// Helper for numeric condition evaluation
-fn evaluate_numeric_condition<F>(
-    context_value: Option<&ContextValue>,
-    condition_value: &serde_json::Value,
-    predicate: F,
-) -> Result<bool, EvaluationError>
-where
-    F: Fn(f64, f64) -> bool,
-{
-    let context_num = match context_value {
-        Some(ContextValue::Number(n)) => *n,
-        Some(ContextValue::String(s)) => s.parse::<f64>().map_err(|_| {
+/// Helper for single numeric condition evaluation
+///
+/// Numeric condition operators let you construct Condition elements that restrict access based on comparing a key to an integer or decimal value.
+fn ev_numeric(
+    ctx: &Context,
+    key: &str,
+    value: &serde_json::Value,
+    predicate: &Box<dyn Fn(&f64, &f64) -> bool>,
+    if_exists: bool,
+) -> Result<bool, EvaluationError> {
+    let value = &value.as_f64().ok_or_else(|| {
+        EvaluationError::ConditionError("Numeric condition value must be a number".to_string())
+    })?;
+
+    let context_value = match ctx.get(key) {
+        Some(ContextValue::Number(n)) => n,
+        Some(ContextValue::String(s)) => &s.parse::<f64>().map_err(|_| {
             EvaluationError::ConditionError("Invalid numeric context value".to_string())
         })?,
-        Some(_) => return Ok(false),
-        None => return Ok(false),
+        Some(_) => return Ok(false),  // Type mismatch
+        None => return Ok(if_exists), // Missing context (return true if operator is IfExists)
     };
-
-    match condition_value {
-        serde_json::Value::Number(n) => {
-            let val = n.as_f64().ok_or_else(|| {
-                EvaluationError::ConditionError("Invalid numeric condition value".to_string())
-            })?;
-            Ok(predicate(context_num, val))
-        }
-        serde_json::Value::String(s) => {
-            let val = s.parse::<f64>().map_err(|_| {
-                EvaluationError::ConditionError("Invalid numeric condition value".to_string())
-            })?;
-            Ok(predicate(context_num, val))
-        }
-        serde_json::Value::Array(arr) => {
-            for val in arr {
-                let num_val = match val {
-                    serde_json::Value::Number(n) => n.as_f64().ok_or_else(|| {
-                        EvaluationError::ConditionError(
-                            "Invalid numeric value in array".to_string(),
-                        )
-                    })?,
-                    serde_json::Value::String(s) => s.parse::<f64>().map_err(|_| {
-                        EvaluationError::ConditionError(
-                            "Invalid numeric value in array".to_string(),
-                        )
-                    })?,
-                    _ => continue,
-                };
-                if predicate(context_num, num_val) {
-                    return Ok(true);
-                }
-            }
-            Ok(false)
-        }
-        _ => Err(EvaluationError::ConditionError(
-            "Numeric condition requires numeric value".to_string(),
-        )),
-    }
+    Ok(predicate(context_value, value))
 }
 
-/// Helper for date condition evaluation
-fn evaluate_date_condition<F>(
-    context_value: Option<&ContextValue>,
-    condition_value: &serde_json::Value,
-    predicate: F,
-) -> Result<bool, EvaluationError>
-where
-    F: Fn(DateTime<Utc>, DateTime<Utc>) -> bool,
-{
-    let context_date = match context_value {
+// Parse either ISO 8601 or epoch
+fn parse_date(value: &str) -> Result<DateTime<Utc>, EvaluationError> {
+    DateTime::parse_from_rfc3339(value)
+        .map(|dt| dt.with_timezone(&Utc))
+        .or_else(|_| {
+            value
+                .parse::<i64>()
+                .map_err(|_| EvaluationError::ConditionError("Invalid date value".to_string()))
+                .and_then(|epoch| {
+                    DateTime::<Utc>::from_timestamp(epoch, 0).ok_or_else(|| {
+                        EvaluationError::ConditionError("Invalid epoch time".to_string())
+                    })
+                })
+        })
+}
+
+/// Helper for single date condition evaluation
+///
+/// Date condition operators let you construct Condition elements that restrict access based on comparing a key to a date/time value.
+/// You use these condition operators with aws:CurrentTime key or aws:EpochTime key.
+/// You must specify date/time values with one of the W3C implementations of the ISO 8601 date formats or in epoch (UNIX) time.
+fn ev_date(
+    ctx: &Context,
+    key: &str,
+    value: &serde_json::Value,
+    predicate: &Box<dyn Fn(&DateTime<Utc>, &DateTime<Utc>) -> bool>,
+    if_exists: bool,
+) -> Result<bool, EvaluationError> {
+    let value = value.as_str().ok_or_else(|| {
+        EvaluationError::ConditionError("Date condition value must be a string".to_string())
+    })?;
+    let value: DateTime<Utc> = parse_date(value)
+        .map_err(|_| EvaluationError::ConditionError("Invalid date condition value".to_string()))?;
+
+    let context_value: DateTime<Utc> = match ctx.get(key) {
         Some(ContextValue::DateTime(dt)) => *dt,
-        Some(ContextValue::String(s)) => DateTime::parse_from_rfc3339(s)
-            .map_err(|_| EvaluationError::ConditionError("Invalid date format".to_string()))?
-            .with_timezone(&Utc),
-        Some(_) => return Ok(false),
-        None => return Ok(false),
+        Some(ContextValue::Number(epoch)) => parse_date(&epoch.to_string()).map_err(|_| {
+            EvaluationError::ConditionError("Invalid epoch context value".to_string())
+        })?,
+        Some(ContextValue::String(s)) => parse_date(s).map_err(|_| {
+            EvaluationError::ConditionError("Invalid date context value".to_string())
+        })?,
+        Some(_) => return Ok(false),  // Type mismatch
+        None => return Ok(if_exists), // Missing context (return true if operator is IfExists)
     };
-
-    let condition_date = match condition_value {
-        serde_json::Value::String(s) => DateTime::parse_from_rfc3339(s)
-            .map_err(|_| EvaluationError::ConditionError("Invalid date format".to_string()))?
-            .with_timezone(&Utc),
-        _ => {
-            return Err(EvaluationError::ConditionError(
-                "Date condition requires string value".to_string(),
-            ));
-        }
-    };
-
-    Ok(predicate(context_date, condition_date))
+    Ok(predicate(&context_value, &value))
 }
 
 /// Helper for boolean condition evaluation
-fn evaluate_boolean_condition(
-    context_value: Option<&ContextValue>,
-    condition_value: &serde_json::Value,
+///
+/// Boolean conditions let you construct Condition elements that restrict access based on comparing a key to true or false.
+/// If a key contains multiple values, boolean operators can be qualified with set operators ForAllValues and ForAnyValue.
+fn ev_bool(
+    ctx: &Context,
+    key: &str,
+    value: &serde_json::Value,
+    predicate: &Box<dyn Fn(bool, bool) -> bool>,
+    if_exists: bool,
+    set_operator: SetOperatorType,
 ) -> Result<bool, EvaluationError> {
-    let context_bool = match context_value {
-        Some(ContextValue::Boolean(b)) => *b,
-        Some(ContextValue::String(s)) => s.parse::<bool>().map_err(|_| {
-            EvaluationError::ConditionError("Invalid boolean context value".to_string())
-        })?,
-        Some(_) => return Ok(false),
-        None => return Ok(false),
-    };
+    let value = value.as_bool().ok_or_else(|| {
+        EvaluationError::ConditionError("Boolean condition value must be a boolean".to_string())
+    })?;
 
-    match condition_value {
-        serde_json::Value::Bool(b) => Ok(context_bool == *b),
-        serde_json::Value::String(s) => {
-            let condition_bool = s.parse::<bool>().map_err(|_| {
-                EvaluationError::ConditionError("Invalid boolean condition value".to_string())
-            })?;
-            Ok(context_bool == condition_bool)
-        }
-        _ => Err(EvaluationError::ConditionError(
-            "Boolean condition requires boolean value".to_string(),
-        )),
+    match ctx.get(key) {
+        Some(ContextValue::Boolean(b)) => Ok(predicate(*b, value)),
+        Some(ContextValue::BooleanList(list)) => match set_operator {
+            // ForAnyValue: return true if any value matches
+            SetOperatorType::ForAnyValue => Ok(list.iter().any(|&val| predicate(val, value))),
+            // ForAllValues: return true only if all values match
+            SetOperatorType::ForAllValues => Ok(list.iter().all(|&val| predicate(val, value))),
+            SetOperatorType::None => Err(EvaluationError::ConditionError(
+                "Multivalued context keys require a condition set operator.".to_string(),
+            )),
+        },
+        Some(_) => Ok(false),  // Type mismatch
+        None => Ok(if_exists), // Missing context (return true if operator is IfExists)
     }
-}
-
-/// Helper for binary condition evaluation
-fn evaluate_binary_condition(
-    context_value: Option<&ContextValue>,
-    condition_value: &serde_json::Value,
-) -> Result<bool, EvaluationError> {
-    let context_bytes = match context_value {
-        Some(ContextValue::String(s)) => {
-            // Try to decode base64 string to bytes
-            BASE64_STANDARD.decode(s.as_bytes()).map_err(|_| {
-                EvaluationError::ConditionError("Invalid base64 context value".to_string())
-            })?
-        }
-        Some(_) => return Ok(false), // Type mismatch
-        None => return Ok(false),    // Missing context
-    };
-
-    match condition_value {
-        serde_json::Value::String(s) => {
-            // Decode base64 condition value to bytes
-            let condition_bytes = BASE64_STANDARD.decode(s.as_bytes()).map_err(|_| {
-                EvaluationError::ConditionError("Invalid base64 condition value".to_string())
-            })?;
-            Ok(context_bytes == condition_bytes)
-        }
-        serde_json::Value::Array(arr) => {
-            // Any value in the array can match
-            for val in arr {
-                if let serde_json::Value::String(s) = val {
-                    let condition_bytes = BASE64_STANDARD.decode(s.as_bytes()).map_err(|_| {
-                        EvaluationError::ConditionError("Invalid base64 value in array".to_string())
-                    })?;
-                    if context_bytes == condition_bytes {
-                        return Ok(true);
-                    }
-                }
-            }
-            Ok(false)
-        }
-        _ => Err(EvaluationError::ConditionError(
-            "Binary condition requires string value".to_string(),
-        )),
-    }
-}
-
-/// Helper for IP address condition evaluation
-fn evaluate_ip_condition(
-    context_value: Option<&ContextValue>,
-    condition_value: &serde_json::Value,
-    should_match: bool,
-) -> Result<bool, EvaluationError> {
-    // TODO: Simplified IP matching - real implementation would use IP parsing
-    let result = ev_single_string(context_value, condition_value, |a, b| a == b)?;
-    Ok(if should_match { result } else { !result })
-}
-
-/// Helper for ARN condition evaluation
-fn evaluate_arn_condition<F>(
-    context_value: Option<&ContextValue>,
-    condition_value: &serde_json::Value,
-    predicate: F,
-) -> Result<bool, EvaluationError>
-where
-    F: Fn(&str, &str) -> bool,
-{
-    // Use the same logic as string conditions for ARN comparison
-    ev_single_string(context_value, condition_value, predicate)
 }
 
 /// Simple wildcard matching for actions and strings
 pub(super) fn wildcard_match(text: &str, pattern: &str) -> bool {
     // Use the ARN wildcard matching logic
-    crate::Arn::wildcard_match(text, pattern)
+    Arn::wildcard_match(text, pattern)
 }

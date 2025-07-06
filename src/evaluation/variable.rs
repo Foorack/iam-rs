@@ -56,7 +56,7 @@ impl PolicyVariable {
                     ContextValue::Boolean(b) => b.to_string(),
                     ContextValue::Number(n) => n.to_string(),
                     ContextValue::DateTime(dt) => dt.to_rfc3339(),
-                    ContextValue::ListOfStrings(list) => list.join(","),
+                    ContextValue::StringList(list) => list.join(","),
                     _ => self.default_value.clone().unwrap_or_default(),
                 }
             }

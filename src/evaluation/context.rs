@@ -15,7 +15,9 @@ pub enum ContextValue {
     /// DateTime value (e.g., request time)
     DateTime(DateTime<Utc>),
     /// List of strings (e.g., list of ARNs)
-    ListOfStrings(Vec<String>),
+    StringList(Vec<String>),
+    /// List of booleans
+    BooleanList(Vec<bool>),
 }
 
 impl ContextValue {
@@ -54,7 +56,7 @@ impl ContextValue {
     /// Converts the context value to a list of strings
     pub fn as_string_list(&self) -> Option<&Vec<String>> {
         match self {
-            ContextValue::ListOfStrings(list) => Some(list),
+            ContextValue::StringList(list) => Some(list),
             _ => None,
         }
     }

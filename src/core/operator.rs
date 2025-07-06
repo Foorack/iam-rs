@@ -1,5 +1,17 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+pub enum OperatorType {
+    String,
+    Numeric,
+    Date,
+    Boolean,
+    Binary,
+    IpAddress,
+    Arn,
+    Null,
+}
+
 /// Represents the different types of condition operators available in IAM policies
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[serde(rename_all = "PascalCase")]
@@ -341,64 +353,13 @@ impl Operator {
 
     /// Returns true if this operator is a multivalued operator (ForAllValues/ForAnyValue)
     pub fn is_multivalued_operator(&self) -> bool {
-        matches!(
-            self,
-            Operator::ForAllValuesStringEquals
-                | Operator::ForAllValuesStringEqualsIgnoreCase
-                | Operator::ForAnyValueStringEquals
-                | Operator::ForAnyValueStringEqualsIgnoreCase
-                | Operator::ForAllValuesStringNotEquals
-                | Operator::ForAllValuesStringNotEqualsIgnoreCase
-                | Operator::ForAnyValueStringNotEquals
-                | Operator::ForAnyValueStringNotEqualsIgnoreCase
-                | Operator::ForAllValuesStringLike
-                | Operator::ForAnyValueStringLike
-                | Operator::ForAllValuesStringNotLike
-                | Operator::ForAnyValueStringNotLike
-                | Operator::ForAllValuesBool
-                | Operator::ForAnyValueBool
-                | Operator::ForAllValuesArnEquals
-                | Operator::ForAllValuesArnLike
-                | Operator::ForAnyValueArnEquals
-                | Operator::ForAnyValueArnLike
-                | Operator::ForAllValuesArnNotEquals
-                | Operator::ForAllValuesArnNotLike
-                | Operator::ForAnyValueArnNotEquals
-                | Operator::ForAnyValueArnNotLike
-        )
+        self.to_string().starts_with("ForAllValues:")
+            || self.to_string().starts_with("ForAnyValue:")
     }
 
     /// Returns true if this operator is an "IfExists" variant
     pub fn is_if_exists_operator(&self) -> bool {
-        matches!(
-            self,
-            Operator::StringEqualsIfExists
-                | Operator::StringNotEqualsIfExists
-                | Operator::StringEqualsIgnoreCaseIfExists
-                | Operator::StringNotEqualsIgnoreCaseIfExists
-                | Operator::StringLikeIfExists
-                | Operator::StringNotLikeIfExists
-                | Operator::NumericEqualsIfExists
-                | Operator::NumericNotEqualsIfExists
-                | Operator::NumericLessThanIfExists
-                | Operator::NumericLessThanEqualsIfExists
-                | Operator::NumericGreaterThanIfExists
-                | Operator::NumericGreaterThanEqualsIfExists
-                | Operator::DateEqualsIfExists
-                | Operator::DateNotEqualsIfExists
-                | Operator::DateLessThanIfExists
-                | Operator::DateLessThanEqualsIfExists
-                | Operator::DateGreaterThanIfExists
-                | Operator::DateGreaterThanEqualsIfExists
-                | Operator::BoolIfExists
-                | Operator::BinaryEqualsIfExists
-                | Operator::IpAddressIfExists
-                | Operator::NotIpAddressIfExists
-                | Operator::ArnEqualsIfExists
-                | Operator::ArnLikeIfExists
-                | Operator::ArnNotEqualsIfExists
-                | Operator::ArnNotLikeIfExists
-        )
+        self.to_string().ends_with("IfExists")
     }
 
     /// Returns true if this operator is a negated operator (Not*)
@@ -445,25 +406,25 @@ impl Operator {
     }
 
     /// Returns the operator category as a string
-    pub fn category(&self) -> &'static str {
+    pub fn category(&self) -> OperatorType {
         if self.is_string_operator() {
-            "String"
+            OperatorType::String
         } else if self.is_numeric_operator() {
-            "Numeric"
+            OperatorType::Numeric
         } else if self.is_date_operator() {
-            "Date"
+            OperatorType::Date
         } else if self.is_boolean_operator() {
-            "Boolean"
+            OperatorType::Boolean
         } else if self.is_binary_operator() {
-            "Binary"
+            OperatorType::Binary
         } else if self.is_ip_operator() {
-            "IP Address"
+            OperatorType::IpAddress
         } else if self.is_arn_operator() {
-            "ARN"
+            OperatorType::Arn
         } else if matches!(self, Operator::Null) {
-            "Null Check"
+            OperatorType::Null
         } else {
-            "Unknown"
+            panic!("Unknown operator category for operator: {}", self.as_str())
         }
     }
 
@@ -711,14 +672,14 @@ mod tests {
 
     #[test]
     fn test_operator_category_strings() {
-        assert_eq!(Operator::StringEquals.category(), "String");
-        assert_eq!(Operator::NumericEquals.category(), "Numeric");
-        assert_eq!(Operator::DateEquals.category(), "Date");
-        assert_eq!(Operator::Bool.category(), "Boolean");
-        assert_eq!(Operator::BinaryEquals.category(), "Binary");
-        assert_eq!(Operator::IpAddress.category(), "IP Address");
-        assert_eq!(Operator::ArnEquals.category(), "ARN");
-        assert_eq!(Operator::Null.category(), "Null Check");
+        assert_eq!(Operator::StringEquals.category(), OperatorType::String);
+        assert_eq!(Operator::NumericEquals.category(), OperatorType::Numeric);
+        assert_eq!(Operator::DateEquals.category(), OperatorType::Date);
+        assert_eq!(Operator::Bool.category(), OperatorType::Boolean);
+        assert_eq!(Operator::BinaryEquals.category(), OperatorType::Binary);
+        assert_eq!(Operator::IpAddress.category(), OperatorType::IpAddress);
+        assert_eq!(Operator::ArnEquals.category(), OperatorType::Arn);
+        assert_eq!(Operator::Null.category(), OperatorType::Null);
     }
 
     #[test]
