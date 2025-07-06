@@ -2,6 +2,7 @@
 mod context;
 mod engine;
 mod matcher;
+mod operator_eval;
 mod request;
 
 // Re-export evaluation types
