@@ -55,7 +55,10 @@ impl fmt::Display for ValidationError {
                 key,
                 reason,
             } => {
-                write!(f, "Invalid condition '{operator}' for key '{key}': {reason}")
+                write!(
+                    f,
+                    "Invalid condition '{operator}' for key '{key}': {reason}"
+                )
             }
             ValidationError::InvalidPrincipal { principal, reason } => {
                 write!(f, "Invalid principal '{principal}': {reason}")
@@ -129,9 +132,9 @@ impl ValidationContext {
 /// All validation is strict and enforces high quality standards
 pub trait Validate {
     /// Validate the component within the given context
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns `ValidationError` if the component is invalid
     fn validate(&self, context: &mut ValidationContext) -> ValidationResult;
 
@@ -142,9 +145,9 @@ pub trait Validate {
     }
 
     /// Validate with detailed errors (same as regular validation)
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns `ValidationError` if the component is invalid
     fn validate_result(&self) -> ValidationResult {
         let mut context = ValidationContext::new();
@@ -290,7 +293,10 @@ pub(crate) mod helpers {
 
     /// Collect multiple validation errors
     pub fn collect_errors(results: Vec<ValidationResult>) -> ValidationResult {
-        let errors: Vec<ValidationError> = results.into_iter().filter_map(std::result::Result::err).collect();
+        let errors: Vec<ValidationError> = results
+            .into_iter()
+            .filter_map(std::result::Result::err)
+            .collect();
 
         if errors.is_empty() {
             Ok(())

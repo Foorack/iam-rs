@@ -59,9 +59,9 @@ impl Arn {
     /// Parse an ARN string into an Arn struct
     /// This method is extremely lenient and only validates bare format requirements.
     /// Use `is_valid()` to perform comprehensive validation.
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns `ArnError::InvalidPrefix` if the string doesn't start with "arn:"
     /// Returns `ArnError::InvalidFormat` if the ARN has incorrect number of components
     pub fn parse(arn_str: &str) -> Result<Self, ArnError> {
@@ -94,9 +94,9 @@ impl Arn {
 
     /// Check if this ARN matches another ARN or pattern
     /// Supports wildcards (* and ?) in any component except service
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns `ArnError` if the pattern is not a valid ARN format
     pub fn matches(&self, pattern: &str) -> Result<bool, ArnError> {
         let pattern_arn = Arn::parse(pattern)?;
