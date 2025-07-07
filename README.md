@@ -1,5 +1,11 @@
 # iam-rs
 
+# STILL IN FINAL DEV AND VERIFICATION PHASE - CAUTION ON USAGE
+
+# STILL IN FINAL DEV AND VERIFICATION PHASE - CAUTION ON USAGE
+
+# STILL IN FINAL DEV AND VERIFICATION PHASE - CAUTION ON USAGE
+
 [![Crates.io](https://img.shields.io/crates/v/iam-rs.svg)](https://crates.io/crates/iam-rs)
 [![Documentation](https://docs.rs/iam-rs/badge.svg)](https://docs.rs/iam-rs)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -38,7 +44,7 @@ let policy = IAMPolicy::new()
             .with_resource(Resource::Single("arn:aws:s3:::my-bucket/*".to_string()))
     );
 
-// Create an authorization request  
+// Create an authorization request
 let request = IAMRequest::new(
     "arn:aws:iam::123456789012:user/alice",
     "s3:GetObject",
@@ -48,7 +54,7 @@ let request = IAMRequest::new(
 // Evaluate the request
 match evaluate_policy(&policy, &request)? {
     Decision::Allow => println!("✓ Access granted"),
-    Decision::Deny => println!("✗ Access denied"), 
+    Decision::Deny => println!("✗ Access denied"),
     Decision::NotApplicable => println!("? No applicable policy (implicit deny)"),
 }
 ```
@@ -86,7 +92,7 @@ let policy = IAMPolicy::new()
 
 let request = IAMRequest::new_with_context(
     "arn:aws:iam::123456789012:user/alice",
-    "s3:PutObject", 
+    "s3:PutObject",
     "arn:aws:s3:::my-bucket/alice/uploads/document.pdf",
     context
 );
@@ -109,7 +115,7 @@ let policy = IAMPolicy::new()
             .with_sid("AllowSpecificUsers")
             .with_principal(Principal::from_aws_users(&[
                 "arn:aws:iam::123456789012:user/alice",
-                "arn:aws:iam::123456789012:user/bob"  
+                "arn:aws:iam::123456789012:user/bob"
             ]))
             .with_action(Action::Multiple(vec![
                 "s3:GetObject".to_string(),
@@ -131,7 +137,7 @@ let arn = Arn::parse("arn:aws:s3:::my-bucket/users/alice/documents/file.pdf")?;
 // Test various wildcard patterns
 let patterns = [
     "arn:aws:s3:::my-bucket/*",           // ✓ Matches any object in bucket
-    "arn:aws:s3:::my-bucket/users/*",     // ✓ Matches any user path  
+    "arn:aws:s3:::my-bucket/users/*",     // ✓ Matches any user path
     "arn:aws:s3:::my-bucket/users/alice/*", // ✓ Matches Alice's files
     "arn:aws:s3:::*/documents/*",         // ✓ Matches any bucket documents
     "arn:aws:s3:::my-bucket/*/file.pdf",  // ✓ Matches file.pdf anywhere
@@ -151,7 +157,7 @@ for pattern in patterns {
 // Action wildcard matching
 let actions = Action::Multiple(vec![
     "s3:*".to_string(),           // All S3 actions
-    "s3:Get*".to_string(),        // All S3 Get actions  
+    "s3:Get*".to_string(),        // All S3 Get actions
     "s3:Put*".to_string(),        // All S3 Put actions
     "iam:List*".to_string(),      // All IAM List actions
 ]);
@@ -197,7 +203,7 @@ let patterns = [
     "${aws:username}",                          // Current user
     "${aws:userid}",                            // User ID
     "${aws:PrincipalTag/team, 'default'}",     // Principal tag with fallback
-    "${aws:RequestedRegion, 'us-east-1'}",     // Region with fallback  
+    "${aws:RequestedRegion, 'us-east-1'}",     // Region with fallback
     "${aws:CurrentTime}",                       // Current timestamp
     "${s3:prefix, 'uploads/'}",                 // S3 prefix with fallback
 ];
@@ -214,7 +220,7 @@ let policy = IAMPolicy::new()
             .with_resource(Resource::Multiple(vec![
                 // User's personal folder
                 "arn:aws:s3:::company-data/${aws:username}/*".to_string(),
-                // Team shared folder (with fallback)  
+                // Team shared folder (with fallback)
                 "arn:aws:s3:::team-data/${aws:PrincipalTag/team, 'shared'}/*".to_string(),
                 // Department folder (with fallback)
                 "arn:aws:s3:::dept-data/${aws:PrincipalTag/department, 'general'}/*".to_string(),
@@ -253,13 +259,13 @@ Operator::ForAllValuesStringEquals    // All values match
 ```rust
 // Numeric comparisons
 Operator::NumericEquals
-Operator::NumericNotEquals  
+Operator::NumericNotEquals
 Operator::NumericLessThan
 Operator::NumericLessThanEquals
 Operator::NumericGreaterThan
 Operator::NumericGreaterThanEquals
 
-// Date/time comparisons  
+// Date/time comparisons
 Operator::DateEquals
 Operator::DateNotEquals
 Operator::DateLessThan
@@ -349,7 +355,7 @@ println!("Evaluated {} statements", result.matched_statements.len());
 
 // Examine detailed results
 for statement_match in result.matched_statements {
-    println!("Statement '{}': {} - {}", 
+    println!("Statement '{}': {} - {}",
         statement_match.sid.unwrap_or_default(),
         if statement_match.conditions_satisfied { "MATCHED" } else { "NO MATCH" },
         statement_match.reason
@@ -362,7 +368,7 @@ for statement_match in result.matched_statements {
 The evaluation engine implements proper AWS IAM logic:
 
 1. **Explicit Deny**: Always takes precedence over Allow
-2. **Explicit Allow**: Required for access (no implicit allow)  
+2. **Explicit Allow**: Required for access (no implicit allow)
 3. **Implicit Deny**: Default when no Allow statements match
 4. **Conditions**: Must be satisfied for statement to apply
 5. **Multiple Policies**: Combined with proper precedence
@@ -396,7 +402,7 @@ let result = evaluate_policies(&policies, &delete_request)?;
 let json_policy = r#"
 {
   "Version": "2012-10-17",
-  "Id": "S3BucketPolicy", 
+  "Id": "S3BucketPolicy",
   "Statement": [
     {
       "Sid": "AllowUserAccess",
@@ -450,7 +456,7 @@ Run the comprehensive examples to see all features in action:
 cargo run --example arn_demo
 
 # Policy validation and structure
-cargo run --example validation_demo  
+cargo run --example validation_demo
 
 # Complete evaluation engine with conditions
 cargo run --example evaluation_demo
@@ -459,7 +465,7 @@ cargo run --example evaluation_demo
 ### Example Scenarios Covered
 
 - ✅ **Basic Allow/Deny policies** with simple action/resource matching
-- ✅ **Wildcard patterns** for actions, resources, and principals  
+- ✅ **Wildcard patterns** for actions, resources, and principals
 - ✅ **Complex conditions** with String, Numeric, Date, Boolean, IP, and ARN operators
 - ✅ **Variable interpolation** with fallback values for dynamic policies
 - ✅ **Multi-policy evaluation** with proper precedence handling
@@ -472,7 +478,7 @@ cargo run --example evaluation_demo
 Contributions are welcome! This library aims to be the definitive Rust implementation of AWS IAM policy evaluation.
 
 1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)  
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
 3. Add tests for new functionality
 4. Run the test suite (`cargo test`)
 5. Check code quality (`cargo clippy`)
@@ -483,18 +489,20 @@ Contributions are welcome! This library aims to be the definitive Rust implement
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-      "Action": ["iam:GetAccountPasswordPolicy", "iam:ListVirtualMFADevices"],
-      "Resource": "*",
-      "Condition": {
-        "StringEquals": {
-          "aws:RequestedRegion": "us-east-1"
-        }
-      }
-    }
-  ]
+"Action": ["iam:GetAccountPasswordPolicy", "iam:ListVirtualMFADevices"],
+"Resource": "\*",
+"Condition": {
+"StringEquals": {
+"aws:RequestedRegion": "us-east-1"
 }
+}
+}
+]
+}
+
 ```
 
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+```
