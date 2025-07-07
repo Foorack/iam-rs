@@ -271,7 +271,8 @@ pub struct IAMStatement {
     /// The context key that you specify in a policy condition can be a global condition context key or a service-specific context key.
     /// * Global condition context keys have the aws: prefix.
     /// * Service-specific context keys have the service's prefix.
-    /// For example, Amazon EC2 lets you write a condition using the ec2:InstanceType context key, which is unique to that service.
+    ///
+    ///   For example, Amazon EC2 lets you write a condition using the ec2:InstanceType context key, which is unique to that service.
     ///
     /// Context key names are not case-sensitive.
     /// For example, including the aws:SourceIP context key is equivalent to testing for `AWS:SourceIp`.
@@ -310,6 +311,7 @@ impl IAMStatement {
     }
 
     /// Sets the statement ID
+    #[must_use]
     pub fn with_sid<S: Into<String>>(mut self, sid: S) -> Self {
         self.sid = Some(sid.into());
         self
@@ -337,6 +339,7 @@ impl IAMStatement {
     }
 
     /// Adds a condition to the statement
+    #[must_use]
     pub fn with_condition(
         mut self,
         operator: Operator,
@@ -350,6 +353,7 @@ impl IAMStatement {
     }
 
     /// Adds a condition using the Condition struct
+    #[must_use]
     pub fn with_condition_struct(mut self, condition: super::Condition) -> Self {
         let condition_block = self.condition.get_or_insert_with(ConditionBlock::new);
         condition_block.add_condition(condition);

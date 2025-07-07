@@ -90,17 +90,27 @@ impl IAMPolicy {
     }
 
     /// Sets the policy ID
+    #[must_use]
     pub fn with_id<S: Into<String>>(mut self, id: S) -> Self {
         self.id = Some(id.into());
         self
     }
 
     /// Parses an IAM policy from a JSON string
+    ///
+    /// # Errors
+    ///
+    /// Returns a JSON parsing error if the input string is not valid JSON
+    /// or does not match the expected IAM policy structure.
     pub fn from_json(json: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(json)
     }
 
     /// Serializes the IAM policy to a JSON string
+    ///
+    /// # Errors
+    ///
+    /// Returns a JSON serialization error if the policy cannot be converted to JSON.
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
     }
@@ -154,7 +164,7 @@ impl Validate for IAMPolicy {
                 IAMVersion::V20121017 => {
                     // Supported version
                 }
-                _ => {
+                IAMVersion::V20081017 => {
                     results.push(Err(ValidationError::InvalidValue {
                         field: "Version".to_string(),
                         value: format!("{:?}", self.version),

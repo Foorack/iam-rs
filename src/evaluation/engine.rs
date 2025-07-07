@@ -322,14 +322,14 @@ impl PolicyEvaluator {
                 for values in map.values() {
                     match values {
                         serde_json::Value::String(s) => {
-                            if self.principal_string_matches(s, request_principal)? {
+                            if Self::principal_string_matches(s, request_principal)? {
                                 return Ok(true);
                             }
                         }
                         serde_json::Value::Array(arr) => {
                             for val in arr {
                                 if let serde_json::Value::String(s) = val {
-                                    if self.principal_string_matches(s, request_principal)? {
+                                    if Self::principal_string_matches(s, request_principal)? {
                                         return Ok(true);
                                     }
                                 }
@@ -345,7 +345,6 @@ impl PolicyEvaluator {
 
     /// Check if a principal string matches the request principal
     fn principal_string_matches(
-        &self,
         principal_str: &str,
         request_principal: &str,
     ) -> Result<bool, EvaluationError> {
