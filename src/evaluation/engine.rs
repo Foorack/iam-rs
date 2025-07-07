@@ -140,7 +140,7 @@ impl PolicyEvaluator {
     /// Evaluate an authorization request against all policies
     ///
     /// # Errors
-    /// 
+    ///
     /// Returns `EvaluationError` if:
     /// - The request context is invalid
     /// - ARN format errors occur during evaluation
@@ -362,10 +362,7 @@ impl PolicyEvaluator {
     }
 
     /// Check if an action matches the request action
-    fn action_matches(
-        action: &Action,
-        request_action: &str,
-    ) -> bool {
+    fn action_matches(action: &Action, request_action: &str) -> bool {
         match action {
             Action::Single(a) => {
                 a == "*" || a == request_action || wildcard_match(request_action, a)
