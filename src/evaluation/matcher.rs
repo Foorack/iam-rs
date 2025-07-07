@@ -10,6 +10,7 @@ pub struct ArnMatcher {
 
 /// Internal representation of an ARN pattern with pre-computed matching data
 #[derive(Debug, Clone)]
+#[allow(clippy::struct_excessive_bools)]
 struct ArnPattern {
     /// The original pattern string
     pattern: String,
@@ -80,6 +81,10 @@ impl ArnMatcher {
     }
 
     /// Get all patterns that match the given ARN
+    ///
+    /// # Errors
+    ///
+    /// Returns `ArnError` if the ARN cannot be parsed.
     pub fn matching_patterns(&self, arn: &str) -> Result<Vec<&str>, ArnError> {
         let target_arn = Arn::parse(arn)?;
 
@@ -92,6 +97,10 @@ impl ArnMatcher {
     }
 
     /// Find ARNs from a collection that match any of our patterns
+    ///
+    /// # Errors
+    ///
+    /// Returns `ArnError` if any ARN in the collection cannot be parsed.
     pub fn filter_matching<'a>(&self, arns: &'a [String]) -> Result<Vec<&'a str>, ArnError> {
         let mut matching = Vec::new();
 
@@ -280,6 +289,10 @@ impl ArnBuilder {
     }
 
     /// Build the ARN
+    ///
+    /// # Errors
+    ///
+    /// Returns `ArnError` if the ARN cannot be built due to missing components.
     pub fn build(self) -> Result<Arn, ArnError> {
         let partition = self.partition.unwrap_or_else(|| "aws".to_string());
         let service = self
@@ -309,6 +322,10 @@ impl ArnBuilder {
     }
 
     /// Build the ARN and convert to string
+    ///
+    /// # Errors
+    ///
+    /// Returns `ArnError` if the ARN cannot be built due to missing components.
     pub fn build_string(self) -> Result<String, ArnError> {
         Ok(self.build()?.to_string())
     }
@@ -329,6 +346,10 @@ impl ArnSet {
     }
 
     /// Create from a collection of ARNs
+    ///
+    /// # Errors
+    ///
+    /// Returns `ArnError` if any of the provided ARNs are invalid.
     pub fn from_arns<I>(arns: I) -> Result<Self, ArnError>
     where
         I: IntoIterator<Item = String>,
@@ -341,6 +362,10 @@ impl ArnSet {
     }
 
     /// Add an ARN to the set (validates it first)
+    ///
+    /// # Errors
+    ///
+    /// Returns `ArnError` if the ARN is invalid.
     pub fn add(&mut self, arn: String) -> Result<(), ArnError> {
         // Validate the ARN
         Arn::parse(&arn)?;
@@ -355,6 +380,10 @@ impl ArnSet {
     }
 
     /// Get ARNs that match any of the given patterns
+    ///
+    /// # Errors
+    ///
+    /// Returns `ArnError` if any ARN in the set is invalid.
     pub fn filter_by_patterns(&self, patterns: &[String]) -> Result<Vec<&str>, ArnError> {
         let matcher = ArnMatcher::new(patterns.iter().cloned())?;
 
@@ -369,6 +398,10 @@ impl ArnSet {
     }
 
     /// Get all ARNs for a specific service
+    ///
+    /// # Errors
+    ///
+    /// Returns `ArnError` if any ARN in the set is invalid.
     pub fn filter_by_service(&self, service: &str) -> Result<Vec<&str>, ArnError> {
         let mut matching = Vec::new();
 
@@ -383,6 +416,10 @@ impl ArnSet {
     }
 
     /// Get all ARNs for a specific account
+    ///
+    /// # Errors
+    ///
+    /// Returns `ArnError` if any ARN in the set is invalid.
     pub fn filter_by_account(&self, account_id: &str) -> Result<Vec<&str>, ArnError> {
         let mut matching = Vec::new();
 

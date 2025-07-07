@@ -163,7 +163,7 @@ impl PolicyEvaluator {
                     ));
                 }
 
-                let statement_result = self.evaluate_statement(statement, request)?;
+                let statement_result = Self::evaluate_statement(statement, request)?;
 
                 if self.options.collect_match_details {
                     matched_statements.push(statement_result.clone());
@@ -215,7 +215,6 @@ impl PolicyEvaluator {
 
     /// Evaluate a single statement against a request
     fn evaluate_statement(
-        &self,
         statement: &IAMStatement,
         request: &IAMRequest,
     ) -> Result<StatementMatch, EvaluationError> {

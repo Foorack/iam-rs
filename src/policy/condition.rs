@@ -215,6 +215,7 @@ impl Default for ConditionBlock {
 }
 
 impl Validate for Condition {
+    #[allow(clippy::too_many_lines)]
     fn validate(&self, context: &mut ValidationContext) -> ValidationResult {
         context.with_segment("Condition", |ctx| {
             let mut results = Vec::new();

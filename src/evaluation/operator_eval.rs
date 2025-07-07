@@ -11,6 +11,7 @@ enum SetOperatorType {
 
 type Predicate<T> = Box<dyn Fn(T, T) -> bool>;
 type DatePredicate<T> = Box<dyn for<'a, 'b> Fn(&'a T, &'b T) -> bool>;
+type O = Operator;
 
 /// Evaluate a single condition
 ///
@@ -36,6 +37,7 @@ type DatePredicate<T> = Box<dyn for<'a, 'b> Fn(&'a T, &'b T) -> bool>;
 ///
 /// Result: Match
 ///
+#[allow(clippy::too_many_lines)]
 pub(super) fn evaluate_condition(
     ctx: &Context,
     operator: &Operator,
@@ -62,7 +64,6 @@ pub(super) fn evaluate_condition(
     let mut predicate_ip: Predicate<IpNet> =
         Box::new(|_a, _b| panic!("Logic error, predicate not set before use"));
 
-    type O = Operator;
     match operator {
         // String conditions
         O::StringEquals
@@ -155,7 +156,7 @@ pub(super) fn evaluate_condition(
         // IP address conditions
         O::IpAddress | O::IpAddressIfExists => predicate_ip = Box::new(|a, b| b.contains(&a)),
         O::NotIpAddress | O::NotIpAddressIfExists => {
-            predicate_ip = Box::new(|a, b| !b.contains(&a))
+            predicate_ip = Box::new(|a, b| !b.contains(&a));
         }
 
         O::Null => {
