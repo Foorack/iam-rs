@@ -12,7 +12,7 @@ pub enum ContextValue {
     Boolean(bool),
     /// Numeric value (e.g., MFA age in seconds, epoch time)
     Number(f64),
-    /// DateTime value (e.g., request time)
+    /// `DateTime` value (e.g., request time)
     DateTime(DateTime<Utc>),
     /// List of strings (e.g., list of ARNs)
     StringList(Vec<String>),
@@ -22,6 +22,7 @@ pub enum ContextValue {
 
 impl ContextValue {
     /// Converts the context value to a string representation
+    #[must_use]
     pub fn as_string(&self) -> Option<&String> {
         match self {
             ContextValue::String(s) => Some(s),
@@ -30,6 +31,7 @@ impl ContextValue {
     }
 
     /// Converts the context value to a boolean
+    #[must_use]
     pub fn as_boolean(&self) -> Option<bool> {
         match self {
             ContextValue::Boolean(b) => Some(*b),
@@ -38,6 +40,7 @@ impl ContextValue {
     }
 
     /// Converts the context value to a number
+    #[must_use]
     pub fn as_number(&self) -> Option<f64> {
         match self {
             ContextValue::Number(n) => Some(*n),
@@ -46,6 +49,7 @@ impl ContextValue {
     }
 
     /// Converts the context value to a DateTime
+    #[must_use]
     pub fn as_datetime(&self) -> Option<&DateTime<Utc>> {
         match self {
             ContextValue::DateTime(dt) => Some(dt),
@@ -54,6 +58,7 @@ impl ContextValue {
     }
 
     /// Converts the context value to a list of strings
+    #[must_use]
     pub fn as_string_list(&self) -> Option<&Vec<String>> {
         match self {
             ContextValue::StringList(list) => Some(list),
@@ -91,6 +96,7 @@ impl<'de> Deserialize<'de> for Context {
 
 impl Context {
     /// Creates a new empty context
+    #[must_use]
     pub fn new() -> Self {
         Self {
             data: HashMap::new(),
@@ -98,11 +104,13 @@ impl Context {
     }
 
     /// Creates a context with initial data
+    #[must_use]
     pub fn with_data(data: HashMap<String, ContextValue>) -> Self {
         Self { data }
     }
 
     /// Get a context value by key
+    #[must_use]
     pub fn get(&self, key: &str) -> Option<&ContextValue> {
         self.data.get(key)
     }
@@ -132,11 +140,13 @@ impl Context {
     }
 
     /// Checks if a context key exists
+    #[must_use]
     pub fn has_key(&self, key: &str) -> bool {
         self.data.contains_key(key)
     }
 
     /// Gets all context keys
+    #[must_use]
     pub fn keys(&self) -> Vec<&String> {
         self.data.keys().collect()
     }

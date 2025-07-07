@@ -108,6 +108,7 @@ impl Default for EvaluationOptions {
 
 impl PolicyEvaluator {
     /// Create a new policy evaluator
+    #[must_use]
     pub fn new() -> Self {
         Self {
             policies: Vec::new(),
@@ -116,6 +117,7 @@ impl PolicyEvaluator {
     }
 
     /// Create evaluator with policies
+    #[must_use]
     pub fn with_policies(policies: Vec<IAMPolicy>) -> Self {
         Self {
             policies,
@@ -129,6 +131,7 @@ impl PolicyEvaluator {
     }
 
     /// Set evaluation options
+    #[must_use]
     pub fn with_options(mut self, options: EvaluationOptions) -> Self {
         self.options = options;
         self

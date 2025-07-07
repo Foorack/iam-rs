@@ -34,7 +34,7 @@ use serde::{Deserialize, Serialize};
 /// - aws:RequestTag/dept=123
 /// ```
 ///
-/// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic_policy-eval-reqcontext.html
+/// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic_policy-eval-reqcontext.html>
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct IAMRequest {
     /// The principal making the request (e.g., AROA123456789EXAMPLE)
@@ -56,6 +56,7 @@ pub struct IAMRequest {
 
 impl IAMRequest {
     /// Creates a new request
+    #[must_use]
     pub fn new<S: Into<String>>(principal: S, action: S, resource: S) -> Self {
         Self {
             principal: principal.into(),
@@ -66,6 +67,7 @@ impl IAMRequest {
     }
 
     /// Creates a request with context
+    #[must_use]
     pub fn new_with_context<S: Into<String>>(
         principal: S,
         action: S,
@@ -109,6 +111,7 @@ impl IAMRequest {
     }
 
     /// Gets a context value by key
+    #[must_use]
     pub fn get_context(&self, key: &str) -> Option<&ContextValue> {
         self.context.get(key)
     }
