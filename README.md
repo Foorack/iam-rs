@@ -68,6 +68,7 @@ use serde_json::json;
 // Create context for condition evaluation
 let mut context = Context::new();
 context.insert("aws:username".to_string(), ContextValue::String("alice".to_string()));
+context.insert("aws:CurrentTime".to_string(), ContextValue::String("2024-06-01T12:00:00Z".to_string()));
 context.insert("s3:prefix".to_string(), ContextValue::String("uploads/".to_string()));
 
 // Policy with string and date conditions
@@ -489,20 +490,3 @@ Contributions are welcome! This library aims to be the definitive Rust implement
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-"Action": ["iam:GetAccountPasswordPolicy", "iam:ListVirtualMFADevices"],
-"Resource": "\*",
-"Condition": {
-"StringEquals": {
-"aws:RequestedRegion": "us-east-1"
-}
-}
-}
-]
-}
-
-```
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-```
