@@ -8,7 +8,7 @@ use crate::{
 
 /// Represents a single statement in an IAM policy
 ///
-/// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_statement.html
+/// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_statement.html>
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IAMStatement {
     /// Optional statement ID
@@ -22,7 +22,7 @@ pub struct IAMStatement {
     ///
     /// The Sid element supports ASCII uppercase letters (A-Z), lowercase letters (a-z), and numbers (0-9).
     ///
-    /// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_sid.html
+    /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_sid.html>
     #[serde(rename = "Sid", skip_serializing_if = "Option::is_none")]
     pub sid: Option<String>,
 
@@ -36,7 +36,7 @@ pub struct IAMStatement {
     /// To allow access to a resource, you must set the Effect element to Allow.
     /// To override an allow (for example, to override an allow that is otherwise in force), you set the Effect element to Deny.
     ///
-    /// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_effect.html
+    /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_effect.html>
     #[serde(rename = "Effect")]
     pub effect: Effect,
 
@@ -50,18 +50,18 @@ pub struct IAMStatement {
     /// Identity-based policies are permissions policies that you attach to IAM identities (users, groups, or roles).
     /// In those cases, the principal is implicitly the identity where the policy is attached.
     ///
-    /// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_principal.html
+    /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_principal.html>
     #[serde(rename = "Principal", skip_serializing_if = "Option::is_none")]
     pub principal: Option<Principal>,
 
     /// Optional not principal(s) - who the statement does not apply to
     ///
-    /// The `NotPrincipal` element uses "Effect":"Deny" to deny access to all principals except the principal specified in the NotPrincipal element.
+    /// The `NotPrincipal` element uses "Effect":"Deny" to deny access to all principals except the principal specified in the `NotPrincipal` element.
     /// A principal can usually be a user, federated user, role, assumed role, account, service, or other principal type.
     ///
     /// `NotPrincipal` must be used with `"Effect":"Deny"`. Using it with `"Effect":"Allow"` is not supported.
     ///
-    /// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_notprincipal.html
+    /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_notprincipal.html>
     #[serde(rename = "NotPrincipal", skip_serializing_if = "Option::is_none")]
     pub not_principal: Option<Principal>,
 
@@ -104,7 +104,7 @@ pub struct IAMStatement {
     /// For example, Amazon SQS lets you make available just a subset of all the possible Amazon SQS actions.
     /// In that case, the `*` wildcard doesn't allow complete control of the queue; it allows only the subset of actions that you've shared.
     ///
-    /// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_action.html
+    /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_action.html>
     #[serde(rename = "Action", skip_serializing_if = "Option::is_none")]
     pub action: Option<Action>,
 
@@ -122,9 +122,9 @@ pub struct IAMStatement {
     ///
     /// For more information, see the following example policy.
     ///
-    /// # NotAction with Allow
+    /// # `NotAction` with Allow
     ///
-    /// You can use the NotAction element in a statement with `"Effect": "Allow"` to provide access to all of the actions in an AWS service, except for the actions specified in NotAction.
+    /// You can use the `NotAction` element in a statement with `"Effect": "Allow"` to provide access to all of the actions in an AWS service, except for the actions specified in `NotAction`.
     /// You can use it with the Resource element to provide scope for the policy, limiting the allowed actions to the actions that can be performed on the specified resource.
     ///
     /// Example: Allow all S3 actions except deleting a bucket:
@@ -141,11 +141,11 @@ pub struct IAMStatement {
     /// "Resource": "*"
     /// ```
     ///
-    /// Be careful using NotAction with `"Effect": "Allow"` as it could grant more permissions than intended.
+    /// Be careful using `NotAction` with `"Effect": "Allow"` as it could grant more permissions than intended.
     ///
-    /// # NotAction with Deny
+    /// # `NotAction` with Deny
     ///
-    /// You can use the NotAction element in a statement with `"Effect": "Deny"` to deny access to all of the listed resources except for the actions specified in NotAction.
+    /// You can use the `NotAction` element in a statement with `"Effect": "Deny"` to deny access to all of the listed resources except for the actions specified in `NotAction`.
     /// This combination does not allow the listed items, but instead explicitly denies the actions not listed.
     ///
     /// Example: Deny all actions except IAM actions if not using MFA:
@@ -159,7 +159,7 @@ pub struct IAMStatement {
     /// }
     /// ```
     ///
-    /// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_notaction.html
+    /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_notaction.html>
     #[serde(rename = "NotAction", skip_serializing_if = "Option::is_none")]
     pub not_action: Option<Action>,
 
@@ -170,7 +170,7 @@ pub struct IAMStatement {
     /// You must include either a `Resource` or a `NotResource` element in a statement.
     ///
     /// You specify a resource using an Amazon Resource Name (ARN). The ARN format depends on the AWS service and the specific resource.
-    /// For more information about ARNs, see: https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_identifiers.html#identifiers-arns
+    /// For more information about ARNs, see: <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_identifiers.html#identifiers-arns>
     ///
     /// Some AWS services do not support resource-level permissions. In those cases, use the wildcard character (`*`) in the Resource element.
     ///
@@ -239,21 +239,21 @@ pub struct IAMStatement {
     /// ```text
     /// "Resource": "arn:aws:dynamodb:us-east-2:account-id:table/${aws:username}"
     /// ```
-    /// This allows access to a DynamoDB table that matches the current user's name.
+    /// This allows access to a `DynamoDB` table that matches the current user's name.
     ///
     /// For more information about JSON policy variables, see [IAM policy elements: Variables and tags](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_variables.html).
     ///
-    /// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_resource.html
+    /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_resource.html>
     #[serde(rename = "Resource", skip_serializing_if = "Option::is_none")]
     pub resource: Option<Resource>,
 
     /// Optional not resource(s) - what resources are not covered
     ///
-    /// NotResource is an advanced policy element that explicitly matches every resource except those specified.
-    /// Using NotResource can result in a shorter policy by listing only a few resources that should not match, rather than including a long list of resources that will match.
+    /// `NotResource` is an advanced policy element that explicitly matches every resource except those specified.
+    /// Using `NotResource` can result in a shorter policy by listing only a few resources that should not match, rather than including a long list of resources that will match.
     /// This is particularly useful for policies that apply within a single AWS service.
     ///
-    /// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_notresource.html
+    /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_notresource.html>
     #[serde(rename = "NotResource", skip_serializing_if = "Option::is_none")]
     pub not_resource: Option<Resource>,
 
@@ -287,14 +287,14 @@ pub struct IAMStatement {
     /// "Condition" : { "StringEqualsIgnoreCase" : { "aws:username" : "john" }}
     /// ```
     ///
-    /// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition.html
+    /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition.html>
     #[serde(rename = "Condition", skip_serializing_if = "Option::is_none")]
     pub condition: Option<ConditionBlock>,
 }
 
 impl IAMStatement {
     /// Creates a new IAM statement with the specified effect
-    pub fn new(effect: Effect) -> Self {
+    #[must_use] pub fn new(effect: Effect) -> Self {
         Self {
             sid: None,
             effect,
@@ -315,19 +315,19 @@ impl IAMStatement {
     }
 
     /// Sets the principal
-    pub fn with_principal(mut self, principal: Principal) -> Self {
+    #[must_use] pub fn with_principal(mut self, principal: Principal) -> Self {
         self.principal = Some(principal);
         self
     }
 
     /// Sets the action
-    pub fn with_action(mut self, action: Action) -> Self {
+    #[must_use] pub fn with_action(mut self, action: Action) -> Self {
         self.action = Some(action);
         self
     }
 
     /// Sets the resource
-    pub fn with_resource(mut self, resource: Resource) -> Self {
+    #[must_use] pub fn with_resource(mut self, resource: Resource) -> Self {
         self.resource = Some(resource);
         self
     }

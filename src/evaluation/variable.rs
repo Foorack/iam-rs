@@ -12,7 +12,7 @@ pub struct PolicyVariable {
 impl PolicyVariable {
     /// Parse a policy variable from a string like "${aws:PrincipalTag/team, 'company-wide'}"
     pub fn parse(input: &str) -> Result<Self, EvaluationError> {
-        if !input.starts_with("${") || !input.ends_with("}") {
+        if !input.starts_with("${") || !input.ends_with('}') {
             return Err(EvaluationError::InvalidVariable(
                 "Policy variable must be wrapped in ${}".to_string(),
             ));

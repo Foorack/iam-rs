@@ -45,7 +45,7 @@ pub struct IAMRequest {
     #[serde(rename = "Action")]
     pub action: String,
 
-    /// The resource being accessed (e.g., arn:aws:iam::user/martha)
+    /// The resource being accessed (e.g., `arn:aws:iam::user/martha`)
     #[serde(rename = "Resource")]
     pub resource: String,
 
@@ -83,6 +83,7 @@ impl IAMRequest {
     }
 
     /// Adds all context key-value pairs from another context
+    #[must_use]
     pub fn with_context(mut self, other_context: Context) -> Self {
         self.context.extend(other_context);
         self
@@ -117,11 +118,13 @@ impl IAMRequest {
     }
 
     /// Checks if a context key exists
+    #[must_use]
     pub fn has_context(&self, key: &str) -> bool {
         self.context.has_key(key)
     }
 
     /// Gets all context keys
+    #[must_use]
     pub fn context_keys(&self) -> Vec<&String> {
         self.context.keys()
     }

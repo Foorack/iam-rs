@@ -14,7 +14,7 @@ enum SetOperatorType {
 ///
 /// Important!: If the key that you specify in a policy condition is not present in the request context,
 ///     the values do not match and the condition is false. If the policy condition requires that the key is
-///     not matched, such as StringNotLike or ArnNotLike, and the right key is not present, the condition is true.
+///     not matched, such as `StringNotLike` or `ArnNotLike`, and the right key is not present, the condition is true.
 ///     This logic applies to all condition operators except `...IfExists` and `Null` check.
 ///     These operators test whether the key is present (exists) in the request context.
 ///
@@ -82,13 +82,13 @@ pub(super) fn evaluate_condition(
         | O::ForAllValuesStringEqualsIgnoreCase
         | O::ForAnyValueStringEqualsIgnoreCase
         | O::StringEqualsIgnoreCaseIfExists => {
-            predicate_str = Box::new(|a, b| a.eq_ignore_ascii_case(b))
+            predicate_str = Box::new(str::eq_ignore_ascii_case);
         }
         O::StringNotEqualsIgnoreCase
         | O::ForAllValuesStringNotEqualsIgnoreCase
         | O::ForAnyValueStringNotEqualsIgnoreCase
         | O::StringNotEqualsIgnoreCaseIfExists => {
-            predicate_str = Box::new(|a, b| !a.eq_ignore_ascii_case(b))
+            predicate_str = Box::new(|a, b| !a.eq_ignore_ascii_case(b));
         }
         O::StringLike
         | O::ForAllValuesStringLike
@@ -97,7 +97,7 @@ pub(super) fn evaluate_condition(
         | O::ArnLike
         | O::ForAllValuesArnLike
         | O::ForAnyValueArnLike
-        | O::ArnLikeIfExists => predicate_str = Box::new(|a, b| wildcard_match(a, b)),
+        | O::ArnLikeIfExists => predicate_str = Box::new(wildcard_match),
         O::StringNotLike
         | O::ForAllValuesStringNotLike
         | O::ForAnyValueStringNotLike
@@ -109,20 +109,20 @@ pub(super) fn evaluate_condition(
 
         // Numeric conditions
         O::NumericEquals | O::NumericEqualsIfExists => {
-            predicate_num = Box::new(|a, b| (a - b).abs() < f64::EPSILON)
+            predicate_num = Box::new(|a, b| (a - b).abs() < f64::EPSILON);
         }
         O::NumericNotEquals | O::NumericNotEqualsIfExists => {
-            predicate_num = Box::new(|a, b| (a - b).abs() >= f64::EPSILON)
+            predicate_num = Box::new(|a, b| (a - b).abs() >= f64::EPSILON);
         }
         O::NumericLessThan | O::NumericLessThanIfExists => predicate_num = Box::new(|a, b| a < b),
         O::NumericLessThanEquals | O::NumericLessThanEqualsIfExists => {
-            predicate_num = Box::new(|a, b| a <= b)
+            predicate_num = Box::new(|a, b| a <= b);
         }
         O::NumericGreaterThan | O::NumericGreaterThanIfExists => {
-            predicate_num = Box::new(|a, b| a > b)
+            predicate_num = Box::new(|a, b| a > b);
         }
         O::NumericGreaterThanEquals | O::NumericGreaterThanEqualsIfExists => {
-            predicate_num = Box::new(|a, b| a >= b)
+            predicate_num = Box::new(|a, b| a >= b);
         }
 
         // Date conditions
@@ -130,16 +130,16 @@ pub(super) fn evaluate_condition(
         O::DateNotEquals | O::DateNotEqualsIfExists => predicate_date = Box::new(|a, b| a != b),
         O::DateLessThan | O::DateLessThanIfExists => predicate_date = Box::new(|a, b| a < b),
         O::DateLessThanEquals | O::DateLessThanEqualsIfExists => {
-            predicate_date = Box::new(|a, b| a <= b)
+            predicate_date = Box::new(|a, b| a <= b);
         }
         O::DateGreaterThan | O::DateGreaterThanIfExists => predicate_date = Box::new(|a, b| a > b),
         O::DateGreaterThanEquals | O::DateGreaterThanEqualsIfExists => {
-            predicate_date = Box::new(|a, b| a >= b)
+            predicate_date = Box::new(|a, b| a >= b);
         }
 
         // Boolean conditions
         O::Bool | O::ForAllValuesBool | O::ForAnyValueBool | O::BoolIfExists => {
-            predicate_bool = Box::new(|a, b| a == b)
+            predicate_bool = Box::new(|a, b| a == b);
         }
 
         // Binary conditions
@@ -156,7 +156,7 @@ pub(super) fn evaluate_condition(
         O::Null => {
             // None
         }
-    };
+    }
 
     let values = match value {
         // Keep array as is
@@ -196,7 +196,7 @@ pub(super) fn evaluate_condition(
         }
     }
 
-    return Ok(false);
+    Ok(false)
 }
 
 /// Helper for single string condition evaluation
@@ -306,7 +306,7 @@ fn ev_date(
 /// Helper for boolean condition evaluation
 ///
 /// Boolean conditions let you construct Condition elements that restrict access based on comparing a key to true or false.
-/// If a key contains multiple values, boolean operators can be qualified with set operators ForAllValues and ForAnyValue.
+/// If a key contains multiple values, boolean operators can be qualified with set operators `ForAllValues` and `ForAnyValue`.
 fn ev_bool(
     ctx: &Context,
     key: &str,
@@ -338,7 +338,7 @@ fn ev_bool(
 /// Helper for IP address condition evaluation
 ///
 /// IP address condition operators let you construct Condition elements that restrict access based on comparing a key to an IPv4 or IPv6 address or range of IP addresses.
-/// You use these with the aws:SourceIp key. The value must be in the standard CIDR format (for example, 203.0.113.0/24 or 2001:DB8:1234:5678::/64).
+/// You use these with the aws:SourceIp key. The value must be in the standard CIDR format (for example, 203.0.113.0/24 or `2001:DB8:1234:5678::/64`).
 /// If you specify an IP address without the associated routing prefix, IAM uses the default prefix value of /32.
 ///
 /// Some AWS services support IPv6, using :: to represent a range of 0s.
@@ -354,8 +354,8 @@ fn ev_ip(
     fn ip_subnet(ip: &str) -> String {
         match ip {
             ip if ip.contains('/') => ip.to_string(),
-            ip if ip.contains(':') => format!("{}/128", ip),
-            ip => format!("{}/32", ip),
+            ip if ip.contains(':') => format!("{ip}/128"),
+            ip => format!("{ip}/32"),
         }
     }
 
@@ -375,11 +375,10 @@ fn ev_ip(
     };
 
     println!(
-        "Evaluating IP condition: {} against {}",
-        context_value, value
+        "Evaluating IP condition: {context_value} against {value}"
     );
 
-    return Ok(predicate(&context_value, &value));
+    Ok(predicate(&context_value, &value))
 }
 
 /// Simple wildcard matching for actions and strings

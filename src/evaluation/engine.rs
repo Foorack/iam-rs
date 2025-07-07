@@ -40,12 +40,12 @@ pub enum EvaluationError {
 impl std::fmt::Display for EvaluationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EvaluationError::InvalidContext(msg) => write!(f, "Invalid context: {}", msg),
-            EvaluationError::InvalidPolicy(msg) => write!(f, "Invalid policy: {}", msg),
-            EvaluationError::InvalidArn(msg) => write!(f, "Invalid ARN: {}", msg),
-            EvaluationError::InvalidVariable(msg) => write!(f, "Invalid variable: {}", msg),
-            EvaluationError::ConditionError(msg) => write!(f, "Condition error: {}", msg),
-            EvaluationError::InternalError(msg) => write!(f, "Internal error: {}", msg),
+            EvaluationError::InvalidContext(msg) => write!(f, "Invalid context: {msg}"),
+            EvaluationError::InvalidPolicy(msg) => write!(f, "Invalid policy: {msg}"),
+            EvaluationError::InvalidArn(msg) => write!(f, "Invalid ARN: {msg}"),
+            EvaluationError::InvalidVariable(msg) => write!(f, "Invalid variable: {msg}"),
+            EvaluationError::ConditionError(msg) => write!(f, "Condition error: {msg}"),
+            EvaluationError::InternalError(msg) => write!(f, "Internal error: {msg}"),
         }
     }
 }

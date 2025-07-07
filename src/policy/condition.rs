@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, HashMap};
 /// Represents a single condition in an IAM policy
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Condition {
-    /// The condition operator (e.g., StringEquals, DateGreaterThan)
+    /// The condition operator (e.g., `StringEquals`, `DateGreaterThan`)
     pub operator: Operator,
     /// The condition key (e.g., "aws:username", "s3:prefix")
     pub key: String,
@@ -59,7 +59,7 @@ impl<'de> Deserialize<'de> for ConditionBlock {
 
         for (op_str, condition_map) in string_map {
             let operator = op_str.parse::<Operator>().map_err(|e| {
-                serde::de::Error::custom(format!("Invalid operator '{}': {}", op_str, e))
+                serde::de::Error::custom(format!("Invalid operator '{op_str}': {e}"))
             })?;
             conditions.insert(operator, condition_map);
         }
@@ -107,7 +107,7 @@ impl Condition {
 
 impl ConditionBlock {
     /// Creates a new empty condition block
-    pub fn new() -> Self {
+    #[must_use] pub fn new() -> Self {
         Self {
             conditions: HashMap::new(),
         }
@@ -118,12 +118,12 @@ impl ConditionBlock {
         let operator_map = self
             .conditions
             .entry(condition.operator)
-            .or_insert_with(HashMap::new);
+            .or_default();
         operator_map.insert(condition.key, condition.value);
     }
 
     /// Adds a condition using the builder pattern
-    pub fn with_condition(mut self, condition: Condition) -> Self {
+    #[must_use] pub fn with_condition(mut self, condition: Condition) -> Self {
         self.add_condition(condition);
         self
     }
@@ -141,7 +141,7 @@ impl ConditionBlock {
     }
 
     /// Gets all conditions for a specific operator
-    pub fn get_conditions_for_operator(
+    #[must_use] pub fn get_conditions_for_operator(
         &self,
         operator: &Operator,
     ) -> Option<&HashMap<String, serde_json::Value>> {
@@ -149,7 +149,7 @@ impl ConditionBlock {
     }
 
     /// Gets a specific condition value
-    pub fn get_condition_value(
+    #[must_use] pub fn get_condition_value(
         &self,
         operator: &Operator,
         key: &str,
@@ -158,32 +158,31 @@ impl ConditionBlock {
     }
 
     /// Checks if a condition exists
-    pub fn has_condition(&self, operator: &Operator, key: &str) -> bool {
+    #[must_use] pub fn has_condition(&self, operator: &Operator, key: &str) -> bool {
         self.conditions
             .get(operator)
-            .map(|map| map.contains_key(key))
-            .unwrap_or(false)
+            .is_some_and(|map| map.contains_key(key))
     }
 
     /// Gets all operators used in this condition block
-    pub fn operators(&self) -> Vec<&Operator> {
+    #[must_use] pub fn operators(&self) -> Vec<&Operator> {
         self.conditions.keys().collect()
     }
 
     /// Checks if the condition block is empty
-    pub fn is_empty(&self) -> bool {
+    #[must_use] pub fn is_empty(&self) -> bool {
         self.conditions.is_empty()
     }
 
-    /// Converts to the legacy HashMap format for backward compatibility
-    pub fn to_legacy_format(&self) -> HashMap<String, HashMap<String, serde_json::Value>> {
+    /// Converts to the legacy `HashMap` format for backward compatibility
+    #[must_use] pub fn to_legacy_format(&self) -> HashMap<String, HashMap<String, serde_json::Value>> {
         self.conditions
             .iter()
             .map(|(op, conditions)| (op.as_str().to_string(), conditions.clone()))
             .collect()
     }
 
-    /// Creates a condition block from the legacy HashMap format
+    /// Creates a condition block from the legacy `HashMap` format
     pub fn from_legacy_format(
         legacy: HashMap<String, HashMap<String, serde_json::Value>>,
     ) -> Result<Self, String> {
@@ -192,7 +191,7 @@ impl ConditionBlock {
         for (op_str, condition_map) in legacy {
             let operator = op_str
                 .parse::<Operator>()
-                .map_err(|e| format!("Invalid operator '{}': {}", op_str, e))?;
+                .map_err(|e| format!("Invalid operator '{op_str}': {e}"))?;
             conditions.insert(operator, condition_map);
         }
 
@@ -256,7 +255,7 @@ impl Validate for Condition {
                                         results.push(Err(ValidationError::InvalidCondition {
                                             operator: self.operator.as_str().to_string(),
                                             key: self.key.clone(),
-                                            reason: format!("String operator requires string values, found {} at index {}", val, i),
+                                            reason: format!("String operator requires string values, found {val} at index {i}"),
                                         }));
                                     }
                                 }
@@ -280,7 +279,7 @@ impl Validate for Condition {
                                     results.push(Err(ValidationError::InvalidCondition {
                                         operator: self.operator.as_str().to_string(),
                                         key: self.key.clone(),
-                                        reason: format!("Numeric operator requires numeric value, found non-numeric string: {}", s),
+                                        reason: format!("Numeric operator requires numeric value, found non-numeric string: {s}"),
                                     }));
                                 }
                             },
@@ -293,7 +292,7 @@ impl Validate for Condition {
                                                 results.push(Err(ValidationError::InvalidCondition {
                                                     operator: self.operator.as_str().to_string(),
                                                     key: self.key.clone(),
-                                                    reason: format!("Numeric operator requires numeric values, found non-numeric string at index {}: {}", i, s),
+                                                    reason: format!("Numeric operator requires numeric values, found non-numeric string at index {i}: {s}"),
                                                 }));
                                             }
                                         },
@@ -301,7 +300,7 @@ impl Validate for Condition {
                                             results.push(Err(ValidationError::InvalidCondition {
                                                 operator: self.operator.as_str().to_string(),
                                                 key: self.key.clone(),
-                                                reason: format!("Numeric operator requires numeric values, found {} at index {}", val, i),
+                                                reason: format!("Numeric operator requires numeric values, found {val} at index {i}"),
                                             }));
                                         }
                                     }
@@ -325,7 +324,7 @@ impl Validate for Condition {
                                     results.push(Err(ValidationError::InvalidCondition {
                                         operator: self.operator.as_str().to_string(),
                                         key: self.key.clone(),
-                                        reason: format!("Date operator requires ISO 8601 date format, found: {}", s),
+                                        reason: format!("Date operator requires ISO 8601 date format, found: {s}"),
                                     }));
                                 }
                             },
@@ -347,7 +346,7 @@ impl Validate for Condition {
                                     results.push(Err(ValidationError::InvalidCondition {
                                         operator: self.operator.as_str().to_string(),
                                         key: self.key.clone(),
-                                        reason: format!("Boolean operator requires boolean value, found: {}", s),
+                                        reason: format!("Boolean operator requires boolean value, found: {s}"),
                                     }));
                                 }
                             },
@@ -382,7 +381,7 @@ impl Validate for ConditionBlock {
             let mut results = Vec::new();
 
             for (operator, condition_map) in &self.conditions {
-                ctx.with_segment(&operator.as_str(), |op_ctx| {
+                ctx.with_segment(operator.as_str(), |op_ctx| {
                     if condition_map.is_empty() {
                         results.push(Err(ValidationError::InvalidValue {
                             field: "Condition operator".to_string(),

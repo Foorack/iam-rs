@@ -48,7 +48,7 @@ impl ContextValue {
         }
     }
 
-    /// Converts the context value to a DateTime
+    /// Converts the context value to a `DateTime`
     #[must_use]
     pub fn as_datetime(&self) -> Option<&DateTime<Utc>> {
         match self {
