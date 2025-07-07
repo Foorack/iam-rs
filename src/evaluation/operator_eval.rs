@@ -9,6 +9,16 @@ enum SetOperatorType {
     None,
 }
 
+impl SetOperatorType {
+    fn from_operator(operator: &Operator) -> Self {
+        match operator.to_string().as_str() {
+            s if s.starts_with("ForAnyValue:") => SetOperatorType::ForAnyValue,
+            s if s.starts_with("ForAllValues:") => SetOperatorType::ForAllValues,
+            _ => SetOperatorType::None,
+        }
+    }
+}
+
 type Predicate<T> = Box<dyn Fn(T, T) -> bool>;
 type DatePredicate<T> = Box<dyn for<'a, 'b> Fn(&'a T, &'b T) -> bool>;
 type O = Operator;
@@ -45,13 +55,7 @@ pub(super) fn evaluate_condition(
     value: &serde_json::Value,
 ) -> Result<bool, EvaluationError> {
     let if_exists = operator.is_if_exists_operator();
-    let set_operator = if operator.to_string().starts_with("ForAnyValue:") {
-        SetOperatorType::ForAnyValue
-    } else if operator.to_string().starts_with("ForAllValues:") {
-        SetOperatorType::ForAllValues
-    } else {
-        SetOperatorType::None
-    };
+    let set_operator = SetOperatorType::from_operator(operator);
 
     let mut predicate_str: Predicate<String> =
         Box::new(|_a, _b| panic!("Logic error, predicate not set before use"));
@@ -164,11 +168,10 @@ pub(super) fn evaluate_condition(
         }
     }
 
+    // Convert value into Array if it isn't already
     let values = match value {
-        // Keep array as is
         serde_json::Value::Array(arr) => arr,
-        // Convert single value to array for consistency
-        _ => &{ vec![value.clone()] },
+        _ => std::slice::from_ref(value),
     };
 
     for value in values {
