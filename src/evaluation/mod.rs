@@ -14,3 +14,4 @@ pub use engine::{
 };
 pub use matcher::{ArnBuilder, ArnMatcher, ArnSet};
 pub use request::IAMRequest;
+pub use variable::{PolicyVariable, interpolate_variables};
