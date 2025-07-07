@@ -62,7 +62,8 @@ impl ArnMatcher {
     }
 
     /// Check if any pattern matches the given parsed ARN
-    #[must_use] pub fn matches_arn(&self, arn: &Arn) -> bool {
+    #[must_use]
+    pub fn matches_arn(&self, arn: &Arn) -> bool {
         self.patterns.iter().any(|pattern| pattern.matches(arn))
     }
 
@@ -92,17 +93,20 @@ impl ArnMatcher {
     }
 
     /// Check if this matcher would match everything (contains "*")
-    #[must_use] pub fn matches_all(&self) -> bool {
+    #[must_use]
+    pub fn matches_all(&self) -> bool {
         self.patterns.iter().any(|p| p.pattern == "*")
     }
 
     /// Get the list of patterns this matcher uses
-    #[must_use] pub fn patterns(&self) -> Vec<&str> {
+    #[must_use]
+    pub fn patterns(&self) -> Vec<&str> {
         self.patterns.iter().map(|p| p.pattern.as_str()).collect()
     }
 
     /// Create a matcher that combines multiple matchers (OR logic)
-    #[must_use] pub fn combine(matchers: Vec<ArnMatcher>) -> Self {
+    #[must_use]
+    pub fn combine(matchers: Vec<ArnMatcher>) -> Self {
         let mut all_patterns = Vec::new();
 
         for matcher in matchers {
@@ -205,7 +209,8 @@ pub struct ArnBuilder {
 
 impl ArnBuilder {
     /// Create a new ARN builder
-    #[must_use] pub fn new() -> Self {
+    #[must_use]
+    pub fn new() -> Self {
         Self::default()
     }
 
@@ -298,7 +303,8 @@ pub struct ArnSet {
 
 impl ArnSet {
     /// Create a new ARN set
-    #[must_use] pub fn new() -> Self {
+    #[must_use]
+    pub fn new() -> Self {
         Self {
             arns: HashSet::new(),
         }
@@ -325,7 +331,8 @@ impl ArnSet {
     }
 
     /// Check if the set contains an ARN
-    #[must_use] pub fn contains(&self, arn: &str) -> bool {
+    #[must_use]
+    pub fn contains(&self, arn: &str) -> bool {
         self.arns.contains(arn)
     }
 
@@ -372,17 +379,20 @@ impl ArnSet {
     }
 
     /// Get the number of ARNs in the set
-    #[must_use] pub fn len(&self) -> usize {
+    #[must_use]
+    pub fn len(&self) -> usize {
         self.arns.len()
     }
 
     /// Check if the set is empty
-    #[must_use] pub fn is_empty(&self) -> bool {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
         self.arns.is_empty()
     }
 
     /// Get all ARNs as a vector
-    #[must_use] pub fn to_vec(&self) -> Vec<&str> {
+    #[must_use]
+    pub fn to_vec(&self) -> Vec<&str> {
         self.arns.iter().map(std::string::String::as_str).collect()
     }
 }

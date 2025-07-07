@@ -420,9 +420,9 @@ impl Operator {
 
     /// Returns the operator category as a string
     /// Determine the category of this operator
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if the operator is not recognized (this should never happen)
     #[must_use]
     pub fn category(&self) -> OperatorType {

@@ -1,6 +1,7 @@
 use crate::{
+    OperatorType,
     core::Operator,
-    validation::{helpers, Validate, ValidationContext, ValidationError, ValidationResult}, OperatorType,
+    validation::{Validate, ValidationContext, ValidationError, ValidationResult, helpers},
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};
@@ -35,10 +36,8 @@ impl Serialize for ConditionBlock {
             .conditions
             .iter()
             .map(|(op, conditions)| {
-                let inner_ordered: BTreeMap<String, &serde_json::Value> = conditions
-                    .iter()
-                    .map(|(k, v)| (k.clone(), v))
-                    .collect();
+                let inner_ordered: BTreeMap<String, &serde_json::Value> =
+                    conditions.iter().map(|(k, v)| (k.clone(), v)).collect();
                 (op.as_str().to_string(), inner_ordered)
             })
             .collect();
@@ -107,7 +106,8 @@ impl Condition {
 
 impl ConditionBlock {
     /// Creates a new empty condition block
-    #[must_use] pub fn new() -> Self {
+    #[must_use]
+    pub fn new() -> Self {
         Self {
             conditions: HashMap::new(),
         }
@@ -115,15 +115,13 @@ impl ConditionBlock {
 
     /// Adds a condition to the block
     pub fn add_condition(&mut self, condition: Condition) {
-        let operator_map = self
-            .conditions
-            .entry(condition.operator)
-            .or_default();
+        let operator_map = self.conditions.entry(condition.operator).or_default();
         operator_map.insert(condition.key, condition.value);
     }
 
     /// Adds a condition using the builder pattern
-    #[must_use] pub fn with_condition(mut self, condition: Condition) -> Self {
+    #[must_use]
+    pub fn with_condition(mut self, condition: Condition) -> Self {
         self.add_condition(condition);
         self
     }
@@ -141,7 +139,8 @@ impl ConditionBlock {
     }
 
     /// Gets all conditions for a specific operator
-    #[must_use] pub fn get_conditions_for_operator(
+    #[must_use]
+    pub fn get_conditions_for_operator(
         &self,
         operator: &Operator,
     ) -> Option<&HashMap<String, serde_json::Value>> {
@@ -149,7 +148,8 @@ impl ConditionBlock {
     }
 
     /// Gets a specific condition value
-    #[must_use] pub fn get_condition_value(
+    #[must_use]
+    pub fn get_condition_value(
         &self,
         operator: &Operator,
         key: &str,
@@ -158,24 +158,28 @@ impl ConditionBlock {
     }
 
     /// Checks if a condition exists
-    #[must_use] pub fn has_condition(&self, operator: &Operator, key: &str) -> bool {
+    #[must_use]
+    pub fn has_condition(&self, operator: &Operator, key: &str) -> bool {
         self.conditions
             .get(operator)
             .is_some_and(|map| map.contains_key(key))
     }
 
     /// Gets all operators used in this condition block
-    #[must_use] pub fn operators(&self) -> Vec<&Operator> {
+    #[must_use]
+    pub fn operators(&self) -> Vec<&Operator> {
         self.conditions.keys().collect()
     }
 
     /// Checks if the condition block is empty
-    #[must_use] pub fn is_empty(&self) -> bool {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
         self.conditions.is_empty()
     }
 
     /// Converts to the legacy `HashMap` format for backward compatibility
-    #[must_use] pub fn to_legacy_format(&self) -> HashMap<String, HashMap<String, serde_json::Value>> {
+    #[must_use]
+    pub fn to_legacy_format(&self) -> HashMap<String, HashMap<String, serde_json::Value>> {
         self.conditions
             .iter()
             .map(|(op, conditions)| (op.as_str().to_string(), conditions.clone()))
@@ -230,7 +234,7 @@ impl Validate for Condition {
                             reason: "Condition value array cannot be empty".to_string(),
                         }));
                     }
-                    
+
                     // Check if operator supports multiple values
                     if !self.operator.supports_multiple_values() && arr.len() > 1 {
                         results.push(Err(ValidationError::InvalidCondition {
@@ -386,7 +390,8 @@ impl Validate for ConditionBlock {
                         results.push(Err(ValidationError::InvalidValue {
                             field: "Condition operator".to_string(),
                             value: operator.as_str().to_string(),
-                            reason: "Condition operator cannot have empty condition map".to_string(),
+                            reason: "Condition operator cannot have empty condition map"
+                                .to_string(),
                         }));
                         return;
                     }

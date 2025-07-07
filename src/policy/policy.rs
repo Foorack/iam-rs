@@ -63,7 +63,8 @@ pub struct IAMPolicy {
 
 impl IAMPolicy {
     /// Creates a new IAM policy with the default version
-    #[must_use] pub fn new() -> Self {
+    #[must_use]
+    pub fn new() -> Self {
         Self {
             version: IAMVersion::default(),
             id: None,
@@ -72,7 +73,8 @@ impl IAMPolicy {
     }
 
     /// Creates a new IAM policy with a specific version
-    #[must_use] pub fn with_version(version: IAMVersion) -> Self {
+    #[must_use]
+    pub fn with_version(version: IAMVersion) -> Self {
         Self {
             version,
             id: None,
@@ -81,7 +83,8 @@ impl IAMPolicy {
     }
 
     /// Adds a statement to the policy
-    #[must_use] pub fn add_statement(mut self, statement: IAMStatement) -> Self {
+    #[must_use]
+    pub fn add_statement(mut self, statement: IAMStatement) -> Self {
         self.statement.push(statement);
         self
     }

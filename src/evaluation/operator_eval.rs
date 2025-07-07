@@ -374,14 +374,13 @@ fn ev_ip(
         None => return Ok(if_exists), // Missing context (return true if operator is IfExists)
     };
 
-    println!(
-        "Evaluating IP condition: {context_value} against {value}"
-    );
+    println!("Evaluating IP condition: {context_value} against {value}");
 
     Ok(predicate(&context_value, &value))
 }
 
 /// Simple wildcard matching for actions and strings
+#[must_use]
 pub(super) fn wildcard_match(text: &str, pattern: &str) -> bool {
     // Use the ARN wildcard matching logic
     Arn::wildcard_match(text, pattern)

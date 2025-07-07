@@ -294,7 +294,8 @@ pub struct IAMStatement {
 
 impl IAMStatement {
     /// Creates a new IAM statement with the specified effect
-    #[must_use] pub fn new(effect: Effect) -> Self {
+    #[must_use]
+    pub fn new(effect: Effect) -> Self {
         Self {
             sid: None,
             effect,
@@ -315,19 +316,22 @@ impl IAMStatement {
     }
 
     /// Sets the principal
-    #[must_use] pub fn with_principal(mut self, principal: Principal) -> Self {
+    #[must_use]
+    pub fn with_principal(mut self, principal: Principal) -> Self {
         self.principal = Some(principal);
         self
     }
 
     /// Sets the action
-    #[must_use] pub fn with_action(mut self, action: Action) -> Self {
+    #[must_use]
+    pub fn with_action(mut self, action: Action) -> Self {
         self.action = Some(action);
         self
     }
 
     /// Sets the resource
-    #[must_use] pub fn with_resource(mut self, resource: Resource) -> Self {
+    #[must_use]
+    pub fn with_resource(mut self, resource: Resource) -> Self {
         self.resource = Some(resource);
         self
     }
