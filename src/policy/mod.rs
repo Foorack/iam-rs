@@ -1,5 +1,6 @@
 /// IAM policy definition and document structure
 mod condition;
+#[allow(clippy::module_inception)]
 mod policy;
 mod statement;
 

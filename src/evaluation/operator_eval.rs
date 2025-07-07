@@ -9,6 +9,9 @@ enum SetOperatorType {
     None,
 }
 
+type Predicate<T> = Box<dyn Fn(T, T) -> bool>;
+type DatePredicate<T> = Box<dyn for<'a, 'b> Fn(&'a T, &'b T) -> bool>;
+
 /// Evaluate a single condition
 ///
 ///
@@ -48,15 +51,15 @@ pub(super) fn evaluate_condition(
         SetOperatorType::None
     };
 
-    let mut predicate_str: Box<dyn Fn(&str, &str) -> bool> =
+    let mut predicate_str: Predicate<String> =
         Box::new(|_a, _b| panic!("Logic error, predicate not set before use"));
-    let mut predicate_num: Box<dyn Fn(&f64, &f64) -> bool> =
+    let mut predicate_num: Predicate<f64> =
         Box::new(|_a, _b| panic!("Logic error, predicate not set before use"));
-    let mut predicate_date: Box<dyn Fn(&DateTime<Utc>, &DateTime<Utc>) -> bool> =
+    let mut predicate_date: DatePredicate<DateTime<Utc>> =
         Box::new(|_a, _b| panic!("Logic error, predicate not set before use"));
-    let mut predicate_bool: Box<dyn Fn(bool, bool) -> bool> =
+    let mut predicate_bool: Predicate<bool> =
         Box::new(|_a, _b| panic!("Logic error, predicate not set before use"));
-    let mut predicate_ip: Box<dyn Fn(&IpNet, &IpNet) -> bool> =
+    let mut predicate_ip: Predicate<IpNet> =
         Box::new(|_a, _b| panic!("Logic error, predicate not set before use"));
 
     type O = Operator;
@@ -82,13 +85,13 @@ pub(super) fn evaluate_condition(
         | O::ForAllValuesStringEqualsIgnoreCase
         | O::ForAnyValueStringEqualsIgnoreCase
         | O::StringEqualsIgnoreCaseIfExists => {
-            predicate_str = Box::new(str::eq_ignore_ascii_case);
+            predicate_str = Box::new(|a, b| a.eq_ignore_ascii_case(&b));
         }
         O::StringNotEqualsIgnoreCase
         | O::ForAllValuesStringNotEqualsIgnoreCase
         | O::ForAnyValueStringNotEqualsIgnoreCase
         | O::StringNotEqualsIgnoreCaseIfExists => {
-            predicate_str = Box::new(|a, b| !a.eq_ignore_ascii_case(b));
+            predicate_str = Box::new(|a, b| !a.eq_ignore_ascii_case(&b));
         }
         O::StringLike
         | O::ForAllValuesStringLike
@@ -97,7 +100,7 @@ pub(super) fn evaluate_condition(
         | O::ArnLike
         | O::ForAllValuesArnLike
         | O::ForAnyValueArnLike
-        | O::ArnLikeIfExists => predicate_str = Box::new(wildcard_match),
+        | O::ArnLikeIfExists => predicate_str = Box::new(|a, b| wildcard_match(&a, &b)),
         O::StringNotLike
         | O::ForAllValuesStringNotLike
         | O::ForAnyValueStringNotLike
@@ -105,7 +108,7 @@ pub(super) fn evaluate_condition(
         | O::ArnNotLike
         | O::ForAllValuesArnNotLike
         | O::ForAnyValueArnNotLike
-        | O::ArnNotLikeIfExists => predicate_str = Box::new(|a, b| !wildcard_match(a, b)),
+        | O::ArnNotLikeIfExists => predicate_str = Box::new(|a, b| !wildcard_match(&a, &b)),
 
         // Numeric conditions
         O::NumericEquals | O::NumericEqualsIfExists => {
@@ -150,8 +153,10 @@ pub(super) fn evaluate_condition(
         }
 
         // IP address conditions
-        O::IpAddress | O::IpAddressIfExists => predicate_ip = Box::new(|a, b| b.contains(a)),
-        O::NotIpAddress | O::NotIpAddressIfExists => predicate_ip = Box::new(|a, b| !b.contains(a)),
+        O::IpAddress | O::IpAddressIfExists => predicate_ip = Box::new(|a, b| b.contains(&a)),
+        O::NotIpAddress | O::NotIpAddressIfExists => {
+            predicate_ip = Box::new(|a, b| !b.contains(&a))
+        }
 
         O::Null => {
             // None
@@ -206,7 +211,7 @@ fn ev_str(
     ctx: &Context,
     key: &str,
     value: &serde_json::Value,
-    predicate: &Box<dyn Fn(&str, &str) -> bool>,
+    predicate: &Predicate<String>,
     if_exists: bool,
     set_operator: SetOperatorType,
 ) -> Result<bool, EvaluationError> {
@@ -215,12 +220,16 @@ fn ev_str(
     })?;
 
     match ctx.get(key) {
-        Some(ContextValue::String(s)) => Ok(predicate(s, value)),
+        Some(ContextValue::String(s)) => Ok(predicate(s.to_string(), value.to_string())),
         Some(ContextValue::StringList(list)) => match set_operator {
             // ForAnyValue: return true if any value matches
-            SetOperatorType::ForAnyValue => Ok(list.iter().any(|val| predicate(val, value))),
+            SetOperatorType::ForAnyValue => Ok(list
+                .iter()
+                .any(|val| predicate(val.to_string(), value.to_string()))),
             // ForAllValues: return true only if all values match
-            SetOperatorType::ForAllValues => Ok(list.iter().all(|val| predicate(val, value))),
+            SetOperatorType::ForAllValues => Ok(list
+                .iter()
+                .all(|val| predicate(val.to_string(), value.to_string()))),
             SetOperatorType::None => Err(EvaluationError::ConditionError(
                 "Multivalued context keys require a condition set operator.".to_string(),
             )),
@@ -237,16 +246,16 @@ fn ev_numeric(
     ctx: &Context,
     key: &str,
     value: &serde_json::Value,
-    predicate: &Box<dyn Fn(&f64, &f64) -> bool>,
+    predicate: &Predicate<f64>,
     if_exists: bool,
 ) -> Result<bool, EvaluationError> {
-    let value = &value.as_f64().ok_or_else(|| {
+    let value = value.as_f64().ok_or_else(|| {
         EvaluationError::ConditionError("Numeric condition value must be a number".to_string())
     })?;
 
     let context_value = match ctx.get(key) {
-        Some(ContextValue::Number(n)) => n,
-        Some(ContextValue::String(s)) => &s.parse::<f64>().map_err(|_| {
+        Some(ContextValue::Number(n)) => *n,
+        Some(ContextValue::String(s)) => s.parse::<f64>().map_err(|_| {
             EvaluationError::ConditionError("Invalid numeric context value".to_string())
         })?,
         Some(_) => return Ok(false),  // Type mismatch
@@ -280,7 +289,7 @@ fn ev_date(
     ctx: &Context,
     key: &str,
     value: &serde_json::Value,
-    predicate: &Box<dyn Fn(&DateTime<Utc>, &DateTime<Utc>) -> bool>,
+    predicate: &DatePredicate<DateTime<Utc>>,
     if_exists: bool,
 ) -> Result<bool, EvaluationError> {
     let value = value.as_str().ok_or_else(|| {
@@ -311,7 +320,7 @@ fn ev_bool(
     ctx: &Context,
     key: &str,
     value: &serde_json::Value,
-    predicate: &Box<dyn Fn(bool, bool) -> bool>,
+    predicate: &Predicate<bool>,
     if_exists: bool,
     set_operator: SetOperatorType,
 ) -> Result<bool, EvaluationError> {
@@ -347,7 +356,7 @@ fn ev_ip(
     ctx: &Context,
     key: &str,
     value: &serde_json::Value,
-    predicate: &Box<dyn Fn(&IpNet, &IpNet) -> bool>,
+    predicate: &Predicate<IpNet>,
     if_exists: bool,
 ) -> Result<bool, EvaluationError> {
     /// Add default /32 prefix for IPv4 or /128 for IPv6 if none is specified
@@ -376,7 +385,7 @@ fn ev_ip(
 
     println!("Evaluating IP condition: {context_value} against {value}");
 
-    Ok(predicate(&context_value, &value))
+    Ok(predicate(context_value, value))
 }
 
 /// Simple wildcard matching for actions and strings

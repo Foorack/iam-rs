@@ -164,6 +164,7 @@ impl Validate for IAMPolicy {
                 IAMVersion::V20121017 => {
                     // Supported version
                 }
+                #[allow(deprecated)]
                 IAMVersion::V20081017 => {
                     results.push(Err(ValidationError::InvalidValue {
                         field: "Version".to_string(),

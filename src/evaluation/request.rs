@@ -8,8 +8,8 @@ use serde::{Deserialize, Serialize};
 /// The PARC model represents the request context based on the four JSON elements in the policy language:
 ///
 /// * Principal – The entity making the request.
-///         A principal represents a human user or programmatic workload that can be authenticated and
-///         then authorized to perform actions in AWS accounts.
+///   A principal represents a human user or programmatic workload that can be authenticated and
+///   then authorized to perform actions in AWS accounts.
 /// * Action – The operation being performed. Often the action will map to an API action.
 /// * Resource – The AWS resource on which the action is being performed.
 /// * Condition – Additional constraints that must be met for the request to be allowed.
