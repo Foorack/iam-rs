@@ -127,6 +127,7 @@ impl ConditionBlock {
     }
 
     /// Adds a condition directly with operator, key, and value
+    #[must_use]
     pub fn with_condition_direct<K: Into<String>>(
         mut self,
         operator: Operator,
@@ -187,6 +188,10 @@ impl ConditionBlock {
     }
 
     /// Creates a condition block from the legacy `HashMap` format
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any operator string cannot be parsed into a valid `Operator`.
     pub fn from_legacy_format(
         legacy: HashMap<String, HashMap<String, serde_json::Value>>,
     ) -> Result<Self, String> {

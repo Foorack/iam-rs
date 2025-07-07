@@ -121,6 +121,7 @@ impl Context {
     }
 
     /// Adds a string context value
+    #[must_use]
     pub fn with_string<K: Into<String>, V: Into<String>>(mut self, key: K, value: V) -> Self {
         self.data
             .insert(key.into(), ContextValue::String(value.into()));
@@ -128,12 +129,14 @@ impl Context {
     }
 
     /// Adds a boolean context value
+    #[must_use]
     pub fn with_boolean<K: Into<String>>(mut self, key: K, value: bool) -> Self {
         self.data.insert(key.into(), ContextValue::Boolean(value));
         self
     }
 
     /// Adds a numeric context value
+    #[must_use]
     pub fn with_number<K: Into<String>>(mut self, key: K, value: f64) -> Self {
         self.data.insert(key.into(), ContextValue::Number(value));
         self

@@ -138,6 +138,15 @@ impl PolicyEvaluator {
     }
 
     /// Evaluate an authorization request against all policies
+    ///
+    /// # Errors
+    /// 
+    /// Returns `EvaluationError` if:
+    /// - The request context is invalid
+    /// - ARN format errors occur during evaluation
+    /// - Variable interpolation fails
+    /// - Condition evaluation fails
+    /// - Maximum statement evaluation limit is exceeded
     pub fn evaluate(&self, request: &IAMRequest) -> Result<EvaluationResult, EvaluationError> {
         let mut matched_statements = Vec::new();
         let mut has_explicit_allow = false;
@@ -235,9 +244,9 @@ impl PolicyEvaluator {
 
         // Check if action matches
         let action_matches = if let Some(ref action) = statement.action {
-            self.action_matches(action, &request.action)?
+            Self::action_matches(action, &request.action)
         } else if let Some(ref not_action) = statement.not_action {
-            !self.action_matches(not_action, &request.action)?
+            !Self::action_matches(not_action, &request.action)
         } else {
             return Ok(StatementMatch {
                 sid: statement.sid.clone(),
@@ -258,9 +267,9 @@ impl PolicyEvaluator {
 
         // Check if resource matches
         let resource_matches = if let Some(ref resource) = statement.resource {
-            self.resource_matches(resource, &request.resource, &request.context)?
+            Self::resource_matches(resource, &request.resource, &request.context)?
         } else if let Some(ref not_resource) = statement.not_resource {
-            !self.resource_matches(not_resource, &request.resource, &request.context)?
+            !Self::resource_matches(not_resource, &request.resource, &request.context)?
         } else {
             return Ok(StatementMatch {
                 sid: statement.sid.clone(),
@@ -281,7 +290,7 @@ impl PolicyEvaluator {
 
         // Check conditions
         if let Some(ref condition_block) = statement.condition {
-            if !self.evaluate_conditions(condition_block, &request.context)? {
+            if !Self::evaluate_conditions(condition_block, &request.context)? {
                 return Ok(StatementMatch {
                     sid: statement.sid.clone(),
                     effect: statement.effect,
@@ -356,28 +365,26 @@ impl PolicyEvaluator {
 
     /// Check if an action matches the request action
     fn action_matches(
-        &self,
         action: &Action,
         request_action: &str,
-    ) -> Result<bool, EvaluationError> {
+    ) -> bool {
         match action {
             Action::Single(a) => {
-                Ok(a == "*" || a == request_action || wildcard_match(request_action, a))
+                a == "*" || a == request_action || wildcard_match(request_action, a)
             }
             Action::Multiple(actions) => {
                 for a in actions {
                     if a == "*" || a == request_action || wildcard_match(request_action, a) {
-                        return Ok(true);
+                        return true;
                     }
                 }
-                Ok(false)
+                false
             }
         }
     }
 
     /// Check if a resource matches the request resource
     fn resource_matches(
-        &self,
         resource: &Resource,
         request_resource: &str,
         context: &Context,
@@ -400,7 +407,7 @@ impl PolicyEvaluator {
             }
             Resource::Multiple(resources) => {
                 for r in resources {
-                    if self.resource_matches(
+                    if Self::resource_matches(
                         &Resource::Single(r.clone()),
                         request_resource,
                         context,
@@ -415,7 +422,6 @@ impl PolicyEvaluator {
 
     /// Evaluate condition block
     fn evaluate_conditions(
-        &self,
         condition_block: &ConditionBlock,
         context: &Context,
     ) -> Result<bool, EvaluationError> {
@@ -438,6 +444,14 @@ impl Default for PolicyEvaluator {
 }
 
 /// Convenience function for simple policy evaluation
+///
+/// # Errors
+///
+/// Returns `EvaluationError` if the policy evaluation fails due to:
+/// - Invalid request context
+/// - ARN format errors
+/// - Variable interpolation failures
+/// - Condition evaluation errors
 pub fn evaluate_policy(
     policy: &IAMPolicy,
     request: &IAMRequest,
@@ -448,6 +462,14 @@ pub fn evaluate_policy(
 }
 
 /// Convenience function for evaluating multiple policies
+///
+/// # Errors
+///
+/// Returns `EvaluationError` if the policy evaluation fails due to:
+/// - Invalid request context
+/// - ARN format errors
+/// - Variable interpolation failures
+/// - Condition evaluation errors
 pub fn evaluate_policies(
     policies: &[IAMPolicy],
     request: &IAMRequest,

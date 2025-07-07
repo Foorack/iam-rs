@@ -90,6 +90,7 @@ impl IAMRequest {
     }
 
     /// Adds string context to the request
+    #[must_use]
     pub fn with_string_context<K: Into<String>, V: Into<String>>(
         mut self,
         key: K,
@@ -100,12 +101,14 @@ impl IAMRequest {
     }
 
     /// Adds boolean context to the request
+    #[must_use]
     pub fn with_boolean_context<K: Into<String>>(mut self, key: K, value: bool) -> Self {
         self.context = self.context.with_boolean(key, value);
         self
     }
 
     /// Adds numeric context to the request
+    #[must_use]
     pub fn with_number_context<K: Into<String>>(mut self, key: K, value: f64) -> Self {
         self.context = self.context.with_number(key, value);
         self
