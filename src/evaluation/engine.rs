@@ -221,7 +221,7 @@ impl PolicyEvaluator {
     ) -> Result<StatementMatch, EvaluationError> {
         // Check if principal matches (for resource-based policies)
         if let Some(ref principal) = statement.principal {
-            if !self.principal_matches(principal, &request.principal)? {
+            if !Self::principal_matches(principal, &request.principal)? {
                 return Ok(StatementMatch {
                     sid: statement.sid.clone(),
                     effect: statement.effect,
@@ -232,7 +232,7 @@ impl PolicyEvaluator {
         }
 
         if let Some(ref not_principal) = statement.not_principal {
-            if self.principal_matches(not_principal, &request.principal)? {
+            if Self::principal_matches(not_principal, &request.principal)? {
                 return Ok(StatementMatch {
                     sid: statement.sid.clone(),
                     effect: statement.effect,
@@ -311,7 +311,6 @@ impl PolicyEvaluator {
 
     /// Check if a principal matches the request principal
     fn principal_matches(
-        &self,
         principal: &Principal,
         request_principal: &str,
     ) -> Result<bool, EvaluationError> {
