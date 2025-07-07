@@ -27,6 +27,10 @@ struct ArnPattern {
 
 impl ArnMatcher {
     /// Create a new ARN matcher with a set of patterns
+    ///
+    /// # Errors
+    ///
+    /// Returns `ArnError` if any of the provided patterns cannot be parsed as valid ARNs.
     pub fn new<I>(patterns: I) -> Result<Self, ArnError>
     where
         I: IntoIterator<Item = String>,
@@ -44,11 +48,19 @@ impl ArnMatcher {
     }
 
     /// Create a matcher from a single pattern
+    ///
+    /// # Errors
+    ///
+    /// Returns `ArnError` if the pattern cannot be parsed as a valid ARN.
     pub fn from_pattern(pattern: &str) -> Result<Self, ArnError> {
         Self::new(vec![pattern.to_string()])
     }
 
     /// Check if any pattern matches the given ARN
+    ///
+    /// # Errors
+    ///
+    /// Returns `ArnError` if the ARN cannot be parsed or if pattern matching fails.
     pub fn matches(&self, arn: &str) -> Result<bool, ArnError> {
         let target_arn = Arn::parse(arn)?;
 
@@ -179,15 +191,15 @@ impl ArnPattern {
         }
 
         // Check each component
-        self.match_component(&target.partition, &self.arn.partition, self.partition_wildcard)
+        Self::match_component(&target.partition, &self.arn.partition, self.partition_wildcard)
             && target.service == self.arn.service  // Service must match exactly
-            && self.match_component(&target.region, &self.arn.region, self.region_wildcard)
-            && self.match_component(&target.account_id, &self.arn.account_id, self.account_wildcard)
-            && self.match_component(&target.resource, &self.arn.resource, self.resource_wildcard)
+            && Self::match_component(&target.region, &self.arn.region, self.region_wildcard)
+            && Self::match_component(&target.account_id, &self.arn.account_id, self.account_wildcard)
+            && Self::match_component(&target.resource, &self.arn.resource, self.resource_wildcard)
     }
 
     /// Match a single component, using wildcards if needed
-    fn match_component(&self, target: &str, pattern: &str, has_wildcard: bool) -> bool {
+    fn match_component(target: &str, pattern: &str, has_wildcard: bool) -> bool {
         if has_wildcard {
             Arn::wildcard_match(target, pattern)
         } else {
@@ -215,30 +227,35 @@ impl ArnBuilder {
     }
 
     /// Set the partition (e.g., "aws", "aws-cn")
+    #[must_use]
     pub fn partition<S: Into<String>>(mut self, partition: S) -> Self {
         self.partition = Some(partition.into());
         self
     }
 
     /// Set the service (e.g., "s3", "ec2", "iam")
+    #[must_use]
     pub fn service<S: Into<String>>(mut self, service: S) -> Self {
         self.service = Some(service.into());
         self
     }
 
     /// Set the region (e.g., "us-east-1")
+    #[must_use]
     pub fn region<S: Into<String>>(mut self, region: S) -> Self {
         self.region = Some(region.into());
         self
     }
 
     /// Set the account ID
+    #[must_use]
     pub fn account_id<S: Into<String>>(mut self, account_id: S) -> Self {
         self.account_id = Some(account_id.into());
         self
     }
 
     /// Set the resource type and ID separately
+    #[must_use]
     pub fn resource<S: Into<String>>(mut self, resource_type: S, resource_id: S) -> Self {
         self.resource_type = Some(resource_type.into());
         self.resource_id = Some(resource_id.into());
@@ -246,6 +263,7 @@ impl ArnBuilder {
     }
 
     /// Set the full resource string
+    #[must_use]
     pub fn resource_string<S: Into<String>>(mut self, resource: S) -> Self {
         let resource_str = resource.into();
         if let Some(slash_pos) = resource_str.find('/') {
