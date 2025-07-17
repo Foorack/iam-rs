@@ -10,6 +10,7 @@ use std::fmt;
 /// - `arn:partition:service:region:account-id:resource-type:resource-id`
 /// - `arn:partition:service:region:account-id:resource-type/resource-id/sub-resource`
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct Arn {
     /// The partition (e.g., "aws", "aws-cn", "aws-us-gov")
     pub partition: String,
@@ -25,6 +26,7 @@ pub struct Arn {
 
 /// Error types for ARN parsing and validation
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum ArnError {
     /// ARN doesn't start with "arn:"
     InvalidPrefix,

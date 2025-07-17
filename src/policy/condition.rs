@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, HashMap};
 
 /// Represents a single condition in an IAM policy
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct Condition {
     /// The condition operator (e.g., `StringEquals`, `DateGreaterThan`)
     pub operator: Operator,
@@ -20,6 +21,7 @@ pub struct Condition {
 /// Represents a condition block in an IAM policy
 /// This is a collection of conditions grouped by operator
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct ConditionBlock {
     /// Map of operators to their key-value pairs
     pub conditions: HashMap<Operator, HashMap<String, serde_json::Value>>,

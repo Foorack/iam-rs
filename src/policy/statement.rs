@@ -10,6 +10,7 @@ use crate::{
 ///
 /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_statement.html>
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct IAMStatement {
     /// Optional statement ID
     ///

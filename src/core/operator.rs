@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum OperatorType {
     String,
     Numeric,
@@ -15,6 +16,7 @@ pub enum OperatorType {
 /// Represents the different types of condition operators available in IAM policies
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
 #[serde(rename_all = "PascalCase")]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum Operator {
     // String condition operators
     #[serde(rename = "StringEquals")]

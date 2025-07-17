@@ -28,6 +28,7 @@ use std::collections::HashSet;
 /// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements.html
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct IAMPolicy {
     /// The `Version` policy element specifies the language syntax rules that are to be used to process a policy.
     ///

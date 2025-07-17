@@ -5,6 +5,7 @@ use std::collections::HashMap;
 /// Represents different types of context values
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum ContextValue {
     /// String value (e.g., user ID, IP address)
     String(String),
@@ -69,6 +70,7 @@ impl ContextValue {
 
 /// Context for IAM evaluation containing key-value pairs
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct Context {
     /// Context keys and their values
     pub data: HashMap<String, ContextValue>,

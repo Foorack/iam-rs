@@ -2,6 +2,7 @@ use crate::{Context, ContextValue, EvaluationError};
 
 /// Represents a parsed policy variable
 #[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct PolicyVariable {
     /// The context key to look up
     pub key: String,

@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 /// Principal type for IAM policies
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum PrincipalType {
     /// AWS principals (users, roles, root accounts)
     #[serde(rename = "AWS")]
@@ -40,6 +41,7 @@ impl std::fmt::Display for PrincipalType {
 /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_principal.html>
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum Principal {
     /// Wildcard principal (*)
     Wildcard,

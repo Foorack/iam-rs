@@ -2,6 +2,7 @@ use std::fmt;
 
 /// Validation error types for IAM policies
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum ValidationError {
     /// Empty or missing required field
     MissingField { field: String, context: String },

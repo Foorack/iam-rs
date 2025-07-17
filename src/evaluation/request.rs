@@ -36,6 +36,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic_policy-eval-reqcontext.html>
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct IAMRequest {
     /// The principal making the request (e.g., AROA123456789EXAMPLE)
     #[serde(rename = "Principal")]

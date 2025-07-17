@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// Represents the version of the IAM policy language
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum IAMVersion {
     #[serde(rename = "2012-10-17")]
     V20121017,

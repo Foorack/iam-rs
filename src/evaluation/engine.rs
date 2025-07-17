@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 
 /// Result of policy evaluation
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum Decision {
     /// Access is explicitly allowed
     Allow,
@@ -22,6 +23,7 @@ pub enum Decision {
 
 /// Error types for policy evaluation
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum EvaluationError {
     /// Invalid request context
     InvalidContext(String),
@@ -54,6 +56,7 @@ impl std::error::Error for EvaluationError {}
 
 /// Evaluation result with decision and metadata
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct EvaluationResult {
     /// The final decision
     pub decision: Decision,
@@ -65,6 +68,7 @@ pub struct EvaluationResult {
 
 /// Information about a statement that matched during evaluation
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct StatementMatch {
     /// Statement ID if available
     pub sid: Option<String>,
@@ -78,6 +82,7 @@ pub struct StatementMatch {
 
 /// Policy evaluation engine
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct PolicyEvaluator {
     /// Policies to evaluate
     policies: Vec<IAMPolicy>,
@@ -87,6 +92,7 @@ pub struct PolicyEvaluator {
 
 /// Options for policy evaluation
 #[derive(Debug, Clone)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct EvaluationOptions {
     /// Whether to continue evaluation after finding an explicit deny
     pub stop_on_explicit_deny: bool,
