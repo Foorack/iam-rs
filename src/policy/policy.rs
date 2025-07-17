@@ -59,7 +59,17 @@ pub struct IAMPolicy {
     /// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_statement.html
     #[serde(rename = "Statement")]
     #[serde_as(as = "OneOrMany<_, PreferOne>")]
+    #[cfg_attr(
+        feature = "utoipa",
+        utoipa::schema(value_type = OneOrManyEnum<IAMStatement>)
+    )]
     pub statement: Vec<IAMStatement>,
+}
+
+#[cfg(feature = "utoipa")]
+enum OneOrManyEnum<T> {
+    One(T),
+    Many(Vec<T>),
 }
 
 impl IAMPolicy {
