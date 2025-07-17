@@ -61,17 +61,20 @@ pub struct IAMPolicy {
     #[serde_as(as = "OneOrMany<_, PreferOne>")]
     #[cfg_attr(
         feature = "utoipa",
-        schema(value_type = OneOrManyEnum<IAMStatement>)
+        schema(value_type = IAMStatements)
     )]
     pub statement: Vec<IAMStatement>,
 }
 
 #[cfg(feature = "utoipa")]
-#[derive(utoipa::ToSchema)]
+#[derive(utoipa::ToSchema, Serialize, Deserialize)]
+#[serde(untagged)]
 #[allow(dead_code)]
-enum OneOrManyEnum<T> {
-    One(T),
-    Many(Vec<T>),
+enum IAMStatements {
+    /// A single IAM statement
+    Single(IAMStatement),
+    /// Multiple IAM statements
+    Multiple(Vec<IAMStatement>),
 }
 
 impl IAMPolicy {
