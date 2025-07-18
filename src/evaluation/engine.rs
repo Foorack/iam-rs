@@ -1,6 +1,6 @@
 use super::{context::Context, matcher::ArnMatcher, request::IAMRequest};
 use crate::{
-    core::{Action, Effect, Principal, Resource},
+    core::{Action, Effect, Principal, PrincipalId, Resource},
     evaluation::{
         operator_eval::{evaluate_condition, wildcard_match},
         variable::interpolate_variables,
@@ -321,25 +321,81 @@ impl PolicyEvaluator {
     ) -> Result<bool, EvaluationError> {
         match principal {
             Principal::Wildcard => Ok(true),
-            Principal::Mapped(map) => {
-                // Handle mapped principals (e.g., {"AWS": "arn:aws:iam::123456789012:user/test"})
-                for values in map.values() {
-                    match values {
-                        serde_json::Value::String(s) => {
-                            if Self::principal_string_matches(s, request_principal)? {
-                                return Ok(true);
-                            }
+            Principal::Aws(principal_id) => {
+                Self::principal_id_matches(principal_id, request_principal, |id| {
+                    // AWS principal can be an account ID, an ARN, or "*"
+                    // See: https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_principal.html
+                    // "*" matches any principal
+                    if id == "*" || id == request_principal {
+                        return Ok(true);
+                    }
+                    // Account ID (e.g., "123456789012")
+                    if id.len() == 12 && id.chars().all(|c| c.is_ascii_digit()) {
+                        // Accept either the raw account ID or the root ARN
+                        let root_arn = format!("arn:aws:iam::{id}:root");
+                        if request_principal == id || request_principal == root_arn {
+                            return Ok(true);
                         }
-                        serde_json::Value::Array(arr) => {
-                            for val in arr {
-                                if let serde_json::Value::String(s) = val {
-                                    if Self::principal_string_matches(s, request_principal)? {
-                                        return Ok(true);
-                                    }
-                                }
-                            }
-                        }
-                        _ => {}
+                    }
+                    // If it's an ARN, match directly or with wildcard
+                    if id.starts_with("arn:") {
+                        return Self::principal_string_matches(id, request_principal);
+                    }
+                    Ok(false)
+                })
+            }
+            Principal::Federated(principal_id) => {
+                Self::principal_id_matches(principal_id, request_principal, |id| {
+                    // Federated principal can be a provider name or ARN
+                    // e.g., "cognito-identity.amazonaws.com", "arn:aws:iam::account-id:oidc-provider/..."
+                    if id == request_principal {
+                        return Ok(true);
+                    }
+                    // For OIDC/SAML, match by prefix
+                    if request_principal.starts_with(id) {
+                        return Ok(true);
+                    }
+                    Ok(false)
+                })
+            }
+            Principal::Service(principal_id) => {
+                Self::principal_id_matches(principal_id, request_principal, |id| {
+                    // Service principal, e.g., "ec2.amazonaws.com"
+                    // Can also be regionalized, e.g., "s3.ap-east-1.amazonaws.com"
+                    if id == request_principal {
+                        return Ok(true);
+                    }
+                    Ok(false)
+                })
+            }
+            Principal::CanonicalUser(principal_id) => {
+                Self::principal_id_matches(principal_id, request_principal, |id| {
+                    // Canonical user ID, e.g., "79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be"
+                    if id == request_principal {
+                        return Ok(true);
+                    }
+                    Ok(false)
+                })
+            }
+        }
+    }
+
+    /// Helper function to handle `PrincipalId` enum matching
+    fn principal_id_matches<F>(
+        principal_id: &PrincipalId,
+        _request_principal: &str,
+        matcher: F,
+    ) -> Result<bool, EvaluationError>
+    where
+        F: Fn(&str) -> Result<bool, EvaluationError>,
+    {
+        match principal_id {
+            PrincipalId::String(id) => matcher(id),
+            PrincipalId::Array(ids) => {
+                // If any ID in the array matches, return true
+                for id in ids {
+                    if matcher(id)? {
+                        return Ok(true);
                     }
                 }
                 Ok(false)

@@ -1,8 +1,7 @@
 use iam_rs::{
-    Action, Condition, ConditionValue, Effect, IAMPolicy, IAMStatement, Operator, Principal,
-    PrincipalType, Resource, Validate, ValidationError,
+    Action, ConditionValue, Effect, IAMPolicy, IAMStatement, Operator, Principal, PrincipalId,
+    Resource, Validate, ValidationError,
 };
-use serde_json::json;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== IAM Policy Validation Demo ===\n");
@@ -118,12 +117,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut logical_error_policy = IAMStatement::new(Effect::Allow);
     logical_error_policy.action = Some(Action::Single("s3:GetObject".to_string()));
     logical_error_policy.resource = Some(Resource::Single("*".to_string()));
-    let mut principal_map = std::collections::HashMap::new();
-    principal_map.insert(
-        PrincipalType::Aws,
-        serde_json::json!("arn:aws:iam::123456789012:user/test"),
-    );
-    logical_error_policy.not_principal = Some(Principal::Mapped(principal_map));
+    logical_error_policy.not_principal = Some(Principal::Aws(iam_rs::PrincipalId::String(
+        "arn:aws:iam::123456789012:user/test".to_string(),
+    )));
 
     match logical_error_policy.validate_result() {
         Err(e) => println!("✗ Logical error detected: {}", e),
@@ -154,21 +150,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Invalid principal
-    let mut invalid_map = std::collections::HashMap::new();
-    invalid_map.insert(PrincipalType::Aws, serde_json::json!("invalid-principal"));
-    let invalid_principal = Principal::Mapped(invalid_map);
+    let invalid_principal = Principal::Aws(PrincipalId::String("invalid-principal".to_string()));
     match invalid_principal.validate_result() {
         Err(e) => println!("✗ Invalid principal: {}", e),
         Ok(()) => println!("✓ Principal is valid"),
     }
 
     // Valid service principal
-    let service_principal = Principal::Mapped(
-        [(PrincipalType::Service, json!("lambda.amazonaws.com"))]
-            .iter()
-            .cloned()
-            .collect(),
-    );
+    let service_principal =
+        Principal::Service(PrincipalId::String("lambda.amazonaws.com".to_string()));
     if service_principal.is_valid() {
         println!("✓ Service principal is valid");
     } else {
