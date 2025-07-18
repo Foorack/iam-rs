@@ -1,8 +1,7 @@
 use iam_rs::{
-    Action, Context, ContextValue, Decision, Effect, EvaluationOptions, IAMPolicy, IAMRequest,
-    IAMStatement, Operator, PolicyEvaluator, Resource, evaluate_policy,
+    Action, ConditionValue, Context, ContextValue, Decision, Effect, EvaluationOptions, IAMPolicy,
+    IAMRequest, IAMStatement, Operator, PolicyEvaluator, Resource, evaluate_policy,
 };
-use serde_json::json;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== IAM Policy Evaluation Engine Demo ===\n");
@@ -105,7 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .with_condition(
                     Operator::StringEquals,
                     "aws:userid".to_string(),
-                    json!("alice"),
+                    ConditionValue::String("alice".to_string()),
                 ),
         );
 
@@ -197,7 +196,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .with_condition(
                     Operator::NumericLessThan,
                     "aws:RequestCount".to_string(),
-                    json!(10),
+                    ConditionValue::Number(10),
                 ),
         );
 

@@ -428,7 +428,7 @@ impl PolicyEvaluator {
         // All conditions in a block must be satisfied (AND logic)
         for (operator, condition_map) in &condition_block.conditions {
             for (key, value) in condition_map {
-                if !evaluate_condition(context, operator, key, value)? {
+                if !evaluate_condition(context, operator, key, &value.to_json_value())? {
                     return Ok(false);
                 }
             }
@@ -482,8 +482,7 @@ pub fn evaluate_policies(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Action, ContextValue, Effect, IAMStatement, Operator, Resource};
-    use serde_json::json;
+    use crate::{Action, ConditionValue, ContextValue, Effect, IAMStatement, Operator, Resource};
 
     #[test]
     fn test_simple_allow_policy() {
@@ -574,7 +573,7 @@ mod tests {
                 .with_condition(
                     Operator::StringEquals,
                     "aws:userid".to_string(),
-                    json!("test-user"),
+                    ConditionValue::String("test-user".to_string()),
                 ),
         );
 
@@ -606,7 +605,7 @@ mod tests {
                 .with_condition(
                     Operator::StringEquals,
                     "aws:userid".to_string(),
-                    json!("test-user"),
+                    ConditionValue::String("test-user".to_string()),
                 ),
         );
 
@@ -660,7 +659,7 @@ mod tests {
                 .with_condition(
                     Operator::NumericLessThan,
                     "aws:RequestedRegion".to_string(),
-                    json!(10),
+                    ConditionValue::Number(10),
                 ),
         );
 

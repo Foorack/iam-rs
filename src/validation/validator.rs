@@ -311,6 +311,8 @@ pub(crate) mod helpers {
 
 #[cfg(test)]
 mod tests {
+    use crate::ConditionValue;
+
     use super::*;
 
     #[test]
@@ -440,7 +442,6 @@ mod tests {
     #[test]
     fn test_condition_validation_integration() {
         use crate::{Action, Effect, IAMStatement, Operator, Resource};
-        use serde_json::json;
 
         // Valid condition
         let valid_statement = IAMStatement::new(Effect::Allow)
@@ -449,7 +450,7 @@ mod tests {
             .with_condition(
                 Operator::StringEquals,
                 "aws:username".to_string(),
-                json!("alice"),
+                ConditionValue::String("alice".to_string()),
             );
 
         assert!(valid_statement.is_valid());
@@ -461,7 +462,7 @@ mod tests {
             .with_condition(
                 Operator::NumericEquals,
                 "aws:RequestedRegion".to_string(),
-                json!("invalid-number"),
+                ConditionValue::String("invalid-number".to_string()),
             );
 
         // Should fail validation due to type mismatch

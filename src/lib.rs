@@ -1,3 +1,5 @@
+#![allow(clippy::missing_errors_doc)]
+
 // Module organization
 mod core;
 mod evaluation;

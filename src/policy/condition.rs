@@ -3,8 +3,115 @@ use crate::{
     core::Operator,
     validation::{Validate, ValidationContext, ValidationError, ValidationResult, helpers},
 };
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};
+
+/// Represents a condition value that can be a boolean, number, string, or list of strings
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+pub enum ConditionValue {
+    /// A boolean value (e.g., `true`, `false`)
+    Boolean(bool),
+    /// A numeric value (e.g., `42`, `3.14`)
+    Number(i64),
+    /// A single string value (e.g., `"us-east-1"`)
+    String(String),
+    /// Multiple string values (e.g., `["us-east-1", "us-west-2"]`)
+    StringList(Vec<String>),
+}
+
+impl ConditionValue {
+    /// Returns true if this is a string value
+    #[must_use]
+    pub fn is_string(&self) -> bool {
+        matches!(self, ConditionValue::String(_))
+    }
+
+    /// Returns true if this is a boolean value
+    #[must_use]
+    pub fn is_boolean(&self) -> bool {
+        matches!(self, ConditionValue::Boolean(_))
+    }
+
+    /// Returns true if this is a number value
+    #[must_use]
+    pub fn is_number(&self) -> bool {
+        matches!(self, ConditionValue::Number(_))
+    }
+
+    /// Returns true if this is a string list value
+    #[must_use]
+    pub fn is_string_list(&self) -> bool {
+        matches!(self, ConditionValue::StringList(_))
+    }
+
+    /// Returns true if this value represents multiple items (i.e., is a list)
+    #[must_use]
+    pub fn is_array(&self) -> bool {
+        matches!(self, ConditionValue::StringList(_))
+    }
+
+    /// Returns the length of the value (1 for single values, list length for arrays)
+    #[must_use]
+    pub fn len(&self) -> usize {
+        match self {
+            ConditionValue::StringList(list) => list.len(),
+            _ => 1,
+        }
+    }
+
+    /// Returns true if this is an empty list
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        match self {
+            ConditionValue::StringList(list) => list.is_empty(),
+            _ => false,
+        }
+    }
+
+    /// Converts to a `serde_json::Value` for backward compatibility
+    #[must_use]
+    pub fn to_json_value(&self) -> serde_json::Value {
+        match self {
+            ConditionValue::Boolean(b) => serde_json::Value::Bool(*b),
+            ConditionValue::Number(n) => serde_json::Value::Number((*n).into()),
+            ConditionValue::String(s) => serde_json::Value::String(s.clone()),
+            ConditionValue::StringList(list) => serde_json::Value::Array(
+                list.iter()
+                    .map(|s| serde_json::Value::String(s.clone()))
+                    .collect(),
+            ),
+        }
+    }
+
+    /// Creates a ConditionValue from a `serde_json::Value`
+    pub fn from_json_value(value: serde_json::Value) -> Result<Self, String> {
+        match value {
+            serde_json::Value::Bool(b) => Ok(ConditionValue::Boolean(b)),
+            serde_json::Value::Number(n) => {
+                if let Some(i) = n.as_i64() {
+                    Ok(ConditionValue::Number(i))
+                } else {
+                    Err(format!("Unsupported number format: {n}"))
+                }
+            }
+            serde_json::Value::String(s) => Ok(ConditionValue::String(s)),
+            serde_json::Value::Array(arr) => {
+                let mut strings = Vec::new();
+                for item in arr {
+                    if let serde_json::Value::String(s) = item {
+                        strings.push(s);
+                    } else {
+                        return Err(format!("Array must contain only strings, found: {item:?}"));
+                    }
+                }
+                Ok(ConditionValue::StringList(strings))
+            }
+            _ => Err(format!("Unsupported JSON value type: {value:?}")),
+        }
+    }
+}
 
 /// Represents a single condition in an IAM policy
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -15,7 +122,7 @@ pub struct Condition {
     /// The condition key (e.g., "aws:username", "s3:prefix")
     pub key: String,
     /// The condition value(s)
-    pub value: serde_json::Value,
+    pub value: ConditionValue,
 }
 
 /// Represents a condition block in an IAM policy
@@ -25,7 +132,7 @@ pub struct Condition {
 pub struct ConditionBlock {
     /// Map of operators to their key-value pairs
     #[serde(flatten)]
-    pub conditions: HashMap<Operator, HashMap<String, serde_json::Value>>,
+    pub conditions: HashMap<Operator, HashMap<String, ConditionValue>>,
 }
 
 impl Serialize for ConditionBlock {
@@ -35,11 +142,11 @@ impl Serialize for ConditionBlock {
     {
         // Convert the HashMap<Operator, ...> to BTreeMap<String, ...> for ordered serialization
         // Also, sort the keys within each condition (e.g., inside StringEquals)
-        let ordered_map: BTreeMap<String, BTreeMap<String, &serde_json::Value>> = self
+        let ordered_map: BTreeMap<String, BTreeMap<String, &ConditionValue>> = self
             .conditions
             .iter()
             .map(|(op, conditions)| {
-                let inner_ordered: BTreeMap<String, &serde_json::Value> =
+                let inner_ordered: BTreeMap<String, &ConditionValue> =
                     conditions.iter().map(|(k, v)| (k.clone(), v)).collect();
                 (op.as_str().to_string(), inner_ordered)
             })
@@ -51,7 +158,7 @@ impl Serialize for ConditionBlock {
 
 impl Condition {
     /// Creates a new condition
-    pub fn new<K: Into<String>>(operator: Operator, key: K, value: serde_json::Value) -> Self {
+    pub fn new<K: Into<String>>(operator: Operator, key: K, value: ConditionValue) -> Self {
         Self {
             operator,
             key: key.into(),
@@ -61,28 +168,22 @@ impl Condition {
 
     /// Creates a condition with a string value
     pub fn string<K: Into<String>, V: Into<String>>(operator: Operator, key: K, value: V) -> Self {
-        Self::new(operator, key, serde_json::Value::String(value.into()))
+        Self::new(operator, key, ConditionValue::String(value.into()))
     }
 
     /// Creates a condition with a boolean value
     pub fn boolean<K: Into<String>>(operator: Operator, key: K, value: bool) -> Self {
-        Self::new(operator, key, serde_json::Value::Bool(value))
+        Self::new(operator, key, ConditionValue::Boolean(value))
     }
 
     /// Creates a condition with a numeric value
     pub fn number<K: Into<String>>(operator: Operator, key: K, value: i64) -> Self {
-        Self::new(
-            operator,
-            key,
-            serde_json::Value::Number(serde_json::Number::from(value)),
-        )
+        Self::new(operator, key, ConditionValue::Number(value))
     }
 
     /// Creates a condition with an array of string values
     pub fn string_array<K: Into<String>>(operator: Operator, key: K, values: Vec<String>) -> Self {
-        let json_values: Vec<serde_json::Value> =
-            values.into_iter().map(serde_json::Value::String).collect();
-        Self::new(operator, key, serde_json::Value::Array(json_values))
+        Self::new(operator, key, ConditionValue::StringList(values))
     }
 }
 
@@ -114,7 +215,7 @@ impl ConditionBlock {
         mut self,
         operator: Operator,
         key: K,
-        value: serde_json::Value,
+        value: ConditionValue,
     ) -> Self {
         let condition = Condition::new(operator, key, value);
         self.add_condition(condition);
@@ -126,17 +227,13 @@ impl ConditionBlock {
     pub fn get_conditions_for_operator(
         &self,
         operator: &Operator,
-    ) -> Option<&HashMap<String, serde_json::Value>> {
+    ) -> Option<&HashMap<String, ConditionValue>> {
         self.conditions.get(operator)
     }
 
     /// Gets a specific condition value
     #[must_use]
-    pub fn get_condition_value(
-        &self,
-        operator: &Operator,
-        key: &str,
-    ) -> Option<&serde_json::Value> {
+    pub fn get_condition_value(&self, operator: &Operator, key: &str) -> Option<&ConditionValue> {
         self.conditions.get(operator)?.get(key)
     }
 
@@ -165,7 +262,13 @@ impl ConditionBlock {
     pub fn to_legacy_format(&self) -> HashMap<String, HashMap<String, serde_json::Value>> {
         self.conditions
             .iter()
-            .map(|(op, conditions)| (op.as_str().to_string(), conditions.clone()))
+            .map(|(op, conditions)| {
+                let json_conditions = conditions
+                    .iter()
+                    .map(|(k, v)| (k.clone(), v.to_json_value()))
+                    .collect();
+                (op.as_str().to_string(), json_conditions)
+            })
             .collect()
     }
 
@@ -183,7 +286,15 @@ impl ConditionBlock {
             let operator = op_str
                 .parse::<Operator>()
                 .map_err(|e| format!("Invalid operator '{op_str}': {e}"))?;
-            conditions.insert(operator, condition_map);
+
+            let mut converted_conditions = HashMap::new();
+            for (key, value) in condition_map {
+                let condition_value = ConditionValue::from_json_value(value)
+                    .map_err(|e| format!("Invalid condition value for key '{key}': {e}"))?;
+                converted_conditions.insert(key, condition_value);
+            }
+
+            conditions.insert(operator, converted_conditions);
         }
 
         Ok(Self { conditions })
@@ -206,15 +317,9 @@ impl Validate for Condition {
             results.push(helpers::validate_non_empty(&self.key, "key", ctx));
 
             // Validate that the operator and value are compatible
+            #[allow(clippy::single_match)]
             match &self.value {
-                serde_json::Value::Null => {
-                    results.push(Err(ValidationError::InvalidCondition {
-                        operator: self.operator.as_str().to_string(),
-                        key: self.key.clone(),
-                        reason: "Condition value cannot be null".to_string(),
-                    }));
-                }
-                serde_json::Value::Array(arr) => {
+                ConditionValue::StringList(arr) => {
                     if arr.is_empty() {
                         results.push(Err(ValidationError::InvalidCondition {
                             operator: self.operator.as_str().to_string(),
@@ -240,16 +345,14 @@ impl Validate for Condition {
                     OperatorType::String => {
                         // String operators should have string values
                         match &self.value {
-                            serde_json::Value::String(_) => {},
-                            serde_json::Value::Array(arr) => {
-                                for (i, val) in arr.iter().enumerate() {
-                                    if !val.is_string() {
-                                        results.push(Err(ValidationError::InvalidCondition {
-                                            operator: self.operator.as_str().to_string(),
-                                            key: self.key.clone(),
-                                            reason: format!("String operator requires string values, found {val} at index {i}"),
-                                        }));
-                                    }
+                            ConditionValue::String(_) => {},
+                            ConditionValue::StringList(arr) => {
+                                if arr.is_empty() {
+                                    results.push(Err(ValidationError::InvalidCondition {
+                                        operator: self.operator.as_str().to_string(),
+                                        key: self.key.clone(),
+                                        reason: "String operator requires non-empty string array".to_string(),
+                                    }));
                                 }
                             },
                             _ => {
@@ -263,9 +366,10 @@ impl Validate for Condition {
                     },
                     OperatorType::Numeric => {
                         // Numeric operators should have numeric values
+                        #[allow(clippy::match_wildcard_for_single_variants)]
                         match &self.value {
-                            serde_json::Value::Number(_) => {},
-                            serde_json::Value::String(s) => {
+                            ConditionValue::Number(_) => {},
+                            ConditionValue::String(s) => {
                                 // Allow string representation of numbers
                                 if s.parse::<f64>().is_err() {
                                     results.push(Err(ValidationError::InvalidCondition {
@@ -275,26 +379,14 @@ impl Validate for Condition {
                                     }));
                                 }
                             },
-                            serde_json::Value::Array(arr) => {
-                                for (i, val) in arr.iter().enumerate() {
-                                    match val {
-                                        serde_json::Value::Number(_) => {},
-                                        serde_json::Value::String(s) => {
-                                            if s.parse::<f64>().is_err() {
-                                                results.push(Err(ValidationError::InvalidCondition {
-                                                    operator: self.operator.as_str().to_string(),
-                                                    key: self.key.clone(),
-                                                    reason: format!("Numeric operator requires numeric values, found non-numeric string at index {i}: {s}"),
-                                                }));
-                                            }
-                                        },
-                                        _ => {
-                                            results.push(Err(ValidationError::InvalidCondition {
-                                                operator: self.operator.as_str().to_string(),
-                                                key: self.key.clone(),
-                                                reason: format!("Numeric operator requires numeric values, found {val} at index {i}"),
-                                            }));
-                                        }
+                            ConditionValue::StringList(arr) => {
+                                for (i, s) in arr.iter().enumerate() {
+                                    if s.parse::<f64>().is_err() {
+                                        results.push(Err(ValidationError::InvalidCondition {
+                                            operator: self.operator.as_str().to_string(),
+                                            key: self.key.clone(),
+                                            reason: format!("Numeric operator requires numeric values, found non-numeric string at index {i}: {s}"),
+                                        }));
                                     }
                                 }
                             },
@@ -310,7 +402,7 @@ impl Validate for Condition {
                     OperatorType::Date => {
                         // Date operators should have valid date strings
                         match &self.value {
-                            serde_json::Value::String(s) => {
+                            ConditionValue::String(s) => {
                                 // Basic ISO 8601 format check
                                 if !s.contains('T') && !s.contains('-') {
                                     results.push(Err(ValidationError::InvalidCondition {
@@ -332,8 +424,8 @@ impl Validate for Condition {
                     OperatorType::Boolean => {
                         // Boolean operators should have boolean values
                         match &self.value {
-                            serde_json::Value::Bool(_) => {},
-                            serde_json::Value::String(s) => {
+                            ConditionValue::Boolean(_) => {},
+                            ConditionValue::String(s) => {
                                 if !matches!(s.as_str(), "true" | "false") {
                                     results.push(Err(ValidationError::InvalidCondition {
                                         operator: self.operator.as_str().to_string(),
@@ -405,7 +497,6 @@ impl Validate for ConditionBlock {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::json;
 
     #[test]
     fn test_condition_creation() {
@@ -413,7 +504,7 @@ mod tests {
 
         assert_eq!(condition.operator, Operator::StringEquals);
         assert_eq!(condition.key, "aws:username");
-        assert_eq!(condition.value, json!("john"));
+        assert_eq!(condition.value, ConditionValue::String("john".to_string()));
     }
 
     #[test]
@@ -435,14 +526,14 @@ mod tests {
         assert!(!block.has_condition(&Operator::StringEquals, "nonexistent"));
 
         let username = block.get_condition_value(&Operator::StringEquals, "aws:username");
-        assert_eq!(username, Some(&json!("john")));
+        assert_eq!(username, Some(&ConditionValue::String("john".to_string())));
     }
 
     #[test]
     fn test_legacy_format_conversion() {
         let mut legacy = HashMap::new();
         let mut string_conditions = HashMap::new();
-        string_conditions.insert("aws:username".to_string(), json!("john"));
+        string_conditions.insert("aws:username".to_string(), serde_json::json!("john"));
         legacy.insert("StringEquals".to_string(), string_conditions);
 
         let block = ConditionBlock::from_legacy_format(legacy.clone()).unwrap();

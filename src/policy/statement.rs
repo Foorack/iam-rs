@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use super::ConditionBlock;
 use crate::{
     core::{Action, Effect, Operator, Principal, Resource},
+    policy::condition::ConditionValue,
     validation::{Validate, ValidationContext, ValidationError, ValidationResult, helpers},
 };
 
@@ -345,7 +346,7 @@ impl IAMStatement {
         mut self,
         operator: Operator,
         key: String,
-        value: serde_json::Value,
+        value: ConditionValue,
     ) -> Self {
         let condition_block = self.condition.get_or_insert_with(ConditionBlock::new);
         let condition = super::Condition::new(operator, key, value);
@@ -541,14 +542,18 @@ mod tests {
             .with_condition(
                 Operator::StringEquals,
                 "aws:PrincipalTag/department".to_string(),
-                serde_json::json!(["finance", "hr", "legal"]),
+                ConditionValue::StringList(vec![
+                    "finance".to_string(),
+                    "hr".to_string(),
+                    "legal".to_string(),
+                ]),
             )
             .with_condition(
                 Operator::ArnLike,
                 "aws:PrincipalArn".to_string(),
-                serde_json::json!([
-                    "arn:aws:iam::222222222222:user/Ana",
-                    "arn:aws:iam::222222222222:user/Mary"
+                ConditionValue::StringList(vec![
+                    "arn:aws:iam::222222222222:user/Ana".to_string(),
+                    "arn:aws:iam::222222222222:user/Mary".to_string(),
                 ]),
             );
 
@@ -569,7 +574,7 @@ mod tests {
             .with_condition(
                 Operator::StringEquals,
                 "s3:prefix".to_string(),
-                serde_json::json!("uploads/"),
+                ConditionValue::String("uploads/".to_string()),
             );
 
         assert!(statement.condition.is_some());

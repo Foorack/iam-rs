@@ -1,6 +1,6 @@
 use iam_rs::{
-    Action, Effect, IAMPolicy, IAMStatement, Operator, Principal, PrincipalType, Resource,
-    Validate, ValidationError,
+    Action, Condition, ConditionValue, Effect, IAMPolicy, IAMStatement, Operator, Principal,
+    PrincipalType, Resource, Validate, ValidationError,
 };
 use serde_json::json;
 
@@ -19,7 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .with_condition(
                     Operator::StringEquals,
                     "aws:PrincipalTag/department".to_string(),
-                    json!("engineering"),
+                    ConditionValue::String("engineering".to_string()),
                 ),
         );
 
@@ -100,7 +100,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .with_condition(
                     Operator::NumericEquals,
                     "aws:RequestedRegion".to_string(),
-                    json!("not-a-number"), // Numeric operator with string value - will fail
+                    ConditionValue::String("not-a-number".to_string()), // Numeric operator with string value - will fail
                 ),
         );
 
