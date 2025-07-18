@@ -85,7 +85,7 @@ impl ConditionValue {
         }
     }
 
-    /// Creates a ConditionValue from a `serde_json::Value`
+    /// Creates a `ConditionValue` from a `serde_json::Value`
     pub fn from_json_value(value: serde_json::Value) -> Result<Self, String> {
         match value {
             serde_json::Value::Bool(b) => Ok(ConditionValue::Boolean(b)),

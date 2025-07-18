@@ -48,6 +48,7 @@ impl PolicyVariable {
     }
 
     /// Resolve the variable against a context
+    #[must_use]
     pub fn resolve(&self, context: &Context) -> String {
         match context.get(&self.key) {
             Some(ContextValue::String(value)) => value.clone(),
