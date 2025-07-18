@@ -14,7 +14,7 @@ pub enum OperatorType {
 }
 
 /// Represents the different types of condition operators available in IAM policies
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash, PartialOrd, Ord)]
 #[serde(rename_all = "PascalCase")]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum Operator {

@@ -20,10 +20,11 @@ pub struct Condition {
 
 /// Represents a condition block in an IAM policy
 /// This is a collection of conditions grouped by operator
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct ConditionBlock {
     /// Map of operators to their key-value pairs
+    #[serde(flatten)]
     pub conditions: HashMap<Operator, HashMap<String, serde_json::Value>>,
 }
 
@@ -45,27 +46,6 @@ impl Serialize for ConditionBlock {
             .collect();
 
         ordered_map.serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for ConditionBlock {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let string_map: HashMap<String, HashMap<String, serde_json::Value>> =
-            HashMap::deserialize(deserializer)?;
-
-        let mut conditions = HashMap::new();
-
-        for (op_str, condition_map) in string_map {
-            let operator = op_str.parse::<Operator>().map_err(|e| {
-                serde::de::Error::custom(format!("Invalid operator '{op_str}': {e}"))
-            })?;
-            conditions.insert(operator, condition_map);
-        }
-
-        Ok(ConditionBlock { conditions })
     }
 }
 
