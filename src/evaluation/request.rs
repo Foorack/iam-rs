@@ -1,4 +1,5 @@
-use super::context::{Context, ContextValue};
+use super::context::Context;
+use crate::{Arn, Principal};
 use serde::{Deserialize, Serialize};
 
 /// Core IAM request containing principal, action, and resource
@@ -40,7 +41,7 @@ use serde::{Deserialize, Serialize};
 pub struct IAMRequest {
     /// The principal making the request (e.g., AROA123456789EXAMPLE)
     #[serde(rename = "Principal")]
-    pub principal: String,
+    pub principal: Principal,
 
     /// The action being requested (e.g., iam:DeactivateMFADevice)
     #[serde(rename = "Action")]
@@ -48,7 +49,7 @@ pub struct IAMRequest {
 
     /// The resource being accessed (e.g., `arn:aws:iam::user/martha`)
     #[serde(rename = "Resource")]
-    pub resource: String,
+    pub resource: Arn,
 
     /// Additional context for condition evaluation
     #[serde(rename = "Context", default)]
@@ -58,11 +59,12 @@ pub struct IAMRequest {
 impl IAMRequest {
     /// Creates a new request
     #[must_use]
-    pub fn new<S: Into<String>>(principal: S, action: S, resource: S) -> Self {
+    pub fn new<S: Into<String>>(principal: Principal, action: S, resource: Arn) -> Self {
+        let action = action.into();
         Self {
-            principal: principal.into(),
-            action: action.into(),
-            resource: resource.into(),
+            principal,
+            action,
+            resource,
             context: Context::new(),
         }
     }
@@ -70,105 +72,72 @@ impl IAMRequest {
     /// Creates a request with context
     #[must_use]
     pub fn new_with_context<S: Into<String>>(
-        principal: S,
+        principal: Principal,
         action: S,
-        resource: S,
+        resource: Arn,
         context: Context,
     ) -> Self {
+        let action = action.into();
         Self {
-            principal: principal.into(),
-            action: action.into(),
-            resource: resource.into(),
+            principal,
+            action,
+            resource,
             context,
         }
-    }
-
-    /// Adds all context key-value pairs from another context
-    #[must_use]
-    pub fn with_context(mut self, other_context: Context) -> Self {
-        self.context.extend(other_context);
-        self
-    }
-
-    /// Adds string context to the request
-    #[must_use]
-    pub fn with_string_context<K: Into<String>, V: Into<String>>(
-        mut self,
-        key: K,
-        value: V,
-    ) -> Self {
-        self.context = self.context.with_string(key, value);
-        self
-    }
-
-    /// Adds boolean context to the request
-    #[must_use]
-    pub fn with_boolean_context<K: Into<String>>(mut self, key: K, value: bool) -> Self {
-        self.context = self.context.with_boolean(key, value);
-        self
-    }
-
-    /// Adds numeric context to the request
-    #[must_use]
-    pub fn with_number_context<K: Into<String>>(mut self, key: K, value: f64) -> Self {
-        self.context = self.context.with_number(key, value);
-        self
-    }
-
-    /// Gets a context value by key
-    #[must_use]
-    pub fn get_context(&self, key: &str) -> Option<&ContextValue> {
-        self.context.get(key)
-    }
-
-    /// Checks if a context key exists
-    #[must_use]
-    pub fn has_context(&self, key: &str) -> bool {
-        self.context.has_key(key)
-    }
-
-    /// Gets all context keys
-    #[must_use]
-    pub fn context_keys(&self) -> Vec<&String> {
-        self.context.keys()
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use crate::PrincipalId;
+
     use super::*;
 
     #[test]
     fn test_parc_request_creation() {
         let request = IAMRequest::new(
-            "AROA123456789EXAMPLE",
+            Principal::Aws(PrincipalId::String("AROA123456789EXAMPLE".into())),
             "iam:DeactivateMFADevice",
-            "arn:aws:iam::user/martha",
+            Arn::parse("arn:aws:iam:::user/martha").unwrap(),
         );
 
-        assert_eq!(request.principal, "AROA123456789EXAMPLE");
+        assert_eq!(
+            request.principal,
+            Principal::Aws(PrincipalId::String("AROA123456789EXAMPLE".into()))
+        );
         assert_eq!(request.action, "iam:DeactivateMFADevice");
-        assert_eq!(request.resource, "arn:aws:iam::user/martha");
+        assert_eq!(
+            request.resource,
+            Arn::parse("arn:aws:iam:::user/martha").unwrap()
+        );
     }
 
     #[test]
     fn test_parc_request_with_context() {
-        let request = IAMRequest::new("principal", "action", "resource")
-            .with_string_context("string_key", "string_value")
-            .with_boolean_context("bool_key", true)
-            .with_number_context("number_key", 42.0);
+        let context = Context::new()
+            .with_string("aws:UserId", "AIDA123456789EXAMPLE:BobsSession")
+            .with_boolean("aws:MultiFactorAuthPresent", true)
+            .with_number("aws:EpochTime", 1633072800.0);
+        let request = IAMRequest::new_with_context(
+            Principal::Aws(PrincipalId::String("principal".into())),
+            "action",
+            Arn::parse("arn:aws:iam:::user/martha").unwrap(),
+            context,
+        );
 
         assert_eq!(
             request
-                .get_context("string_key")
+                .context
+                .get("aws:UserId")
                 .unwrap()
                 .as_string()
                 .unwrap(),
-            "string_value"
+            "AIDA123456789EXAMPLE:BobsSession"
         );
         assert_eq!(
             request
-                .get_context("bool_key")
+                .context
+                .get("aws:MultiFactorAuthPresent")
                 .unwrap()
                 .as_boolean()
                 .unwrap(),
@@ -176,27 +145,12 @@ mod tests {
         );
         assert_eq!(
             request
-                .get_context("number_key")
+                .context
+                .get("aws:EpochTime")
                 .unwrap()
                 .as_number()
                 .unwrap(),
-            42.0
+            1633072800.0
         );
-    }
-
-    #[test]
-    fn test_parc_request_context_utilities() {
-        let request = IAMRequest::new("principal", "action", "resource")
-            .with_string_context("key1", "value1")
-            .with_boolean_context("key2", false);
-
-        assert!(request.has_context("key1"));
-        assert!(request.has_context("key2"));
-        assert!(!request.has_context("key3"));
-
-        let keys = request.context_keys();
-        assert_eq!(keys.len(), 2);
-        assert!(keys.contains(&&"key1".to_string()));
-        assert!(keys.contains(&&"key2".to_string()));
     }
 }

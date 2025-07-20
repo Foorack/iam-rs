@@ -1,4 +1,7 @@
-use crate::validation::{Validate, ValidationContext, ValidationResult, helpers};
+use crate::{
+    Arn, ValidationError,
+    validation::{Validate, ValidationContext, ValidationResult},
+};
 use serde::{Deserialize, Serialize};
 
 /// Principal ID (can be either string or array of strings)
@@ -10,35 +13,6 @@ pub enum PrincipalId {
     String(String),
     /// Multiple principal IDs as an array of strings
     Array(Vec<String>),
-}
-
-impl Validate for PrincipalId {
-    fn validate(&self, context: &mut ValidationContext) -> ValidationResult {
-        context.with_segment("PrincipalId", |ctx| match self {
-            PrincipalId::String(id) => helpers::validate_principal(id, ctx),
-            PrincipalId::Array(ids) => {
-                if ids.is_empty() {
-                    return Err(crate::validation::ValidationError::InvalidValue {
-                        field: "PrincipalId".to_string(),
-                        value: "[]".to_string(),
-                        reason: "PrincipalId array cannot be empty".to_string(),
-                    });
-                }
-
-                let results: Vec<ValidationResult> = ids
-                    .iter()
-                    .enumerate()
-                    .map(|(i, id)| {
-                        ctx.with_segment(&format!("[{i}]"), |nested_ctx| {
-                            helpers::validate_principal(id, nested_ctx)
-                        })
-                    })
-                    .collect();
-
-                helpers::collect_errors(results)
-            }
-        })
-    }
 }
 
 /// Represents a principal in an IAM policy
@@ -71,14 +45,112 @@ pub enum Principal {
     Wildcard,
 }
 
+impl Principal {
+    #[must_use]
+    pub fn is_single(&self) -> bool {
+        #[allow(clippy::match_like_matches_macro)]
+        match self {
+            Principal::Aws(PrincipalId::String(_))
+            | Principal::Federated(PrincipalId::String(_))
+            | Principal::Service(PrincipalId::String(_))
+            | Principal::CanonicalUser(PrincipalId::String(_)) => true,
+            _ => false,
+        }
+    }
+}
+
+fn validate_domain(domain: &str) -> ValidationResult {
+    // Domain, for now simple check if it contains dots, not uppercase, at ends with letter, and not empty
+    if !domain.contains('.')
+        || domain.to_lowercase() != domain
+        || !domain.ends_with(|c: char| c.is_alphabetic())
+        || domain.is_empty()
+    {
+        return Err(ValidationError::InvalidPrincipal {
+            principal: domain.to_string(),
+            reason: "Principal must be a valid domain".to_string(),
+        });
+    }
+    Ok(())
+}
+
 impl Validate for Principal {
     fn validate(&self, context: &mut ValidationContext) -> ValidationResult {
         context.with_segment("Principal", |ctx| match self {
-            Principal::Aws(id)
-            | Principal::Federated(id)
-            | Principal::Service(id)
-            | Principal::CanonicalUser(id) => id.validate(ctx),
             Principal::Wildcard => Ok(()),
+
+            //
+            // "Array" cases (compact)
+            //
+            Principal::Aws(PrincipalId::Array(ids))
+            | Principal::Federated(PrincipalId::Array(ids))
+            | Principal::Service(PrincipalId::Array(ids))
+            | Principal::CanonicalUser(PrincipalId::Array(ids)) => {
+                if ids.is_empty() {
+                    return Err(ValidationError::InvalidPrincipal {
+                        principal: "Empty principal array".to_string(),
+                        reason: "Principal array cannot be empty".to_string(),
+                    });
+                }
+                for id in ids {
+                    let single = match self {
+                        Principal::Aws(_) => Principal::Aws(PrincipalId::String(id.clone())),
+                        Principal::Federated(_) => {
+                            Principal::Federated(PrincipalId::String(id.clone()))
+                        }
+                        Principal::Service(_) => {
+                            Principal::Service(PrincipalId::String(id.clone()))
+                        }
+                        Principal::CanonicalUser(_) => {
+                            Principal::CanonicalUser(PrincipalId::String(id.clone()))
+                        }
+                        Principal::Wildcard => unreachable!(),
+                    };
+                    single.validate(ctx)?;
+                }
+                Ok(())
+            }
+
+            //
+            // "Single" cases
+            //
+
+            // AWS means it is either account number or ARN
+            Principal::Aws(PrincipalId::String(id)) => {
+                if id.len() == 12 && id.chars().all(|c| c.is_ascii_digit()) {
+                    // Account ID
+                    return Ok(());
+                }
+                let arn = Arn::parse(id).map_err(|e| ValidationError::InvalidPrincipal {
+                    principal: id.to_string(),
+                    reason: e.to_string(),
+                })?;
+                arn.validate(ctx)
+            }
+            Principal::Federated(PrincipalId::String(id)) => {
+                // If starts with "arn:", validate as ARN
+                if id.starts_with("arn:") {
+                    let arn = Arn::parse(id).map_err(|e| ValidationError::InvalidPrincipal {
+                        principal: id.to_string(),
+                        reason: e.to_string(),
+                    })?;
+                    arn.validate(ctx)?;
+                } else {
+                    validate_domain(id)?;
+                }
+                Ok(())
+            }
+            Principal::Service(PrincipalId::String(id)) => Ok(validate_domain(id)?),
+            Principal::CanonicalUser(PrincipalId::String(id)) => {
+                // Canonical user IDs are usually 64-character hexadecimal strings
+                if id.len() == 64 && id.chars().all(|c| c.is_ascii_hexdigit()) {
+                    return Ok(());
+                }
+                Err(ValidationError::InvalidPrincipal {
+                    principal: id.to_string(),
+                    reason: "Canonical user ID must be a 64-character hex string".to_string(),
+                })
+            }
         })
     }
 }
@@ -98,10 +170,10 @@ mod tests {
         );
 
         // Invalid principal should be invalid
-        assert!(!Principal::Federated(PrincipalId::String("invalid-principal".into())).is_valid());
+        assert!(!Principal::Aws(PrincipalId::String("invalid-principal".into())).is_valid());
 
         // Empty principal should be invalid
-        assert!(!Principal::Federated(PrincipalId::String("".into())).is_valid());
+        assert!(!Principal::Aws(PrincipalId::String("".into())).is_valid());
 
         // Empty array principal should be invalid
         assert!(!Principal::Aws(PrincipalId::Array(vec![])).is_valid());
@@ -112,5 +184,37 @@ mod tests {
             "arn:aws:iam::123456789012:user/bob".into(),
         ]));
         assert!(valid_array_principal.is_valid());
+
+        // Account ID as a valid principal
+        assert!(Principal::Aws(PrincipalId::String("123456789012".into())).is_valid());
+
+        // Valid service principal
+        assert!(Principal::Service(PrincipalId::String("ec2.amazonaws.com".into())).is_valid());
+        // Invalid service principal
+        assert!(!Principal::Service(PrincipalId::String("invalid-service".into())).is_valid());
+
+        // Valid federated principal
+        assert!(
+            Principal::Federated(PrincipalId::String(
+                "arn:aws:iam::123456789012:saml-provider/MyProvider".into()
+            ))
+            .is_valid()
+        );
+        // Invalid federated principal
+        assert!(!Principal::Federated(PrincipalId::String("invalid-federated".into())).is_valid());
+        // Simple domain as federated principal
+        assert!(Principal::Federated(PrincipalId::String("example.com".into())).is_valid());
+
+        // Valid canonical user principal
+        assert!(
+            Principal::CanonicalUser(PrincipalId::String(
+                "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".into()
+            ))
+            .is_valid()
+        );
+        // Invalid canonical user principal (wrong length)
+        assert!(
+            !Principal::CanonicalUser(PrincipalId::String("invalid-canonical".into())).is_valid()
+        );
     }
 }

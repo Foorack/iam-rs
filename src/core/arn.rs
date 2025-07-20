@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use crate::{Validate, ValidationContext, ValidationError};
+
 /// Represents an Amazon Resource Name (ARN)
 ///
 /// ARNs uniquely identify AWS resources. The general format is:
@@ -9,7 +11,7 @@ use std::fmt;
 /// Some services use slightly different formats:
 /// - `arn:partition:service:region:account-id:resource-type:resource-id`
 /// - `arn:partition:service:region:account-id:resource-type/resource-id/sub-resource`
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct Arn {
     /// The partition (e.g., "aws", "aws-cn", "aws-us-gov")
@@ -269,6 +271,19 @@ impl Arn {
     }
 }
 
+impl Validate for Arn {
+    fn validate(&self, _context: &mut ValidationContext) -> crate::ValidationResult {
+        if self.is_valid() {
+            Ok(())
+        } else {
+            Err(ValidationError::InvalidArn {
+                arn: self.to_string(),
+                reason: "ARN format is valid but is not a conformant ARN".to_string(),
+            })
+        }
+    }
+}
+
 impl fmt::Display for Arn {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
@@ -284,6 +299,25 @@ impl std::str::FromStr for Arn {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         Arn::parse(s)
+    }
+}
+
+impl Serialize for Arn {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for Arn {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let arn_str = String::deserialize(deserializer)?;
+        Arn::parse(&arn_str).map_err(serde::de::Error::custom)
     }
 }
 

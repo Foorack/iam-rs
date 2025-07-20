@@ -1,5 +1,6 @@
 use super::{context::Context, matcher::ArnMatcher, request::IAMRequest};
 use crate::{
+    Arn, Validate,
     core::{Action, Effect, Principal, PrincipalId, Resource},
     evaluation::{
         operator_eval::{evaluate_condition, wildcard_match},
@@ -26,7 +27,7 @@ pub enum Decision {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum EvaluationError {
     /// Invalid request context
-    InvalidContext(String),
+    InvalidRequest(String),
     /// Policy parsing or validation error
     InvalidPolicy(String),
     /// ARN format error during evaluation
@@ -42,7 +43,7 @@ pub enum EvaluationError {
 impl std::fmt::Display for EvaluationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EvaluationError::InvalidContext(msg) => write!(f, "Invalid context: {msg}"),
+            EvaluationError::InvalidRequest(msg) => write!(f, "Invalid request: {msg}"),
             EvaluationError::InvalidPolicy(msg) => write!(f, "Invalid policy: {msg}"),
             EvaluationError::InvalidArn(msg) => write!(f, "Invalid ARN: {msg}"),
             EvaluationError::InvalidVariable(msg) => write!(f, "Invalid variable: {msg}"),
@@ -154,6 +155,27 @@ impl PolicyEvaluator {
     /// - Condition evaluation fails
     /// - Maximum statement evaluation limit is exceeded
     pub fn evaluate(&self, request: &IAMRequest) -> Result<EvaluationResult, EvaluationError> {
+        if !request.principal.is_single() {
+            return Err(EvaluationError::InvalidRequest(
+                "Request principal must be a single entity".to_string(),
+            ));
+        }
+        if !request.principal.is_valid() {
+            return Err(EvaluationError::InvalidRequest(
+                "Invalid principal".to_string(),
+            ));
+        }
+        if request.action.is_empty() {
+            return Err(EvaluationError::InvalidRequest(
+                "Action cannot be empty".to_string(),
+            ));
+        }
+        if !request.resource.is_valid() {
+            return Err(EvaluationError::InvalidRequest(
+                "Invalid resource ARN".to_string(),
+            ));
+        }
+
         let mut matched_statements = Vec::new();
         let mut has_explicit_allow = false;
         let mut has_explicit_deny = false;
@@ -317,65 +339,96 @@ impl PolicyEvaluator {
     /// Check if a principal matches the request principal
     fn principal_matches(
         principal: &Principal,
-        request_principal: &str,
+        request_principal: &Principal,
     ) -> Result<bool, EvaluationError> {
-        match principal {
-            Principal::Wildcard => Ok(true),
-            Principal::Aws(principal_id) => {
-                Self::principal_id_matches(principal_id, request_principal, |id| {
-                    // AWS principal can be an account ID, an ARN, or "*"
-                    // See: https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_principal.html
-                    // "*" matches any principal
-                    if id == "*" || id == request_principal {
+        if request_principal.is_single() {
+            return Err(EvaluationError::InvalidRequest(
+                "Request principal must be a single entity".to_string(),
+            ));
+        }
+
+        match (principal, request_principal) {
+            // If either is Wildcard, it matches
+            (Principal::Wildcard, _) | (_, Principal::Wildcard) => Ok(true),
+
+            //
+            // Check: AWS
+            //
+            (
+                Principal::Aws(principal_id),
+                Principal::Aws(PrincipalId::String(request_principal_id)),
+            ) => Self::principal_id_matches(principal_id, request_principal_id, |id| {
+                // AWS principal can be an account ID, an ARN, or "*"
+                // See: https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_principal.html
+                // "*" matches any principal
+                if id == "*" || id == request_principal_id {
+                    return Ok(true);
+                }
+                // Account ID (e.g., "123456789012")
+                if id.len() == 12 && id.chars().all(|c| c.is_ascii_digit()) {
+                    // Accept either the raw account ID or the root ARN
+                    let root_arn = format!("arn:aws:iam::{id}:root");
+                    if request_principal_id == id || request_principal_id.as_str() == root_arn {
                         return Ok(true);
                     }
-                    // Account ID (e.g., "123456789012")
-                    if id.len() == 12 && id.chars().all(|c| c.is_ascii_digit()) {
-                        // Accept either the raw account ID or the root ARN
-                        let root_arn = format!("arn:aws:iam::{id}:root");
-                        if request_principal == id || request_principal == root_arn {
-                            return Ok(true);
-                        }
-                    }
-                    // If it's an ARN, match directly or with wildcard
-                    if id.starts_with("arn:") {
-                        return Self::principal_string_matches(id, request_principal);
-                    }
-                    Ok(false)
-                })
-            }
-            Principal::Federated(principal_id) => {
-                Self::principal_id_matches(principal_id, request_principal, |id| {
-                    // Federated principal can be a provider name or ARN
-                    // e.g., "cognito-identity.amazonaws.com", "arn:aws:iam::account-id:oidc-provider/..."
-                    if id == request_principal {
-                        return Ok(true);
-                    }
-                    // For OIDC/SAML, match by prefix
-                    if request_principal.starts_with(id) {
-                        return Ok(true);
-                    }
-                    Ok(false)
-                })
-            }
-            Principal::Service(principal_id) => {
-                Self::principal_id_matches(principal_id, request_principal, |id| {
-                    // Service principal, e.g., "ec2.amazonaws.com"
-                    // Can also be regionalized, e.g., "s3.ap-east-1.amazonaws.com"
-                    if id == request_principal {
-                        return Ok(true);
-                    }
-                    Ok(false)
-                })
-            }
-            Principal::CanonicalUser(principal_id) => {
-                Self::principal_id_matches(principal_id, request_principal, |id| {
-                    // Canonical user ID, e.g., "79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be"
-                    if id == request_principal {
-                        return Ok(true);
-                    }
-                    Ok(false)
-                })
+                }
+                // If it's an ARN, match directly or with wildcard
+                if id.starts_with("arn:") {
+                    return Self::principal_string_matches(id, request_principal_id);
+                }
+                Ok(false)
+            }),
+
+            //
+            // Check: Federated
+            //
+            (
+                Principal::Federated(principal_id),
+                Principal::Federated(PrincipalId::String(request_principal_id)),
+            ) => Self::principal_id_matches(principal_id, request_principal_id, |id| {
+                // Federated principal can be a provider name or ARN
+                // e.g., "cognito-identity.amazonaws.com", "arn:aws:iam::account-id:oidc-provider/..."
+                if id == request_principal_id {
+                    return Ok(true);
+                }
+                // For OIDC/SAML, match by prefix
+                if request_principal_id.starts_with(id) {
+                    return Ok(true);
+                }
+                Ok(false)
+            }),
+
+            //
+            // Check: Service
+            //
+            (
+                Principal::Service(principal_id),
+                Principal::Service(PrincipalId::String(request_principal_id)),
+            ) => Self::principal_id_matches(principal_id, request_principal_id, |id| {
+                // Service principal, e.g., "ec2.amazonaws.com"
+                // Can also be regionalized, e.g., "s3.ap-east-1.amazonaws.com"
+                if id == request_principal_id {
+                    return Ok(true);
+                }
+                Ok(false)
+            }),
+
+            //
+            // Check: CanonicalUser
+            //
+            (
+                Principal::CanonicalUser(principal_id),
+                Principal::CanonicalUser(PrincipalId::String(request_principal_id)),
+            ) => Self::principal_id_matches(principal_id, request_principal_id, |id| {
+                // Canonical user ID, e.g., "79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be"
+                if id == request_principal_id {
+                    return Ok(true);
+                }
+                Ok(false)
+            }),
+            _ => {
+                // If principal types don't match, they can't match
+                Ok(false)
             }
         }
     }
@@ -415,7 +468,7 @@ impl PolicyEvaluator {
             let matcher = ArnMatcher::from_pattern(principal_str)
                 .map_err(|e| EvaluationError::InvalidArn(e.to_string()))?;
             matcher
-                .matches(request_principal)
+                .matches(&Arn::parse(request_principal).unwrap())
                 .map_err(|e| EvaluationError::InvalidArn(e.to_string()))
         } else {
             Ok(false)
@@ -442,12 +495,12 @@ impl PolicyEvaluator {
     /// Check if a resource matches the request resource
     fn resource_matches(
         resource: &Resource,
-        request_resource: &str,
+        request_resource: &Arn,
         context: &Context,
     ) -> Result<bool, EvaluationError> {
         match resource {
             Resource::Single(r) => {
-                if r == "*" || r == request_resource {
+                if r == "*" {
                     Ok(true)
                 } else {
                     // First, interpolate variables
@@ -538,7 +591,9 @@ pub fn evaluate_policies(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Action, ConditionValue, ContextValue, Effect, IAMStatement, Operator, Resource};
+    use crate::{
+        Action, Arn, ConditionValue, ContextValue, Effect, IAMStatement, Operator, Resource,
+    };
 
     #[test]
     fn test_simple_allow_policy() {
@@ -549,9 +604,11 @@ mod tests {
         );
 
         let request = IAMRequest::new(
-            "arn:aws:iam::123456789012:user/test",
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
             "s3:GetObject",
-            "arn:aws:s3:::my-bucket/file.txt",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
         );
 
         let result = evaluate_policy(&policy, &request).unwrap();
@@ -567,9 +624,11 @@ mod tests {
         );
 
         let request = IAMRequest::new(
-            "arn:aws:iam::123456789012:user/test",
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
             "s3:DeleteObject",
-            "arn:aws:s3:::my-bucket/file.txt",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
         );
 
         let result = evaluate_policy(&policy, &request).unwrap();
@@ -585,9 +644,11 @@ mod tests {
         );
 
         let request = IAMRequest::new(
-            "arn:aws:iam::123456789012:user/test",
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
             "s3:GetObject",
-            "arn:aws:s3:::my-bucket/file.txt",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
         );
 
         let result = evaluate_policy(&policy, &request).unwrap();
@@ -603,9 +664,11 @@ mod tests {
         );
 
         let request = IAMRequest::new(
-            "arn:aws:iam::123456789012:user/test",
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
             "s3:GetObject",
-            "arn:aws:s3:::my-bucket/file.txt",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
         );
 
         let result = evaluate_policy(&policy, &request).unwrap();
@@ -634,9 +697,11 @@ mod tests {
         );
 
         let request = IAMRequest::new_with_context(
-            "arn:aws:iam::123456789012:user/test",
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
             "s3:GetObject",
-            "arn:aws:s3:::my-bucket/file.txt",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
             context,
         );
 
@@ -666,9 +731,11 @@ mod tests {
         );
 
         let request = IAMRequest::new_with_context(
-            "arn:aws:iam::123456789012:user/test",
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
             "s3:GetObject",
-            "arn:aws:s3:::my-bucket/file.txt",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
             context,
         );
 
@@ -694,9 +761,11 @@ mod tests {
         ];
 
         let request = IAMRequest::new(
-            "arn:aws:iam::123456789012:user/test",
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
             "s3:DeleteObject",
-            "arn:aws:s3:::protected-bucket/file.txt",
+            Arn::parse("arn:aws:s3:::protected-bucket/file.txt").unwrap(),
         );
 
         let result = evaluate_policies(&policies, &request).unwrap();
@@ -720,9 +789,11 @@ mod tests {
         );
 
         let request = IAMRequest::new_with_context(
-            "arn:aws:iam::123456789012:user/test",
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
             "s3:GetObject",
-            "arn:aws:s3:::my-bucket/file.txt",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
             context,
         );
 
@@ -740,9 +811,11 @@ mod tests {
         );
 
         let request = IAMRequest::new(
-            "arn:aws:iam::123456789012:user/test",
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
             "s3:GetObject",
-            "arn:aws:s3:::my-bucket/file.txt",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
         );
 
         let evaluator =

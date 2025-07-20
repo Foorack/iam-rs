@@ -177,27 +177,6 @@ pub(crate) mod helpers {
         }
     }
 
-    /// Validate ARN format
-    pub fn validate_arn(arn: &str, _context: &ValidationContext) -> ValidationResult {
-        match Arn::parse(arn) {
-            Ok(parsed_arn) => {
-                if parsed_arn.is_valid() {
-                    Ok(())
-                } else {
-                    Err(ValidationError::InvalidArn {
-                        arn: arn.to_string(),
-                        reason: "ARN format is valid but does not conform to AWS standards"
-                            .to_string(),
-                    })
-                }
-            }
-            Err(e) => Err(ValidationError::InvalidArn {
-                arn: arn.to_string(),
-                reason: e.to_string(),
-            }),
-        }
-    }
-
     /// Validate action format (service:action)
     pub fn validate_action(action: &str, _context: &ValidationContext) -> ValidationResult {
         if action == "*" {
@@ -221,51 +200,6 @@ pub(crate) mod helpers {
                 reason: "Action must contain a colon separator or be '*'".to_string(),
             })
         }
-    }
-
-    /// Validate principal ARN or special values
-    pub fn validate_principal(principal: &str, context: &ValidationContext) -> ValidationResult {
-        if principal == "*" || principal == "AWS" || principal == "Federated" {
-            return Ok(());
-        }
-
-        // Check if it's an ARN
-        if principal.starts_with("arn:") {
-            return validate_arn(principal, context);
-        }
-
-        // Check if it's an account ID
-        if principal.len() == 12 && principal.chars().all(|c| c.is_ascii_digit()) {
-            return Ok(());
-        }
-
-        // Check if it's a service principal (ends with .amazonaws.com or similar patterns)
-        if principal.contains('.')
-            && (principal.ends_with(".amazonaws.com")
-                || principal.ends_with(".amazonaws.com.cn")
-                || principal.ends_with(".api.aws")
-                || principal.ends_with(".internal"))
-        {
-            return Ok(());
-        }
-
-        // Check if it's a federated identity provider URL
-        if principal.starts_with("https://") || principal.starts_with("http://") {
-            return Ok(());
-        }
-
-        // Check if it's a SAML provider ARN format
-        if principal.starts_with("arn:aws:iam::") && principal.contains(":saml-provider/") {
-            return Ok(());
-        }
-
-        // Reject anything else as invalid
-        Err(ValidationError::InvalidPrincipal {
-            principal: principal.to_string(),
-            reason:
-                "Principal must be an ARN, account ID, service principal, URL, or special value"
-                    .to_string(),
-        })
     }
 
     /// Validate resource ARN or wildcard
@@ -361,35 +295,10 @@ mod tests {
     fn test_helper_validations() {
         let context = ValidationContext::new();
 
-        // Test ARN validation
-        assert!(helpers::validate_arn("arn:aws:s3:::bucket/object", &context).is_ok());
-        assert!(helpers::validate_arn("invalid-arn", &context).is_err());
-
         // Test action validation
         assert!(helpers::validate_action("s3:GetObject", &context).is_ok());
         assert!(helpers::validate_action("*", &context).is_ok());
         assert!(helpers::validate_action("invalid-action", &context).is_err());
-
-        // Test principal validation
-        assert!(helpers::validate_principal("*", &context).is_ok());
-        assert!(helpers::validate_principal("123456789012", &context).is_ok());
-        assert!(
-            helpers::validate_principal("arn:aws:iam::123456789012:user/test", &context).is_ok()
-        );
-        assert!(
-            helpers::validate_principal("arn:aws:iam::123456789012:role/test", &context).is_ok()
-        );
-        assert!(helpers::validate_principal("asset.controlpanel.internal", &context).is_ok());
-        assert!(helpers::validate_principal("invalid", &context).is_err());
-        assert!(helpers::validate_principal("https://example.com", &context).is_ok());
-        assert!(helpers::validate_principal("http://example.com", &context).is_ok());
-        assert!(
-            helpers::validate_principal(
-                "arn:aws:iam::123456789012:saml-provider/TestProvider",
-                &context
-            )
-            .is_ok()
-        );
 
         // Test resource validation
         assert!(helpers::validate_resource("*", &context).is_ok());

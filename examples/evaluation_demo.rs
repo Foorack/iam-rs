@@ -1,6 +1,7 @@
 use iam_rs::{
-    Action, ConditionValue, Context, ContextValue, Decision, Effect, EvaluationOptions, IAMPolicy,
-    IAMRequest, IAMStatement, Operator, PolicyEvaluator, Resource, evaluate_policy,
+    Action, Arn, ConditionValue, Context, ContextValue, Decision, Effect, EvaluationOptions,
+    IAMPolicy, IAMRequest, IAMStatement, Operator, PolicyEvaluator, Principal, PrincipalId,
+    Resource, evaluate_policy,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -18,9 +19,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
     let request = IAMRequest::new(
-        "arn:aws:iam::123456789012:user/alice",
+        Principal::Aws(PrincipalId::String(
+            "arn:aws:iam::123456789012:user/alice".to_string(),
+        )),
         "s3:GetObject",
-        "arn:aws:s3:::my-bucket/file.txt",
+        Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
     );
 
     match evaluate_policy(&allow_policy, &request)? {
@@ -44,9 +47,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
     let delete_request = IAMRequest::new(
-        "arn:aws:iam::123456789012:user/alice",
+        Principal::Aws(PrincipalId::String(
+            "arn:aws:iam::123456789012:user/alice".to_string(),
+        )),
         "s3:DeleteObject",
-        "arn:aws:s3:::protected-bucket/important.txt",
+        Arn::parse("arn:aws:s3:::protected-bucket/important.txt").unwrap(),
     );
 
     match evaluate_policy(&deny_policy, &delete_request)? {
@@ -68,9 +73,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
     let wildcard_request = IAMRequest::new(
-        "arn:aws:iam::123456789012:user/alice",
+        Principal::Aws(PrincipalId::String(
+            "arn:aws:iam::123456789012:user/alice".to_string(),
+        )),
         "s3:PutObject",
-        "arn:aws:s3:::my-bucket/new-file.txt",
+        Arn::parse("arn:aws:s3:::my-bucket/new-file.txt").unwrap(),
     );
 
     match evaluate_policy(&wildcard_policy, &wildcard_request)? {
@@ -109,9 +116,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
     let condition_request = IAMRequest::new_with_context(
-        "arn:aws:iam::123456789012:user/alice",
+        Principal::Aws(PrincipalId::String(
+            "arn:aws:iam::123456789012:user/alice".to_string(),
+        )),
         "s3:GetObject",
-        "arn:aws:s3:::private-bucket/personal.txt",
+        Arn::parse("arn:aws:s3:::private-bucket/personal.txt").unwrap(),
         context,
     );
 
@@ -131,9 +140,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let failed_condition_request = IAMRequest::new_with_context(
-        "arn:aws:iam::123456789012:user/bob",
+        Principal::Aws(PrincipalId::String(
+            "arn:aws:iam::123456789012:user/bob".to_string(),
+        )),
         "s3:GetObject",
-        "arn:aws:s3:::private-bucket/personal.txt",
+        Arn::parse("arn:aws:s3:::private-bucket/personal.txt").unwrap(),
         wrong_context,
     );
 
@@ -169,9 +180,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let evaluator = PolicyEvaluator::with_policies(combined_policies);
     let protected_request = IAMRequest::new(
-        "arn:aws:iam::123456789012:user/alice",
+        Principal::Aws(PrincipalId::String(
+            "arn:aws:iam::123456789012:user/alice".to_string(),
+        )),
         "s3:DeleteObject",
-        "arn:aws:s3:::protected-bucket/critical.txt",
+        Arn::parse("arn:aws:s3:::protected-bucket/critical.txt").unwrap(),
     );
 
     match evaluator.evaluate(&protected_request)?.decision {
@@ -201,9 +214,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
     let numeric_request = IAMRequest::new_with_context(
-        "arn:aws:iam::123456789012:user/alice",
+        Principal::Aws(PrincipalId::String(
+            "arn:aws:iam::123456789012:user/alice".to_string(),
+        )),
         "s3:GetObject",
-        "arn:aws:s3:::any-bucket/file.txt",
+        Arn::parse("arn:aws:s3:::any-bucket/file.txt").unwrap(),
         numeric_context,
     );
 
@@ -241,9 +256,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Example 9: No Applicable Policy (Implicit Deny)
     println!("9. No Applicable Policy (Implicit Deny):");
     let unrelated_request = IAMRequest::new(
-        "arn:aws:iam::123456789012:user/alice",
+        Principal::Aws(PrincipalId::String(
+            "arn:aws:iam::123456789012:user/alice".to_string(),
+        )),
         "ec2:DescribeInstances",
-        "arn:aws:ec2:us-east-1:123456789012:instance/*",
+        Arn::parse("arn:aws:ec2:us-east-1:123456789012:instance/*").unwrap(),
     );
 
     match evaluate_policy(&allow_policy, &unrelated_request)? {
@@ -268,9 +285,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
     let pattern_request = IAMRequest::new(
-        "arn:aws:iam::123456789012:user/alice",
+        Principal::Aws(PrincipalId::String(
+            "arn:aws:iam::123456789012:user/alice".to_string(),
+        )),
         "s3:GetObject",
-        "arn:aws:s3:::user-data-alice/profile.json",
+        Arn::parse("arn:aws:s3:::user-data-alice/profile.json").unwrap(),
     );
 
     match evaluate_policy(&pattern_policy, &pattern_request)? {

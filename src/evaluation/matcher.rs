@@ -62,11 +62,9 @@ impl ArnMatcher {
     /// # Errors
     ///
     /// Returns `ArnError` if the ARN cannot be parsed or if pattern matching fails.
-    pub fn matches(&self, arn: &str) -> Result<bool, ArnError> {
-        let target_arn = Arn::parse(arn)?;
-
+    pub fn matches(&self, arn: &Arn) -> Result<bool, ArnError> {
         for pattern in &self.patterns {
-            if pattern.matches(&target_arn) {
+            if pattern.matches(arn) {
                 return Ok(true);
             }
         }
@@ -101,12 +99,12 @@ impl ArnMatcher {
     /// # Errors
     ///
     /// Returns `ArnError` if any ARN in the collection cannot be parsed.
-    pub fn filter_matching<'a>(&self, arns: &'a [String]) -> Result<Vec<&'a str>, ArnError> {
+    pub fn filter_matching<'a>(&self, arns: &'a [Arn]) -> Result<Vec<&'a Arn>, ArnError> {
         let mut matching = Vec::new();
 
-        for arn_str in arns {
-            if self.matches(arn_str)? {
-                matching.push(arn_str.as_str());
+        for arn in arns {
+            if self.matches(arn)? {
+                matching.push(arn);
             }
         }
 
@@ -389,7 +387,7 @@ impl ArnSet {
 
         let mut matching = Vec::new();
         for arn in &self.arns {
-            if matcher.matches(arn)? {
+            if matcher.matches(&Arn::parse(arn)?)? {
                 matching.push(arn.as_str());
             }
         }
@@ -466,20 +464,27 @@ mod tests {
     fn test_arn_matcher_exact_match() {
         let matcher = ArnMatcher::from_pattern("arn:aws:s3:::my-bucket/*").unwrap();
 
-        assert!(matcher.matches("arn:aws:s3:::my-bucket/file.txt").unwrap());
         assert!(
             matcher
-                .matches("arn:aws:s3:::my-bucket/folder/file.txt")
+                .matches(&Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap())
+                .unwrap()
+        );
+        assert!(
+            matcher
+                .matches(&Arn::parse("arn:aws:s3:::my-bucket/folder/file.txt").unwrap())
                 .unwrap()
         );
         assert!(
             !matcher
-                .matches("arn:aws:s3:::other-bucket/file.txt")
+                .matches(&Arn::parse("arn:aws:s3:::other-bucket/file.txt").unwrap())
                 .unwrap()
         );
         assert!(
             !matcher
-                .matches("arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0")
+                .matches(
+                    &Arn::parse("arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0")
+                        .unwrap()
+                )
                 .unwrap()
         );
     }
@@ -488,15 +493,22 @@ mod tests {
     fn test_arn_matcher_wildcard() {
         let matcher = ArnMatcher::from_pattern("arn:aws:s3:*:*:*").unwrap();
 
-        assert!(matcher.matches("arn:aws:s3:::my-bucket/file.txt").unwrap());
         assert!(
             matcher
-                .matches("arn:aws:s3:us-east-1:123456789012:bucket/my-bucket")
+                .matches(&Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap())
+                .unwrap()
+        );
+        assert!(
+            matcher
+                .matches(&Arn::parse("arn:aws:s3:us-east-1:123456789012:bucket/my-bucket").unwrap())
                 .unwrap()
         );
         assert!(
             !matcher
-                .matches("arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0")
+                .matches(
+                    &Arn::parse("arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0")
+                        .unwrap()
+                )
                 .unwrap()
         );
     }
@@ -509,15 +521,22 @@ mod tests {
         ];
         let matcher = ArnMatcher::new(patterns).unwrap();
 
-        assert!(matcher.matches("arn:aws:s3:::my-bucket/file.txt").unwrap());
         assert!(
             matcher
-                .matches("arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0")
+                .matches(&Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap())
+                .unwrap()
+        );
+        assert!(
+            matcher
+                .matches(
+                    &Arn::parse("arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0")
+                        .unwrap()
+                )
                 .unwrap()
         );
         assert!(
             !matcher
-                .matches("arn:aws:iam::123456789012:user/username")
+                .matches(&Arn::parse("arn:aws:iam::123456789012:user/username").unwrap())
                 .unwrap()
         );
     }
@@ -527,15 +546,22 @@ mod tests {
         let matcher = ArnMatcher::from_pattern("*").unwrap();
 
         assert!(matcher.matches_all());
-        assert!(matcher.matches("arn:aws:s3:::my-bucket/file.txt").unwrap());
         assert!(
             matcher
-                .matches("arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0")
+                .matches(&Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap())
                 .unwrap()
         );
         assert!(
             matcher
-                .matches("arn:aws:iam::123456789012:user/username")
+                .matches(
+                    &Arn::parse("arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0")
+                        .unwrap()
+                )
+                .unwrap()
+        );
+        assert!(
+            matcher
+                .matches(&Arn::parse("arn:aws:iam::123456789012:user/username").unwrap())
                 .unwrap()
         );
     }
@@ -545,10 +571,17 @@ mod tests {
         let matcher = ArnMatcher::from_pattern("arn:aws:*:*:*:*").unwrap();
 
         // Service wildcards should not match anything for security
-        assert!(!matcher.matches("arn:aws:s3:::my-bucket/file.txt").unwrap());
         assert!(
             !matcher
-                .matches("arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0")
+                .matches(&Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap())
+                .unwrap()
+        );
+        assert!(
+            !matcher
+                .matches(
+                    &Arn::parse("arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0")
+                        .unwrap()
+                )
                 .unwrap()
         );
     }
@@ -641,12 +674,12 @@ mod tests {
 
         assert!(
             matcher
-                .matches("arn:aws:s3:::my-bucket/specific-file.txt")
+                .matches(&Arn::parse("arn:aws:s3:::my-bucket/specific-file.txt").unwrap())
                 .unwrap()
         );
         assert!(
             !matcher
-                .matches("arn:aws:s3:::my-bucket/other-file.txt")
+                .matches(&Arn::parse("arn:aws:s3:::my-bucket/other-file.txt").unwrap())
                 .unwrap()
         );
     }

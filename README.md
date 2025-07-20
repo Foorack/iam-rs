@@ -34,7 +34,7 @@ cargo add iam-rs
 ### Simple Authorization Check
 
 ```rust
-use iam_rs::{evaluate_policy, IAMRequest, IAMPolicy, IAMStatement, Effect, Action, Resource, Decision};
+use iam_rs::{evaluate_policy, Arn, IAMRequest, IAMPolicy, IAMStatement, Effect, Action, Resource, Decision, Principal, PrincipalId};
 
 // Create a policy allowing S3 read access
 let policy = IAMPolicy::new()
@@ -46,9 +46,9 @@ let policy = IAMPolicy::new()
 
 // Create an authorization request
 let request = IAMRequest::new(
-    "arn:aws:iam::123456789012:user/alice",
+    Principal::Aws(PrincipalId::String("arn:aws:iam::123456789012:user/alice".to_string()))
     "s3:GetObject",
-    "arn:aws:s3:::my-bucket/file.txt"
+    Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap()
 );
 
 // Evaluate the request
@@ -92,9 +92,9 @@ let policy = IAMPolicy::new()
     );
 
 let request = IAMRequest::new_with_context(
-    "arn:aws:iam::123456789012:user/alice",
+    Principal::Aws(PrincipalId::String("arn:aws:iam::123456789012:user/alice".to_string())),
     "s3:PutObject",
-    "arn:aws:s3:::my-bucket/alice/uploads/document.pdf",
+    Arn::parse("arn:aws:s3:::my-bucket/alice/uploads/document.pdf").unwrap(),
     context
 );
 
@@ -146,7 +146,7 @@ let patterns = [
 ];
 
 for pattern in patterns {
-    if arn.matches(pattern)? {
+    if arn.matches(Arn::parse(pattern).unwrap()).unwrap() {
         println!("✓ ARN matches pattern: {}", pattern);
     }
 }
