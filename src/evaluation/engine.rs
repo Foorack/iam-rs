@@ -22,6 +22,15 @@ pub enum Decision {
     NotApplicable,
 }
 
+impl std::fmt::Display for Decision {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        serde_json::to_string(self)
+            .map_err(|_| std::fmt::Error)?
+            .trim_matches('"')
+            .fmt(f)
+    }
+}
+
 /// Error types for policy evaluation
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
