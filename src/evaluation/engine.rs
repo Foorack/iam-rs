@@ -1,7 +1,7 @@
 use super::{context::Context, matcher::ArnMatcher, request::IAMRequest};
 use crate::{
     Arn, Validate,
-    core::{Action, IAMEffect, Principal, PrincipalId, IAMResource},
+    core::{IAMAction, IAMEffect, IAMResource, Principal, PrincipalId},
     evaluation::{
         operator_eval::{evaluate_condition, wildcard_match},
         variable::interpolate_variables,
@@ -485,12 +485,12 @@ impl PolicyEvaluator {
     }
 
     /// Check if an action matches the request action
-    fn action_matches(action: &Action, request_action: &str) -> bool {
+    fn action_matches(action: &IAMAction, request_action: &str) -> bool {
         match action {
-            Action::Single(a) => {
+            IAMAction::Single(a) => {
                 a == "*" || a == request_action || wildcard_match(request_action, a)
             }
-            Action::Multiple(actions) => {
+            IAMAction::Multiple(actions) => {
                 for a in actions {
                     if a == "*" || a == request_action || wildcard_match(request_action, a) {
                         return true;
@@ -601,14 +601,15 @@ pub fn evaluate_policies(
 mod tests {
     use super::*;
     use crate::{
-        Action, Arn, ConditionValue, ContextValue, IAMEffect, IAMOperator, IAMStatement, IAMResource,
+        Arn, ConditionValue, ContextValue, IAMAction, IAMEffect, IAMOperator, IAMResource,
+        IAMStatement,
     };
 
     #[test]
     fn test_simple_allow_policy() {
         let policy = IAMPolicy::new().add_statement(
             IAMStatement::new(IAMEffect::Allow)
-                .with_action(Action::Single("s3:GetObject".to_string()))
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
         );
 
@@ -628,7 +629,7 @@ mod tests {
     fn test_simple_deny_policy() {
         let policy = IAMPolicy::new().add_statement(
             IAMStatement::new(IAMEffect::Deny)
-                .with_action(Action::Single("s3:DeleteObject".to_string()))
+                .with_action(IAMAction::Single("s3:DeleteObject".to_string()))
                 .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
         );
 
@@ -648,8 +649,10 @@ mod tests {
     fn test_not_applicable_policy() {
         let policy = IAMPolicy::new().add_statement(
             IAMStatement::new(IAMEffect::Allow)
-                .with_action(Action::Single("s3:GetObject".to_string()))
-                .with_resource(IAMResource::Single("arn:aws:s3:::other-bucket/*".to_string())),
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                .with_resource(IAMResource::Single(
+                    "arn:aws:s3:::other-bucket/*".to_string(),
+                )),
         );
 
         let request = IAMRequest::new(
@@ -668,7 +671,7 @@ mod tests {
     fn test_wildcard_action_matching() {
         let policy = IAMPolicy::new().add_statement(
             IAMStatement::new(IAMEffect::Allow)
-                .with_action(Action::Single("s3:*".to_string()))
+                .with_action(IAMAction::Single("s3:*".to_string()))
                 .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
         );
 
@@ -696,7 +699,7 @@ mod tests {
 
         let policy = IAMPolicy::new().add_statement(
             IAMStatement::new(IAMEffect::Allow)
-                .with_action(Action::Single("s3:GetObject".to_string()))
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string()))
                 .with_condition(
                     IAMOperator::StringEquals,
@@ -730,7 +733,7 @@ mod tests {
 
         let policy = IAMPolicy::new().add_statement(
             IAMStatement::new(IAMEffect::Allow)
-                .with_action(Action::Single("s3:GetObject".to_string()))
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string()))
                 .with_condition(
                     IAMOperator::StringEquals,
@@ -757,12 +760,12 @@ mod tests {
         let policies = vec![
             IAMPolicy::new().add_statement(
                 IAMStatement::new(IAMEffect::Allow)
-                    .with_action(Action::Single("s3:*".to_string()))
+                    .with_action(IAMAction::Single("s3:*".to_string()))
                     .with_resource(IAMResource::Single("*".to_string())),
             ),
             IAMPolicy::new().add_statement(
                 IAMStatement::new(IAMEffect::Deny)
-                    .with_action(Action::Single("s3:DeleteObject".to_string()))
+                    .with_action(IAMAction::Single("s3:DeleteObject".to_string()))
                     .with_resource(IAMResource::Single(
                         "arn:aws:s3:::protected-bucket/*".to_string(),
                     )),
@@ -788,7 +791,7 @@ mod tests {
 
         let policy = IAMPolicy::new().add_statement(
             IAMStatement::new(IAMEffect::Allow)
-                .with_action(Action::Single("s3:GetObject".to_string()))
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("*".to_string()))
                 .with_condition(
                     IAMOperator::NumericLessThan,
@@ -815,7 +818,7 @@ mod tests {
         let policy = IAMPolicy::new().add_statement(
             IAMStatement::new(IAMEffect::Allow)
                 .with_sid("AllowS3Read")
-                .with_action(Action::Single("s3:GetObject".to_string()))
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
         );
 

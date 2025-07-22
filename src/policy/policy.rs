@@ -209,7 +209,7 @@ impl Validate for IAMPolicy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Action, IAMEffect, IAMVersion, IAMResource};
+    use crate::{IAMAction, IAMEffect, IAMResource, IAMVersion};
 
     #[test]
     fn test_policy_validation() {
@@ -219,7 +219,7 @@ mod tests {
             .add_statement(
                 IAMStatement::new(IAMEffect::Allow)
                     .with_sid("AllowS3Read")
-                    .with_action(Action::Single("s3:GetObject".to_string()))
+                    .with_action(IAMAction::Single("s3:GetObject".to_string()))
                     .with_resource(IAMResource::Single("arn:aws:s3:::bucket/*".to_string())),
             );
         assert!(valid_policy.is_valid());
@@ -234,13 +234,13 @@ mod tests {
             .add_statement(
                 IAMStatement::new(IAMEffect::Allow)
                     .with_sid("DuplicateId")
-                    .with_action(Action::Single("s3:GetObject".to_string()))
+                    .with_action(IAMAction::Single("s3:GetObject".to_string()))
                     .with_resource(IAMResource::Single("*".to_string())),
             )
             .add_statement(
                 IAMStatement::new(IAMEffect::Deny)
                     .with_sid("DuplicateId")
-                    .with_action(Action::Single("s3:DeleteObject".to_string()))
+                    .with_action(IAMAction::Single("s3:DeleteObject".to_string()))
                     .with_resource(IAMResource::Single("*".to_string())),
             );
         assert!(!duplicate_sid_policy.is_valid());
@@ -253,7 +253,7 @@ mod tests {
         empty_id_policy.id = Some("".to_string());
         empty_id_policy.statement.push(
             IAMStatement::new(IAMEffect::Allow)
-                .with_action(Action::Single("s3:GetObject".to_string()))
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("*".to_string())),
         );
         assert!(!empty_id_policy.is_valid());
@@ -261,7 +261,7 @@ mod tests {
         // Valid short ID
         let short_id_policy = IAMPolicy::new().with_id("short").add_statement(
             IAMStatement::new(IAMEffect::Allow)
-                .with_action(Action::Single("s3:GetObject".to_string()))
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("*".to_string())),
         );
         assert!(short_id_policy.is_valid());
@@ -272,7 +272,7 @@ mod tests {
         let policy = IAMPolicy::new().with_id("test-policy").add_statement(
             IAMStatement::new(IAMEffect::Allow)
                 .with_sid("AllowS3Access")
-                .with_action(Action::Single("s3:GetObject".to_string()))
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("arn:aws:s3:::mybucket/*".to_string())),
         );
 
@@ -286,7 +286,7 @@ mod tests {
     fn test_policy_serialization() {
         let policy = IAMPolicy::new().add_statement(
             IAMStatement::new(IAMEffect::Allow)
-                .with_action(Action::Single("s3:GetObject".to_string()))
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("*".to_string())),
         );
 

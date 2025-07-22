@@ -309,7 +309,7 @@ mod tests {
 
     #[test]
     fn test_policy_validation_integration() {
-        use crate::{Action, IAMEffect, IAMPolicy, IAMStatement, IAMResource};
+        use crate::{IAMAction, IAMEffect, IAMPolicy, IAMStatement, IAMResource};
 
         // Test valid policy with UUID-like ID
         let valid_policy = IAMPolicy::new()
@@ -317,7 +317,7 @@ mod tests {
             .add_statement(
                 IAMStatement::new(IAMEffect::Allow)
                     .with_sid("ValidStatement")
-                    .with_action(Action::Single("s3:GetObject".to_string()))
+                    .with_action(IAMAction::Single("s3:GetObject".to_string()))
                     .with_resource(IAMResource::Single("arn:aws:s3:::bucket/*".to_string())),
             );
         assert!(valid_policy.is_valid());
@@ -332,7 +332,7 @@ mod tests {
         // Test policy with validation errors
         let complex_invalid_policy = IAMPolicy::new().add_statement(
             IAMStatement::new(IAMEffect::Allow)
-                .with_action(Action::Single("invalid-action".to_string()))
+                .with_action(IAMAction::Single("invalid-action".to_string()))
                 .with_resource(IAMResource::Single("invalid-resource".to_string())),
         );
 
@@ -350,11 +350,11 @@ mod tests {
 
     #[test]
     fn test_condition_validation_integration() {
-        use crate::{Action, IAMEffect, IAMStatement, IAMOperator, IAMResource};
+        use crate::{IAMAction, IAMEffect, IAMStatement, IAMOperator, IAMResource};
 
         // Valid condition
         let valid_statement = IAMStatement::new(IAMEffect::Allow)
-            .with_action(Action::Single("s3:GetObject".to_string()))
+            .with_action(IAMAction::Single("s3:GetObject".to_string()))
             .with_resource(IAMResource::Single("*".to_string()))
             .with_condition(
                 IAMOperator::StringEquals,
@@ -366,7 +366,7 @@ mod tests {
 
         // Invalid condition - numeric operator with string value
         let invalid_condition_statement = IAMStatement::new(IAMEffect::Allow)
-            .with_action(Action::Single("s3:GetObject".to_string()))
+            .with_action(IAMAction::Single("s3:GetObject".to_string()))
             .with_resource(IAMResource::Single("*".to_string()))
             .with_condition(
                 IAMOperator::NumericEquals,

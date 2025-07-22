@@ -40,7 +40,7 @@ use iam_rs::{evaluate_policy, Arn, IAMRequest, IAMPolicy, IAMStatement, Effect, 
 let policy = IAMPolicy::new()
     .add_statement(
         IAMStatement::new(IAMEffect::Allow)
-            .with_action(Action::Single("s3:GetObject".to_string()))
+            .with_action(IAMAction::Single("s3:GetObject".to_string()))
             .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string()))
     );
 
@@ -62,7 +62,7 @@ match evaluate_policy(&policy, &request)? {
 ### Policy with Conditions
 
 ```rust
-use iam_rs::{IAMPolicy, IAMStatement, IAMEffect, Action, Resource, IAMOperator, Context, ContextValue};
+use iam_rs::{IAMPolicy, IAMStatement, IAMEffect, IAMAction, IAMResource, IAMOperator, Context, ContextValue};
 use serde_json::json;
 
 // Create context for condition evaluation
@@ -77,7 +77,7 @@ let policy = IAMPolicy::new()
     .add_statement(
         IAMStatement::new(IAMEffect::Allow)
             .with_sid("AllowUploadToUserFolder")
-            .with_action(Action::Single("s3:PutObject".to_string()))
+            .with_action(IAMAction::Single("s3:PutObject".to_string()))
             .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/${aws:username}/*".to_string()))
             .with_condition(
                 IAMOperator::StringEquals,
@@ -118,7 +118,7 @@ let policy = IAMPolicy::new()
                 "arn:aws:iam::123456789012:user/alice",
                 "arn:aws:iam::123456789012:user/bob"
             ]))
-            .with_action(Action::Multiple(vec![
+            .with_action(IAMAction::Multiple(vec![
                 "s3:GetObject".to_string(),
                 "s3:PutObject".to_string()
             ]))
@@ -156,7 +156,7 @@ for pattern in patterns {
 
 ```rust
 // Action wildcard matching
-let actions = Action::Multiple(vec![
+let actions = IAMAction::Multiple(vec![
     "s3:*".to_string(),           // All S3 actions
     "s3:Get*".to_string(),        // All S3 Get actions
     "s3:Put*".to_string(),        // All S3 Put actions
@@ -217,7 +217,7 @@ let patterns = [
 let policy = IAMPolicy::new()
     .add_statement(
         IAMStatement::new(IAMEffect::Allow)
-            .with_action(Action::Single("s3:*".to_string()))
+            .with_action(IAMAction::Single("s3:*".to_string()))
             .with_resource(IAMResource::Multiple(vec![
                 // User's personal folder
                 "arn:aws:s3:::company-data/${aws:username}/*".to_string(),
@@ -302,7 +302,7 @@ IAMOperator::BinaryEquals         // Base64 binary comparison
 
 ```rust
 let statement = IAMStatement::new(IAMEffect::Allow)
-    .with_action(Action::Single("s3:GetObject".to_string()))
+    .with_action(IAMAction::Single("s3:GetObject".to_string()))
     .with_resource(IAMResource::Single("arn:aws:s3:::secure-bucket/*".to_string()))
     // Must be from trusted IP range
     .with_condition(
@@ -379,14 +379,14 @@ The evaluation engine implements proper AWS IAM logic:
 let allow_policy = IAMPolicy::new()
     .add_statement(
         IAMStatement::new(IAMEffect::Allow)
-            .with_action(Action::Single("s3:*".to_string()))
+            .with_action(IAMAction::Single("s3:*".to_string()))
             .with_resource(IAMResource::Single("*".to_string()))
     );
 
 let deny_policy = IAMPolicy::new()
     .add_statement(
         IAMStatement::new(IAMEffect::Deny)  // This will override the Allow
-            .with_action(Action::Single("s3:DeleteObject".to_string()))
+            .with_action(IAMAction::Single("s3:DeleteObject".to_string()))
             .with_resource(IAMResource::Single("arn:aws:s3:::protected-bucket/*".to_string()))
     );
 
@@ -439,7 +439,7 @@ let policy = IAMPolicy::new()
     .add_statement(
         IAMStatement::new(IAMEffect::Allow)
             .with_sid("S3Access")
-            .with_action(Action::Single("s3:GetObject".to_string()))
+            .with_action(IAMAction::Single("s3:GetObject".to_string()))
             .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string()))
     );
 

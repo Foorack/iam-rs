@@ -1,5 +1,5 @@
 use iam_rs::{
-    Action, Arn, ConditionValue, Context, ContextValue, Decision, EvaluationOptions, IAMEffect,
+    IAMAction, Arn, ConditionValue, Context, ContextValue, Decision, EvaluationOptions, IAMEffect,
     IAMOperator, IAMPolicy, IAMRequest, IAMResource, IAMStatement, PolicyEvaluator, Principal,
     PrincipalId, evaluate_policy,
 };
@@ -14,7 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_statement(
             IAMStatement::new(IAMEffect::Allow)
                 .with_sid("AllowS3Read")
-                .with_action(Action::Single("s3:GetObject".to_string()))
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
         );
 
@@ -40,7 +40,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_statement(
             IAMStatement::new(IAMEffect::Deny)
                 .with_sid("DenyS3Delete")
-                .with_action(Action::Single("s3:DeleteObject".to_string()))
+                .with_action(IAMAction::Single("s3:DeleteObject".to_string()))
                 .with_resource(IAMResource::Single(
                     "arn:aws:s3:::protected-bucket/*".to_string(),
                 )),
@@ -68,7 +68,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_statement(
             IAMStatement::new(IAMEffect::Allow)
                 .with_sid("AllowAllS3")
-                .with_action(Action::Single("s3:*".to_string()))
+                .with_action(IAMAction::Single("s3:*".to_string()))
                 .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
         );
 
@@ -104,7 +104,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_statement(
             IAMStatement::new(IAMEffect::Allow)
                 .with_sid("AllowWithCondition")
-                .with_action(Action::Single("s3:GetObject".to_string()))
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single(
                     "arn:aws:s3:::private-bucket/*".to_string(),
                 ))
@@ -163,7 +163,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .add_statement(
                 IAMStatement::new(IAMEffect::Allow)
                     .with_sid("AllowAll")
-                    .with_action(Action::Single("s3:*".to_string()))
+                    .with_action(IAMAction::Single("s3:*".to_string()))
                     .with_resource(IAMResource::Single("*".to_string())),
             ),
         IAMPolicy::new()
@@ -171,7 +171,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .add_statement(
                 IAMStatement::new(IAMEffect::Deny)
                     .with_sid("DenyProtected")
-                    .with_action(Action::Single("s3:DeleteObject".to_string()))
+                    .with_action(IAMAction::Single("s3:DeleteObject".to_string()))
                     .with_resource(IAMResource::Single(
                         "arn:aws:s3:::protected-bucket/*".to_string(),
                     )),
@@ -204,7 +204,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_statement(
             IAMStatement::new(IAMEffect::Allow)
                 .with_sid("AllowLimitedRequests")
-                .with_action(Action::Single("s3:GetObject".to_string()))
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("*".to_string()))
                 .with_condition(
                     IAMOperator::NumericLessThan,
@@ -277,7 +277,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_statement(
             IAMStatement::new(IAMEffect::Allow)
                 .with_sid("AllowBucketAccess")
-                .with_action(Action::Multiple(vec![
+                .with_action(IAMAction::Multiple(vec![
                     "s3:GetObject".to_string(),
                     "s3:PutObject".to_string(),
                 ]))

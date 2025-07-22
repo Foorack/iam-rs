@@ -1,5 +1,5 @@
 use iam_rs::{
-    Action, ConditionValue, IAMEffect, IAMOperator, IAMPolicy, IAMResource, IAMStatement,
+    IAMAction, ConditionValue, IAMEffect, IAMOperator, IAMPolicy, IAMResource, IAMStatement,
     Principal, PrincipalId, Validate, ValidationError,
 };
 
@@ -13,7 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .add_statement(
             IAMStatement::new(IAMEffect::Allow)
                 .with_sid("AllowS3Read")
-                .with_action(Action::Single("s3:GetObject".to_string()))
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string()))
                 .with_condition(
                     IAMOperator::StringEquals,
@@ -55,19 +55,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_id("") // Empty ID
         .add_statement(
             IAMStatement::new(IAMEffect::Allow)
-                .with_action(Action::Single("invalid-action".to_string())) // Invalid action format
+                .with_action(IAMAction::Single("invalid-action".to_string())) // Invalid action format
                 .with_resource(IAMResource::Single("invalid-resource".to_string())), // Invalid resource
         )
         .add_statement(
             IAMStatement::new(IAMEffect::Allow)
                 .with_sid("DuplicateId")
-                .with_action(Action::Single("s3:GetObject".to_string()))
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("*".to_string())),
         )
         .add_statement(
             IAMStatement::new(IAMEffect::Deny)
                 .with_sid("DuplicateId") // Duplicate SID
-                .with_action(Action::Single("s3:DeleteObject".to_string()))
+                .with_action(IAMAction::Single("s3:DeleteObject".to_string()))
                 .with_resource(IAMResource::Single("*".to_string())),
         );
 
@@ -94,7 +94,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_id("short") // Short ID - will fail validation
         .add_statement(
             IAMStatement::new(IAMEffect::Allow)
-                .with_action(Action::Single("s3:GetObject".to_string()))
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("*".to_string()))
                 .with_condition(
                     IAMOperator::NumericEquals,
@@ -115,7 +115,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // NotPrincipal with Allow effect (invalid)
     let mut logical_error_policy = IAMStatement::new(IAMEffect::Allow);
-    logical_error_policy.action = Some(Action::Single("s3:GetObject".to_string()));
+    logical_error_policy.action = Some(IAMAction::Single("s3:GetObject".to_string()));
     logical_error_policy.resource = Some(IAMResource::Single("*".to_string()));
     logical_error_policy.not_principal = Some(Principal::Aws(iam_rs::PrincipalId::String(
         "arn:aws:iam::123456789012:user/test".to_string(),
@@ -128,8 +128,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Both Action and NotAction (invalid)
     let mut conflicting_statement = IAMStatement::new(IAMEffect::Allow);
-    conflicting_statement.action = Some(Action::Single("s3:GetObject".to_string()));
-    conflicting_statement.not_action = Some(Action::Single("s3:PutObject".to_string()));
+    conflicting_statement.action = Some(IAMAction::Single("s3:GetObject".to_string()));
+    conflicting_statement.not_action = Some(IAMAction::Single("s3:PutObject".to_string()));
     conflicting_statement.resource = Some(IAMResource::Single("*".to_string()));
 
     match conflicting_statement.validate_result() {
@@ -143,7 +143,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("6. Individual Component Validation:");
 
     // Invalid action
-    let invalid_action = Action::Single("invalid-action".to_string());
+    let invalid_action = IAMAction::Single("invalid-action".to_string());
     match invalid_action.validate_result() {
         Err(e) => println!("✗ Invalid action: {}", e),
         Ok(()) => println!("✓ Action is valid"),

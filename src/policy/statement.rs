@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::ConditionBlock;
 use crate::{
-    core::{Action, IAMEffect, IAMOperator, Principal, IAMResource},
+    core::{IAMAction, IAMEffect, IAMOperator, Principal, IAMResource},
     policy::condition::ConditionValue,
     validation::{Validate, ValidationContext, ValidationError, ValidationResult, helpers},
 };
@@ -108,7 +108,7 @@ pub struct IAMStatement {
     ///
     /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_action.html>
     #[serde(rename = "Action", skip_serializing_if = "Option::is_none")]
-    pub action: Option<Action>,
+    pub action: Option<IAMAction>,
 
     /// Optional not action(s) - what actions are not covered
     ///
@@ -163,7 +163,7 @@ pub struct IAMStatement {
     ///
     /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_notaction.html>
     #[serde(rename = "NotAction", skip_serializing_if = "Option::is_none")]
-    pub not_action: Option<Action>,
+    pub not_action: Option<IAMAction>,
 
     /// Optional resource(s) - what resources the statement applies to
     ///
@@ -328,7 +328,7 @@ impl IAMStatement {
 
     /// Sets the action
     #[must_use]
-    pub fn with_action(mut self, action: Action) -> Self {
+    pub fn with_action(mut self, action: IAMAction) -> Self {
         self.action = Some(action);
         self
     }
@@ -463,7 +463,7 @@ mod tests {
     fn test_statement_validation() {
         // Valid statement
         let valid_statement = IAMStatement::new(IAMEffect::Allow)
-            .with_action(Action::Single("s3:GetObject".to_string()))
+            .with_action(IAMAction::Single("s3:GetObject".to_string()))
             .with_resource(IAMResource::Single("arn:aws:s3:::bucket/*".to_string()));
         assert!(valid_statement.is_valid());
 
@@ -473,14 +473,14 @@ mod tests {
 
         // Both Action and NotAction
         let mut conflicting_statement = IAMStatement::new(IAMEffect::Allow);
-        conflicting_statement.action = Some(Action::Single("s3:GetObject".to_string()));
-        conflicting_statement.not_action = Some(Action::Single("s3:PutObject".to_string()));
+        conflicting_statement.action = Some(IAMAction::Single("s3:GetObject".to_string()));
+        conflicting_statement.not_action = Some(IAMAction::Single("s3:PutObject".to_string()));
         conflicting_statement.resource = Some(IAMResource::Single("*".to_string()));
         assert!(!conflicting_statement.is_valid());
 
         // Both Resource and NotResource
         let mut conflicting_resource = IAMStatement::new(IAMEffect::Allow);
-        conflicting_resource.action = Some(Action::Single("s3:GetObject".to_string()));
+        conflicting_resource.action = Some(IAMAction::Single("s3:GetObject".to_string()));
         conflicting_resource.resource = Some(IAMResource::Single("*".to_string()));
         conflicting_resource.not_resource =
             Some(IAMResource::Single("arn:aws:s3:::bucket/*".to_string()));
@@ -491,7 +491,7 @@ mod tests {
     fn test_statement_principal_validation() {
         // NotPrincipal with Allow effect (invalid)
         let mut invalid_not_principal = IAMStatement::new(IAMEffect::Allow);
-        invalid_not_principal.action = Some(Action::Single("s3:GetObject".to_string()));
+        invalid_not_principal.action = Some(IAMAction::Single("s3:GetObject".to_string()));
         invalid_not_principal.resource = Some(IAMResource::Single("*".to_string()));
         invalid_not_principal.not_principal = Some(Principal::Aws(PrincipalId::String(
             "arn:aws:iam::123456789012:user/test".to_string(),
@@ -500,7 +500,7 @@ mod tests {
 
         // NotPrincipal with Deny effect (valid)
         let mut valid_not_principal = IAMStatement::new(IAMEffect::Deny);
-        valid_not_principal.action = Some(Action::Single("s3:GetObject".to_string()));
+        valid_not_principal.action = Some(IAMAction::Single("s3:GetObject".to_string()));
         valid_not_principal.resource = Some(IAMResource::Single("*".to_string()));
         valid_not_principal.not_principal = Some(Principal::Aws(PrincipalId::String(
             "arn:aws:iam::123456789012:user/test".to_string(),
@@ -509,7 +509,7 @@ mod tests {
 
         // Both Principal and NotPrincipal (invalid)
         let mut conflicting_principal = IAMStatement::new(IAMEffect::Deny);
-        conflicting_principal.action = Some(Action::Single("s3:GetObject".to_string()));
+        conflicting_principal.action = Some(IAMAction::Single("s3:GetObject".to_string()));
         conflicting_principal.resource = Some(IAMResource::Single("*".to_string()));
         conflicting_principal.principal = Some(Principal::Aws(PrincipalId::String(
             "arn:aws:iam::123456789012:user/test".to_string(),
@@ -524,7 +524,7 @@ mod tests {
     fn test_full_statement_with_complex_conditions() {
         let statement = IAMStatement::new(IAMEffect::Allow)
             .with_sid("ComplexConditionExample")
-            .with_action(Action::Multiple(vec![
+            .with_action(IAMAction::Multiple(vec![
                 "s3:GetObject".to_string(),
                 "s3:PutObject".to_string(),
             ]))
@@ -560,7 +560,7 @@ mod tests {
     #[test]
     fn test_condition_handling() {
         let statement = IAMStatement::new(IAMEffect::Allow)
-            .with_action(Action::Single("s3:GetObject".to_string()))
+            .with_action(IAMAction::Single("s3:GetObject".to_string()))
             .with_condition(
                 IAMOperator::StringEquals,
                 "s3:prefix".to_string(),
@@ -576,7 +576,7 @@ mod tests {
     fn test_statement_logical_validation() {
         // Test NotPrincipal with Allow (should fail)
         let mut invalid_not_principal = IAMStatement::new(IAMEffect::Allow);
-        invalid_not_principal.action = Some(Action::Single("s3:GetObject".to_string()));
+        invalid_not_principal.action = Some(IAMAction::Single("s3:GetObject".to_string()));
         invalid_not_principal.resource = Some(IAMResource::Single("*".to_string()));
         invalid_not_principal.not_principal = Some(Principal::Aws(PrincipalId::String(
             "arn:aws:iam::123456789012:user/test".to_string(),
@@ -586,15 +586,15 @@ mod tests {
 
         // Test both Action and NotAction (should fail)
         let mut conflicting_actions = IAMStatement::new(IAMEffect::Allow);
-        conflicting_actions.action = Some(Action::Single("s3:GetObject".to_string()));
-        conflicting_actions.not_action = Some(Action::Single("s3:PutObject".to_string()));
+        conflicting_actions.action = Some(IAMAction::Single("s3:GetObject".to_string()));
+        conflicting_actions.not_action = Some(IAMAction::Single("s3:PutObject".to_string()));
         conflicting_actions.resource = Some(IAMResource::Single("*".to_string()));
 
         assert!(!conflicting_actions.is_valid());
 
         // Test valid NotPrincipal with Deny
         let mut valid_not_principal = IAMStatement::new(IAMEffect::Deny);
-        valid_not_principal.action = Some(Action::Single("*".to_string()));
+        valid_not_principal.action = Some(IAMAction::Single("*".to_string()));
         valid_not_principal.resource = Some(IAMResource::Single("*".to_string()));
         valid_not_principal.not_principal = Some(Principal::Aws(PrincipalId::String(
             "arn:aws:iam::123456789012:user/test".to_string(),
@@ -608,14 +608,14 @@ mod tests {
         // Valid Sid
         let valid_sid = IAMStatement::new(IAMEffect::Allow)
             .with_sid("ValidSid123")
-            .with_action(Action::Single("s3:GetObject".to_string()))
+            .with_action(IAMAction::Single("s3:GetObject".to_string()))
             .with_resource(IAMResource::Single("*".to_string()));
         assert!(valid_sid.is_valid());
 
         // Invalid Sid with special characters
         let mut invalid_sid = IAMStatement::new(IAMEffect::Allow);
         invalid_sid.sid = Some("Invalid-Sid!".to_string());
-        invalid_sid.action = Some(Action::Single("s3:GetObject".to_string()));
+        invalid_sid.action = Some(IAMAction::Single("s3:GetObject".to_string()));
         invalid_sid.resource = Some(IAMResource::Single("*".to_string()));
         assert!(!invalid_sid.is_valid());
     }
