@@ -10,7 +10,7 @@ mod version;
 // Re-export core types
 pub use action::Action;
 pub use arn::{Arn, ArnError};
-pub use effect::Effect;
+pub use effect::IAMEffect;
 pub use operator::{IAMOperator, OperatorType};
 pub use principal::{Principal, PrincipalId};
 pub use resource::IAMResource;

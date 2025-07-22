@@ -1,7 +1,7 @@
 use super::{context::Context, matcher::ArnMatcher, request::IAMRequest};
 use crate::{
     Arn, Validate,
-    core::{Action, Effect, Principal, PrincipalId, IAMResource},
+    core::{Action, IAMEffect, Principal, PrincipalId, IAMResource},
     evaluation::{
         operator_eval::{evaluate_condition, wildcard_match},
         variable::interpolate_variables,
@@ -83,7 +83,7 @@ pub struct StatementMatch {
     /// Statement ID if available
     pub sid: Option<String>,
     /// Effect of the statement
-    pub effect: Effect,
+    pub effect: IAMEffect,
     /// Whether all conditions were satisfied
     pub conditions_satisfied: bool,
     /// Reason for the match/non-match
@@ -209,13 +209,13 @@ impl PolicyEvaluator {
                 // Check if this statement applies to the request
                 if statement_result.conditions_satisfied {
                     match statement.effect {
-                        Effect::Allow => {
+                        IAMEffect::Allow => {
                             has_explicit_allow = true;
                             if self.options.collect_match_details {
                                 matched_statements.push(statement_result);
                             }
                         }
-                        Effect::Deny => {
+                        IAMEffect::Deny => {
                             has_explicit_deny = true;
                             if self.options.collect_match_details {
                                 matched_statements.push(statement_result);
@@ -601,13 +601,13 @@ pub fn evaluate_policies(
 mod tests {
     use super::*;
     use crate::{
-        Action, Arn, ConditionValue, ContextValue, Effect, IAMOperator, IAMStatement, IAMResource,
+        Action, Arn, ConditionValue, ContextValue, IAMEffect, IAMOperator, IAMStatement, IAMResource,
     };
 
     #[test]
     fn test_simple_allow_policy() {
         let policy = IAMPolicy::new().add_statement(
-            IAMStatement::new(Effect::Allow)
+            IAMStatement::new(IAMEffect::Allow)
                 .with_action(Action::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
         );
@@ -627,7 +627,7 @@ mod tests {
     #[test]
     fn test_simple_deny_policy() {
         let policy = IAMPolicy::new().add_statement(
-            IAMStatement::new(Effect::Deny)
+            IAMStatement::new(IAMEffect::Deny)
                 .with_action(Action::Single("s3:DeleteObject".to_string()))
                 .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
         );
@@ -647,7 +647,7 @@ mod tests {
     #[test]
     fn test_not_applicable_policy() {
         let policy = IAMPolicy::new().add_statement(
-            IAMStatement::new(Effect::Allow)
+            IAMStatement::new(IAMEffect::Allow)
                 .with_action(Action::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("arn:aws:s3:::other-bucket/*".to_string())),
         );
@@ -667,7 +667,7 @@ mod tests {
     #[test]
     fn test_wildcard_action_matching() {
         let policy = IAMPolicy::new().add_statement(
-            IAMStatement::new(Effect::Allow)
+            IAMStatement::new(IAMEffect::Allow)
                 .with_action(Action::Single("s3:*".to_string()))
                 .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
         );
@@ -695,7 +695,7 @@ mod tests {
         );
 
         let policy = IAMPolicy::new().add_statement(
-            IAMStatement::new(Effect::Allow)
+            IAMStatement::new(IAMEffect::Allow)
                 .with_action(Action::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string()))
                 .with_condition(
@@ -729,7 +729,7 @@ mod tests {
         );
 
         let policy = IAMPolicy::new().add_statement(
-            IAMStatement::new(Effect::Allow)
+            IAMStatement::new(IAMEffect::Allow)
                 .with_action(Action::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string()))
                 .with_condition(
@@ -756,12 +756,12 @@ mod tests {
     fn test_explicit_deny_overrides_allow() {
         let policies = vec![
             IAMPolicy::new().add_statement(
-                IAMStatement::new(Effect::Allow)
+                IAMStatement::new(IAMEffect::Allow)
                     .with_action(Action::Single("s3:*".to_string()))
                     .with_resource(IAMResource::Single("*".to_string())),
             ),
             IAMPolicy::new().add_statement(
-                IAMStatement::new(Effect::Deny)
+                IAMStatement::new(IAMEffect::Deny)
                     .with_action(Action::Single("s3:DeleteObject".to_string()))
                     .with_resource(IAMResource::Single(
                         "arn:aws:s3:::protected-bucket/*".to_string(),
@@ -787,7 +787,7 @@ mod tests {
         context.insert("aws:RequestedRegion".to_string(), ContextValue::Number(5.0));
 
         let policy = IAMPolicy::new().add_statement(
-            IAMStatement::new(Effect::Allow)
+            IAMStatement::new(IAMEffect::Allow)
                 .with_action(Action::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("*".to_string()))
                 .with_condition(
@@ -813,7 +813,7 @@ mod tests {
     #[test]
     fn test_evaluator_with_options() {
         let policy = IAMPolicy::new().add_statement(
-            IAMStatement::new(Effect::Allow)
+            IAMStatement::new(IAMEffect::Allow)
                 .with_sid("AllowS3Read")
                 .with_action(Action::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),

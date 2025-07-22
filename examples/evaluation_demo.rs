@@ -1,5 +1,5 @@
 use iam_rs::{
-    Action, Arn, ConditionValue, Context, ContextValue, Decision, Effect, EvaluationOptions,
+    Action, Arn, ConditionValue, Context, ContextValue, Decision, EvaluationOptions, IAMEffect,
     IAMOperator, IAMPolicy, IAMRequest, IAMResource, IAMStatement, PolicyEvaluator, Principal,
     PrincipalId, evaluate_policy,
 };
@@ -12,7 +12,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let allow_policy = IAMPolicy::new()
         .with_id("550e8400-e29b-41d4-a716-446655440000")
         .add_statement(
-            IAMStatement::new(Effect::Allow)
+            IAMStatement::new(IAMEffect::Allow)
                 .with_sid("AllowS3Read")
                 .with_action(Action::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
@@ -38,7 +38,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let deny_policy = IAMPolicy::new()
         .with_id("550e8400-e29b-41d4-a716-446655440001")
         .add_statement(
-            IAMStatement::new(Effect::Deny)
+            IAMStatement::new(IAMEffect::Deny)
                 .with_sid("DenyS3Delete")
                 .with_action(Action::Single("s3:DeleteObject".to_string()))
                 .with_resource(IAMResource::Single(
@@ -66,7 +66,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let wildcard_policy = IAMPolicy::new()
         .with_id("550e8400-e29b-41d4-a716-446655440002")
         .add_statement(
-            IAMStatement::new(Effect::Allow)
+            IAMStatement::new(IAMEffect::Allow)
                 .with_sid("AllowAllS3")
                 .with_action(Action::Single("s3:*".to_string()))
                 .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
@@ -102,7 +102,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let condition_policy = IAMPolicy::new()
         .with_id("550e8400-e29b-41d4-a716-446655440003")
         .add_statement(
-            IAMStatement::new(Effect::Allow)
+            IAMStatement::new(IAMEffect::Allow)
                 .with_sid("AllowWithCondition")
                 .with_action(Action::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single(
@@ -161,7 +161,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         IAMPolicy::new()
             .with_id("550e8400-e29b-41d4-a716-446655440004")
             .add_statement(
-                IAMStatement::new(Effect::Allow)
+                IAMStatement::new(IAMEffect::Allow)
                     .with_sid("AllowAll")
                     .with_action(Action::Single("s3:*".to_string()))
                     .with_resource(IAMResource::Single("*".to_string())),
@@ -169,7 +169,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         IAMPolicy::new()
             .with_id("550e8400-e29b-41d4-a716-446655440005")
             .add_statement(
-                IAMStatement::new(Effect::Deny)
+                IAMStatement::new(IAMEffect::Deny)
                     .with_sid("DenyProtected")
                     .with_action(Action::Single("s3:DeleteObject".to_string()))
                     .with_resource(IAMResource::Single(
@@ -202,7 +202,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let numeric_policy = IAMPolicy::new()
         .with_id("550e8400-e29b-41d4-a716-446655440006")
         .add_statement(
-            IAMStatement::new(Effect::Allow)
+            IAMStatement::new(IAMEffect::Allow)
                 .with_sid("AllowLimitedRequests")
                 .with_action(Action::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("*".to_string()))
@@ -275,7 +275,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pattern_policy = IAMPolicy::new()
         .with_id("550e8400-e29b-41d4-a716-446655440007")
         .add_statement(
-            IAMStatement::new(Effect::Allow)
+            IAMStatement::new(IAMEffect::Allow)
                 .with_sid("AllowBucketAccess")
                 .with_action(Action::Multiple(vec![
                     "s3:GetObject".to_string(),

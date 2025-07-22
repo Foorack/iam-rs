@@ -39,7 +39,7 @@ use iam_rs::{evaluate_policy, Arn, IAMRequest, IAMPolicy, IAMStatement, Effect, 
 // Create a policy allowing S3 read access
 let policy = IAMPolicy::new()
     .add_statement(
-        IAMStatement::new(Effect::Allow)
+        IAMStatement::new(IAMEffect::Allow)
             .with_action(Action::Single("s3:GetObject".to_string()))
             .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string()))
     );
@@ -62,7 +62,7 @@ match evaluate_policy(&policy, &request)? {
 ### Policy with Conditions
 
 ```rust
-use iam_rs::{IAMPolicy, IAMStatement, Effect, Action, Resource, IAMOperator, Context, ContextValue};
+use iam_rs::{IAMPolicy, IAMStatement, IAMEffect, Action, Resource, IAMOperator, Context, ContextValue};
 use serde_json::json;
 
 // Create context for condition evaluation
@@ -75,7 +75,7 @@ context.insert("s3:prefix".to_string(), ContextValue::String("uploads/".to_strin
 let policy = IAMPolicy::new()
     .with_id("ConditionalPolicy")
     .add_statement(
-        IAMStatement::new(Effect::Allow)
+        IAMStatement::new(IAMEffect::Allow)
             .with_sid("AllowUploadToUserFolder")
             .with_action(Action::Single("s3:PutObject".to_string()))
             .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/${aws:username}/*".to_string()))
@@ -112,7 +112,7 @@ let policy = IAMPolicy::new()
     .with_version(IAMVersion::V20121017)  // AWS standard version
     .with_id("MySecurityPolicy")
     .add_statement(
-        IAMStatement::new(Effect::Allow)
+        IAMStatement::new(IAMEffect::Allow)
             .with_sid("AllowSpecificUsers")
             .with_principal(Principal::from_aws_users(&[
                 "arn:aws:iam::123456789012:user/alice",
@@ -216,7 +216,7 @@ let patterns = [
 // Policy that grants access to user-specific paths with team fallback
 let policy = IAMPolicy::new()
     .add_statement(
-        IAMStatement::new(Effect::Allow)
+        IAMStatement::new(IAMEffect::Allow)
             .with_action(Action::Single("s3:*".to_string()))
             .with_resource(IAMResource::Multiple(vec![
                 // User's personal folder
@@ -301,7 +301,7 @@ IAMOperator::BinaryEquals         // Base64 binary comparison
 ### Complex Condition Example
 
 ```rust
-let statement = IAMStatement::new(Effect::Allow)
+let statement = IAMStatement::new(IAMEffect::Allow)
     .with_action(Action::Single("s3:GetObject".to_string()))
     .with_resource(IAMResource::Single("arn:aws:s3:::secure-bucket/*".to_string()))
     // Must be from trusted IP range
@@ -378,14 +378,14 @@ The evaluation engine implements proper AWS IAM logic:
 // Example demonstrating precedence
 let allow_policy = IAMPolicy::new()
     .add_statement(
-        IAMStatement::new(Effect::Allow)
+        IAMStatement::new(IAMEffect::Allow)
             .with_action(Action::Single("s3:*".to_string()))
             .with_resource(IAMResource::Single("*".to_string()))
     );
 
 let deny_policy = IAMPolicy::new()
     .add_statement(
-        IAMStatement::new(Effect::Deny)  // This will override the Allow
+        IAMStatement::new(IAMEffect::Deny)  // This will override the Allow
             .with_action(Action::Single("s3:DeleteObject".to_string()))
             .with_resource(IAMResource::Single("arn:aws:s3:::protected-bucket/*".to_string()))
     );
@@ -437,7 +437,7 @@ println!("Loaded policy with {} statements", policy.statement.len());
 let policy = IAMPolicy::new()
     .with_id("GeneratedPolicy")
     .add_statement(
-        IAMStatement::new(Effect::Allow)
+        IAMStatement::new(IAMEffect::Allow)
             .with_sid("S3Access")
             .with_action(Action::Single("s3:GetObject".to_string()))
             .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string()))

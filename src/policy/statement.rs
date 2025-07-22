@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::ConditionBlock;
 use crate::{
-    core::{Action, Effect, IAMOperator, Principal, IAMResource},
+    core::{Action, IAMEffect, IAMOperator, Principal, IAMResource},
     policy::condition::ConditionValue,
     validation::{Validate, ValidationContext, ValidationError, ValidationResult, helpers},
 };
@@ -40,7 +40,7 @@ pub struct IAMStatement {
     ///
     /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_effect.html>
     #[serde(rename = "Effect")]
-    pub effect: Effect,
+    pub effect: IAMEffect,
 
     /// Optional principal(s) - who the statement applies to
     ///
@@ -298,7 +298,7 @@ pub struct IAMStatement {
 impl IAMStatement {
     /// Creates a new IAM statement with the specified effect
     #[must_use]
-    pub fn new(effect: Effect) -> Self {
+    pub fn new(effect: IAMEffect) -> Self {
         Self {
             sid: None,
             effect,
@@ -408,7 +408,7 @@ impl Validate for IAMStatement {
             }
 
             // Validate NotPrincipal only used with Deny effect
-            if self.not_principal.is_some() && self.effect != Effect::Deny {
+            if self.not_principal.is_some() && self.effect != IAMEffect::Deny {
                 results.push(Err(ValidationError::LogicalError {
                     message: "NotPrincipal must only be used with Effect: Deny".to_string(),
                 }));
@@ -462,24 +462,24 @@ mod tests {
     #[test]
     fn test_statement_validation() {
         // Valid statement
-        let valid_statement = IAMStatement::new(Effect::Allow)
+        let valid_statement = IAMStatement::new(IAMEffect::Allow)
             .with_action(Action::Single("s3:GetObject".to_string()))
             .with_resource(IAMResource::Single("arn:aws:s3:::bucket/*".to_string()));
         assert!(valid_statement.is_valid());
 
         // Missing action and resource
-        let invalid_statement = IAMStatement::new(Effect::Allow);
+        let invalid_statement = IAMStatement::new(IAMEffect::Allow);
         assert!(!invalid_statement.is_valid());
 
         // Both Action and NotAction
-        let mut conflicting_statement = IAMStatement::new(Effect::Allow);
+        let mut conflicting_statement = IAMStatement::new(IAMEffect::Allow);
         conflicting_statement.action = Some(Action::Single("s3:GetObject".to_string()));
         conflicting_statement.not_action = Some(Action::Single("s3:PutObject".to_string()));
         conflicting_statement.resource = Some(IAMResource::Single("*".to_string()));
         assert!(!conflicting_statement.is_valid());
 
         // Both Resource and NotResource
-        let mut conflicting_resource = IAMStatement::new(Effect::Allow);
+        let mut conflicting_resource = IAMStatement::new(IAMEffect::Allow);
         conflicting_resource.action = Some(Action::Single("s3:GetObject".to_string()));
         conflicting_resource.resource = Some(IAMResource::Single("*".to_string()));
         conflicting_resource.not_resource =
@@ -490,7 +490,7 @@ mod tests {
     #[test]
     fn test_statement_principal_validation() {
         // NotPrincipal with Allow effect (invalid)
-        let mut invalid_not_principal = IAMStatement::new(Effect::Allow);
+        let mut invalid_not_principal = IAMStatement::new(IAMEffect::Allow);
         invalid_not_principal.action = Some(Action::Single("s3:GetObject".to_string()));
         invalid_not_principal.resource = Some(IAMResource::Single("*".to_string()));
         invalid_not_principal.not_principal = Some(Principal::Aws(PrincipalId::String(
@@ -499,7 +499,7 @@ mod tests {
         assert!(!invalid_not_principal.is_valid());
 
         // NotPrincipal with Deny effect (valid)
-        let mut valid_not_principal = IAMStatement::new(Effect::Deny);
+        let mut valid_not_principal = IAMStatement::new(IAMEffect::Deny);
         valid_not_principal.action = Some(Action::Single("s3:GetObject".to_string()));
         valid_not_principal.resource = Some(IAMResource::Single("*".to_string()));
         valid_not_principal.not_principal = Some(Principal::Aws(PrincipalId::String(
@@ -508,7 +508,7 @@ mod tests {
         assert!(valid_not_principal.is_valid());
 
         // Both Principal and NotPrincipal (invalid)
-        let mut conflicting_principal = IAMStatement::new(Effect::Deny);
+        let mut conflicting_principal = IAMStatement::new(IAMEffect::Deny);
         conflicting_principal.action = Some(Action::Single("s3:GetObject".to_string()));
         conflicting_principal.resource = Some(IAMResource::Single("*".to_string()));
         conflicting_principal.principal = Some(Principal::Aws(PrincipalId::String(
@@ -522,7 +522,7 @@ mod tests {
 
     #[test]
     fn test_full_statement_with_complex_conditions() {
-        let statement = IAMStatement::new(Effect::Allow)
+        let statement = IAMStatement::new(IAMEffect::Allow)
             .with_sid("ComplexConditionExample")
             .with_action(Action::Multiple(vec![
                 "s3:GetObject".to_string(),
@@ -559,7 +559,7 @@ mod tests {
 
     #[test]
     fn test_condition_handling() {
-        let statement = IAMStatement::new(Effect::Allow)
+        let statement = IAMStatement::new(IAMEffect::Allow)
             .with_action(Action::Single("s3:GetObject".to_string()))
             .with_condition(
                 IAMOperator::StringEquals,
@@ -575,7 +575,7 @@ mod tests {
     #[test]
     fn test_statement_logical_validation() {
         // Test NotPrincipal with Allow (should fail)
-        let mut invalid_not_principal = IAMStatement::new(Effect::Allow);
+        let mut invalid_not_principal = IAMStatement::new(IAMEffect::Allow);
         invalid_not_principal.action = Some(Action::Single("s3:GetObject".to_string()));
         invalid_not_principal.resource = Some(IAMResource::Single("*".to_string()));
         invalid_not_principal.not_principal = Some(Principal::Aws(PrincipalId::String(
@@ -585,7 +585,7 @@ mod tests {
         assert!(!invalid_not_principal.is_valid());
 
         // Test both Action and NotAction (should fail)
-        let mut conflicting_actions = IAMStatement::new(Effect::Allow);
+        let mut conflicting_actions = IAMStatement::new(IAMEffect::Allow);
         conflicting_actions.action = Some(Action::Single("s3:GetObject".to_string()));
         conflicting_actions.not_action = Some(Action::Single("s3:PutObject".to_string()));
         conflicting_actions.resource = Some(IAMResource::Single("*".to_string()));
@@ -593,7 +593,7 @@ mod tests {
         assert!(!conflicting_actions.is_valid());
 
         // Test valid NotPrincipal with Deny
-        let mut valid_not_principal = IAMStatement::new(Effect::Deny);
+        let mut valid_not_principal = IAMStatement::new(IAMEffect::Deny);
         valid_not_principal.action = Some(Action::Single("*".to_string()));
         valid_not_principal.resource = Some(IAMResource::Single("*".to_string()));
         valid_not_principal.not_principal = Some(Principal::Aws(PrincipalId::String(
@@ -606,14 +606,14 @@ mod tests {
     #[test]
     fn test_statement_sid_validation() {
         // Valid Sid
-        let valid_sid = IAMStatement::new(Effect::Allow)
+        let valid_sid = IAMStatement::new(IAMEffect::Allow)
             .with_sid("ValidSid123")
             .with_action(Action::Single("s3:GetObject".to_string()))
             .with_resource(IAMResource::Single("*".to_string()));
         assert!(valid_sid.is_valid());
 
         // Invalid Sid with special characters
-        let mut invalid_sid = IAMStatement::new(Effect::Allow);
+        let mut invalid_sid = IAMStatement::new(IAMEffect::Allow);
         invalid_sid.sid = Some("Invalid-Sid!".to_string());
         invalid_sid.action = Some(Action::Single("s3:GetObject".to_string()));
         invalid_sid.resource = Some(IAMResource::Single("*".to_string()));

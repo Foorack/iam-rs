@@ -309,13 +309,13 @@ mod tests {
 
     #[test]
     fn test_policy_validation_integration() {
-        use crate::{Action, Effect, IAMPolicy, IAMStatement, IAMResource};
+        use crate::{Action, IAMEffect, IAMPolicy, IAMStatement, IAMResource};
 
         // Test valid policy with UUID-like ID
         let valid_policy = IAMPolicy::new()
             .with_id("550e8400-e29b-41d4-a716-446655440000") // UUID format
             .add_statement(
-                IAMStatement::new(Effect::Allow)
+                IAMStatement::new(IAMEffect::Allow)
                     .with_sid("ValidStatement")
                     .with_action(Action::Single("s3:GetObject".to_string()))
                     .with_resource(IAMResource::Single("arn:aws:s3:::bucket/*".to_string())),
@@ -326,12 +326,12 @@ mod tests {
         let mut invalid_policy = IAMPolicy::new();
         invalid_policy
             .statement
-            .push(IAMStatement::new(Effect::Allow));
+            .push(IAMStatement::new(IAMEffect::Allow));
         assert!(!invalid_policy.is_valid());
 
         // Test policy with validation errors
         let complex_invalid_policy = IAMPolicy::new().add_statement(
-            IAMStatement::new(Effect::Allow)
+            IAMStatement::new(IAMEffect::Allow)
                 .with_action(Action::Single("invalid-action".to_string()))
                 .with_resource(IAMResource::Single("invalid-resource".to_string())),
         );
@@ -350,10 +350,10 @@ mod tests {
 
     #[test]
     fn test_condition_validation_integration() {
-        use crate::{Action, Effect, IAMStatement, IAMOperator, IAMResource};
+        use crate::{Action, IAMEffect, IAMStatement, IAMOperator, IAMResource};
 
         // Valid condition
-        let valid_statement = IAMStatement::new(Effect::Allow)
+        let valid_statement = IAMStatement::new(IAMEffect::Allow)
             .with_action(Action::Single("s3:GetObject".to_string()))
             .with_resource(IAMResource::Single("*".to_string()))
             .with_condition(
@@ -365,7 +365,7 @@ mod tests {
         assert!(valid_statement.is_valid());
 
         // Invalid condition - numeric operator with string value
-        let invalid_condition_statement = IAMStatement::new(Effect::Allow)
+        let invalid_condition_statement = IAMStatement::new(IAMEffect::Allow)
             .with_action(Action::Single("s3:GetObject".to_string()))
             .with_resource(IAMResource::Single("*".to_string()))
             .with_condition(

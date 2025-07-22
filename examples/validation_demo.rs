@@ -1,6 +1,6 @@
 use iam_rs::{
-    Action, ConditionValue, Effect, IAMOperator, IAMPolicy, IAMResource, IAMStatement, Principal,
-    PrincipalId, Validate, ValidationError,
+    Action, ConditionValue, IAMEffect, IAMOperator, IAMPolicy, IAMResource, IAMStatement,
+    Principal, PrincipalId, Validate, ValidationError,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -11,7 +11,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let valid_policy = IAMPolicy::new()
         .with_id("550e8400-e29b-41d4-a716-446655440000")
         .add_statement(
-            IAMStatement::new(Effect::Allow)
+            IAMStatement::new(IAMEffect::Allow)
                 .with_sid("AllowS3Read")
                 .with_action(Action::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string()))
@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Example 2: Invalid Policy - Missing Required Fields
     println!("2. Invalid Policy - Missing Required Fields:");
-    let invalid_policy = IAMPolicy::new().add_statement(IAMStatement::new(Effect::Allow)); // Missing action and resource
+    let invalid_policy = IAMPolicy::new().add_statement(IAMStatement::new(IAMEffect::Allow)); // Missing action and resource
 
     if !invalid_policy.is_valid() {
         println!("✗ Policy is invalid (as expected)");
@@ -54,18 +54,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let multi_error_policy = IAMPolicy::new()
         .with_id("") // Empty ID
         .add_statement(
-            IAMStatement::new(Effect::Allow)
+            IAMStatement::new(IAMEffect::Allow)
                 .with_action(Action::Single("invalid-action".to_string())) // Invalid action format
                 .with_resource(IAMResource::Single("invalid-resource".to_string())), // Invalid resource
         )
         .add_statement(
-            IAMStatement::new(Effect::Allow)
+            IAMStatement::new(IAMEffect::Allow)
                 .with_sid("DuplicateId")
                 .with_action(Action::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("*".to_string())),
         )
         .add_statement(
-            IAMStatement::new(Effect::Deny)
+            IAMStatement::new(IAMEffect::Deny)
                 .with_sid("DuplicateId") // Duplicate SID
                 .with_action(Action::Single("s3:DeleteObject".to_string()))
                 .with_resource(IAMResource::Single("*".to_string())),
@@ -93,7 +93,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let comprehensive_policy = IAMPolicy::new()
         .with_id("short") // Short ID - will fail validation
         .add_statement(
-            IAMStatement::new(Effect::Allow)
+            IAMStatement::new(IAMEffect::Allow)
                 .with_action(Action::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("*".to_string()))
                 .with_condition(
@@ -114,7 +114,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("5. Logical Policy Errors:");
 
     // NotPrincipal with Allow effect (invalid)
-    let mut logical_error_policy = IAMStatement::new(Effect::Allow);
+    let mut logical_error_policy = IAMStatement::new(IAMEffect::Allow);
     logical_error_policy.action = Some(Action::Single("s3:GetObject".to_string()));
     logical_error_policy.resource = Some(IAMResource::Single("*".to_string()));
     logical_error_policy.not_principal = Some(Principal::Aws(iam_rs::PrincipalId::String(
@@ -127,7 +127,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     // Both Action and NotAction (invalid)
-    let mut conflicting_statement = IAMStatement::new(Effect::Allow);
+    let mut conflicting_statement = IAMStatement::new(IAMEffect::Allow);
     conflicting_statement.action = Some(Action::Single("s3:GetObject".to_string()));
     conflicting_statement.not_action = Some(Action::Single("s3:PutObject".to_string()));
     conflicting_statement.resource = Some(IAMResource::Single("*".to_string()));

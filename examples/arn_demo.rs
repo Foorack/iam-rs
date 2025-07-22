@@ -1,4 +1,4 @@
-use iam_rs::{Action, Arn, Effect, IAMPolicy, IAMStatement, IAMResource};
+use iam_rs::{Action, Arn, IAMEffect, IAMPolicy, IAMStatement, IAMResource};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== IAM ARN Validator Demo ===\n");
@@ -81,7 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let policy = IAMPolicy::new()
         .with_id("s3-access-policy")
         .add_statement(
-            IAMStatement::new(Effect::Allow)
+            IAMStatement::new(IAMEffect::Allow)
                 .with_sid("AllowS3Read")
                 .with_action(Action::Multiple(vec![
                     "s3:GetObject".to_string(),
@@ -93,7 +93,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ])),
         )
         .add_statement(
-            IAMStatement::new(Effect::Allow)
+            IAMStatement::new(IAMEffect::Allow)
                 .with_sid("AllowS3Write")
                 .with_action(Action::Single("s3:PutObject".to_string()))
                 .with_resource(IAMResource::Single(
