@@ -1,7 +1,7 @@
 use super::{context::Context, matcher::ArnMatcher, request::IAMRequest};
 use crate::{
     Arn, Validate,
-    core::{Action, Effect, Principal, PrincipalId, Resource},
+    core::{Action, Effect, Principal, PrincipalId, IAMResource},
     evaluation::{
         operator_eval::{evaluate_condition, wildcard_match},
         variable::interpolate_variables,
@@ -503,12 +503,12 @@ impl PolicyEvaluator {
 
     /// Check if a resource matches the request resource
     fn resource_matches(
-        resource: &Resource,
+        resource: &IAMResource,
         request_resource: &Arn,
         context: &Context,
     ) -> Result<bool, EvaluationError> {
         match resource {
-            Resource::Single(r) => {
+            IAMResource::Single(r) => {
                 if r == "*" {
                     Ok(true)
                 } else {
@@ -523,10 +523,10 @@ impl PolicyEvaluator {
                         .map_err(|e| EvaluationError::InvalidArn(e.to_string()))
                 }
             }
-            Resource::Multiple(resources) => {
+            IAMResource::Multiple(resources) => {
                 for r in resources {
                     if Self::resource_matches(
-                        &Resource::Single(r.clone()),
+                        &IAMResource::Single(r.clone()),
                         request_resource,
                         context,
                     )? {
@@ -601,7 +601,7 @@ pub fn evaluate_policies(
 mod tests {
     use super::*;
     use crate::{
-        Action, Arn, ConditionValue, ContextValue, Effect, IAMStatement, Operator, Resource,
+        Action, Arn, ConditionValue, ContextValue, Effect, IAMOperator, IAMStatement, IAMResource,
     };
 
     #[test]
@@ -609,7 +609,7 @@ mod tests {
         let policy = IAMPolicy::new().add_statement(
             IAMStatement::new(Effect::Allow)
                 .with_action(Action::Single("s3:GetObject".to_string()))
-                .with_resource(Resource::Single("arn:aws:s3:::my-bucket/*".to_string())),
+                .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
         );
 
         let request = IAMRequest::new(
@@ -629,7 +629,7 @@ mod tests {
         let policy = IAMPolicy::new().add_statement(
             IAMStatement::new(Effect::Deny)
                 .with_action(Action::Single("s3:DeleteObject".to_string()))
-                .with_resource(Resource::Single("arn:aws:s3:::my-bucket/*".to_string())),
+                .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
         );
 
         let request = IAMRequest::new(
@@ -649,7 +649,7 @@ mod tests {
         let policy = IAMPolicy::new().add_statement(
             IAMStatement::new(Effect::Allow)
                 .with_action(Action::Single("s3:GetObject".to_string()))
-                .with_resource(Resource::Single("arn:aws:s3:::other-bucket/*".to_string())),
+                .with_resource(IAMResource::Single("arn:aws:s3:::other-bucket/*".to_string())),
         );
 
         let request = IAMRequest::new(
@@ -669,7 +669,7 @@ mod tests {
         let policy = IAMPolicy::new().add_statement(
             IAMStatement::new(Effect::Allow)
                 .with_action(Action::Single("s3:*".to_string()))
-                .with_resource(Resource::Single("arn:aws:s3:::my-bucket/*".to_string())),
+                .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
         );
 
         let request = IAMRequest::new(
@@ -686,7 +686,7 @@ mod tests {
 
     #[test]
     fn test_condition_evaluation() {
-        use crate::Operator;
+        use crate::IAMOperator;
 
         let mut context = Context::new();
         context.insert(
@@ -697,9 +697,9 @@ mod tests {
         let policy = IAMPolicy::new().add_statement(
             IAMStatement::new(Effect::Allow)
                 .with_action(Action::Single("s3:GetObject".to_string()))
-                .with_resource(Resource::Single("arn:aws:s3:::my-bucket/*".to_string()))
+                .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string()))
                 .with_condition(
-                    Operator::StringEquals,
+                    IAMOperator::StringEquals,
                     "aws:userid".to_string(),
                     ConditionValue::String("test-user".to_string()),
                 ),
@@ -720,7 +720,7 @@ mod tests {
 
     #[test]
     fn test_condition_evaluation_failure() {
-        use crate::Operator;
+        use crate::IAMOperator;
 
         let mut context = Context::new();
         context.insert(
@@ -731,9 +731,9 @@ mod tests {
         let policy = IAMPolicy::new().add_statement(
             IAMStatement::new(Effect::Allow)
                 .with_action(Action::Single("s3:GetObject".to_string()))
-                .with_resource(Resource::Single("arn:aws:s3:::my-bucket/*".to_string()))
+                .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string()))
                 .with_condition(
-                    Operator::StringEquals,
+                    IAMOperator::StringEquals,
                     "aws:userid".to_string(),
                     ConditionValue::String("test-user".to_string()),
                 ),
@@ -758,12 +758,12 @@ mod tests {
             IAMPolicy::new().add_statement(
                 IAMStatement::new(Effect::Allow)
                     .with_action(Action::Single("s3:*".to_string()))
-                    .with_resource(Resource::Single("*".to_string())),
+                    .with_resource(IAMResource::Single("*".to_string())),
             ),
             IAMPolicy::new().add_statement(
                 IAMStatement::new(Effect::Deny)
                     .with_action(Action::Single("s3:DeleteObject".to_string()))
-                    .with_resource(Resource::Single(
+                    .with_resource(IAMResource::Single(
                         "arn:aws:s3:::protected-bucket/*".to_string(),
                     )),
             ),
@@ -789,9 +789,9 @@ mod tests {
         let policy = IAMPolicy::new().add_statement(
             IAMStatement::new(Effect::Allow)
                 .with_action(Action::Single("s3:GetObject".to_string()))
-                .with_resource(Resource::Single("*".to_string()))
+                .with_resource(IAMResource::Single("*".to_string()))
                 .with_condition(
-                    Operator::NumericLessThan,
+                    IAMOperator::NumericLessThan,
                     "aws:RequestedRegion".to_string(),
                     ConditionValue::Number(10),
                 ),
@@ -816,7 +816,7 @@ mod tests {
             IAMStatement::new(Effect::Allow)
                 .with_sid("AllowS3Read")
                 .with_action(Action::Single("s3:GetObject".to_string()))
-                .with_resource(Resource::Single("arn:aws:s3:::my-bucket/*".to_string())),
+                .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
         );
 
         let request = IAMRequest::new(

@@ -309,7 +309,7 @@ mod tests {
 
     #[test]
     fn test_policy_validation_integration() {
-        use crate::{Action, Effect, IAMPolicy, IAMStatement, Resource};
+        use crate::{Action, Effect, IAMPolicy, IAMStatement, IAMResource};
 
         // Test valid policy with UUID-like ID
         let valid_policy = IAMPolicy::new()
@@ -318,7 +318,7 @@ mod tests {
                 IAMStatement::new(Effect::Allow)
                     .with_sid("ValidStatement")
                     .with_action(Action::Single("s3:GetObject".to_string()))
-                    .with_resource(Resource::Single("arn:aws:s3:::bucket/*".to_string())),
+                    .with_resource(IAMResource::Single("arn:aws:s3:::bucket/*".to_string())),
             );
         assert!(valid_policy.is_valid());
 
@@ -333,7 +333,7 @@ mod tests {
         let complex_invalid_policy = IAMPolicy::new().add_statement(
             IAMStatement::new(Effect::Allow)
                 .with_action(Action::Single("invalid-action".to_string()))
-                .with_resource(Resource::Single("invalid-resource".to_string())),
+                .with_resource(IAMResource::Single("invalid-resource".to_string())),
         );
 
         assert!(!complex_invalid_policy.is_valid());
@@ -350,14 +350,14 @@ mod tests {
 
     #[test]
     fn test_condition_validation_integration() {
-        use crate::{Action, Effect, IAMStatement, Operator, Resource};
+        use crate::{Action, Effect, IAMStatement, IAMOperator, IAMResource};
 
         // Valid condition
         let valid_statement = IAMStatement::new(Effect::Allow)
             .with_action(Action::Single("s3:GetObject".to_string()))
-            .with_resource(Resource::Single("*".to_string()))
+            .with_resource(IAMResource::Single("*".to_string()))
             .with_condition(
-                Operator::StringEquals,
+                IAMOperator::StringEquals,
                 "aws:username".to_string(),
                 ConditionValue::String("alice".to_string()),
             );
@@ -367,9 +367,9 @@ mod tests {
         // Invalid condition - numeric operator with string value
         let invalid_condition_statement = IAMStatement::new(Effect::Allow)
             .with_action(Action::Single("s3:GetObject".to_string()))
-            .with_resource(Resource::Single("*".to_string()))
+            .with_resource(IAMResource::Single("*".to_string()))
             .with_condition(
-                Operator::NumericEquals,
+                IAMOperator::NumericEquals,
                 "aws:RequestedRegion".to_string(),
                 ConditionValue::String("invalid-number".to_string()),
             );

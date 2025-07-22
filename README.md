@@ -34,14 +34,14 @@ cargo add iam-rs
 ### Simple Authorization Check
 
 ```rust
-use iam_rs::{evaluate_policy, Arn, IAMRequest, IAMPolicy, IAMStatement, Effect, Action, Resource, Decision, Principal, PrincipalId};
+use iam_rs::{evaluate_policy, Arn, IAMRequest, IAMPolicy, IAMStatement, Effect, Action, IAMResource, Decision, Principal, PrincipalId};
 
 // Create a policy allowing S3 read access
 let policy = IAMPolicy::new()
     .add_statement(
         IAMStatement::new(Effect::Allow)
             .with_action(Action::Single("s3:GetObject".to_string()))
-            .with_resource(Resource::Single("arn:aws:s3:::my-bucket/*".to_string()))
+            .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string()))
     );
 
 // Create an authorization request
@@ -62,7 +62,7 @@ match evaluate_policy(&policy, &request)? {
 ### Policy with Conditions
 
 ```rust
-use iam_rs::{IAMPolicy, IAMStatement, Effect, Action, Resource, Operator, Context, ContextValue};
+use iam_rs::{IAMPolicy, IAMStatement, Effect, Action, Resource, IAMOperator, Context, ContextValue};
 use serde_json::json;
 
 // Create context for condition evaluation
@@ -78,14 +78,14 @@ let policy = IAMPolicy::new()
         IAMStatement::new(Effect::Allow)
             .with_sid("AllowUploadToUserFolder")
             .with_action(Action::Single("s3:PutObject".to_string()))
-            .with_resource(Resource::Single("arn:aws:s3:::my-bucket/${aws:username}/*".to_string()))
+            .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/${aws:username}/*".to_string()))
             .with_condition(
-                Operator::StringEquals,
+                IAMOperator::StringEquals,
                 "s3:prefix".to_string(),
                 json!("uploads/")
             )
             .with_condition(
-                Operator::DateGreaterThan,
+                IAMOperator::DateGreaterThan,
                 "aws:CurrentTime".to_string(),
                 json!("2024-01-01T00:00:00Z")
             )
@@ -122,7 +122,7 @@ let policy = IAMPolicy::new()
                 "s3:GetObject".to_string(),
                 "s3:PutObject".to_string()
             ]))
-            .with_resource(Resource::Single("arn:aws:s3:::secure-bucket/*".to_string()))
+            .with_resource(IAMResource::Single("arn:aws:s3:::secure-bucket/*".to_string()))
     );
 ```
 
@@ -218,7 +218,7 @@ let policy = IAMPolicy::new()
     .add_statement(
         IAMStatement::new(Effect::Allow)
             .with_action(Action::Single("s3:*".to_string()))
-            .with_resource(Resource::Multiple(vec![
+            .with_resource(IAMResource::Multiple(vec![
                 // User's personal folder
                 "arn:aws:s3:::company-data/${aws:username}/*".to_string(),
                 // Team shared folder (with fallback)
@@ -227,7 +227,7 @@ let policy = IAMPolicy::new()
                 "arn:aws:s3:::dept-data/${aws:PrincipalTag/department, 'general'}/*".to_string(),
             ]))
             .with_condition(
-                Operator::StringLike,
+                IAMOperator::StringLike,
                 "s3:prefix".to_string(),
                 json!("${aws:username}/*")
             )
@@ -244,58 +244,58 @@ IAM-rs supports all AWS condition operators with full type safety:
 use iam_rs::Operator;
 
 // Basic string operations
-Operator::StringEquals         // Exact match
-Operator::StringNotEquals      // Not equal
-Operator::StringEqualsIgnoreCase // Case-insensitive match
-Operator::StringLike           // Wildcard matching (*, ?)
-Operator::StringNotLike        // Inverse wildcard matching
+IAMOperator::StringEquals         // Exact match
+IAMOperator::StringNotEquals      // Not equal
+IAMOperator::StringEqualsIgnoreCase // Case-insensitive match
+IAMOperator::StringLike           // Wildcard matching (*, ?)
+IAMOperator::StringNotLike        // Inverse wildcard matching
 
 // Set-based string operations
-Operator::ForAnyValueStringEquals     // At least one value matches
-Operator::ForAllValuesStringEquals    // All values match
+IAMOperator::ForAnyValueStringEquals     // At least one value matches
+IAMOperator::ForAllValuesStringEquals    // All values match
 ```
 
 ### Numeric and Date Conditions
 
 ```rust
 // Numeric comparisons
-Operator::NumericEquals
-Operator::NumericNotEquals
-Operator::NumericLessThan
-Operator::NumericLessThanEquals
-Operator::NumericGreaterThan
-Operator::NumericGreaterThanEquals
+IAMOperator::NumericEquals
+IAMOperator::NumericNotEquals
+IAMOperator::NumericLessThan
+IAMOperator::NumericLessThanEquals
+IAMOperator::NumericGreaterThan
+IAMOperator::NumericGreaterThanEquals
 
 // Date/time comparisons
-Operator::DateEquals
-Operator::DateNotEquals
-Operator::DateLessThan
-Operator::DateGreaterThan
-Operator::DateLessThanEquals
-Operator::DateGreaterThanEquals
+IAMOperator::DateEquals
+IAMOperator::DateNotEquals
+IAMOperator::DateLessThan
+IAMOperator::DateGreaterThan
+IAMOperator::DateLessThanEquals
+IAMOperator::DateGreaterThanEquals
 ```
 
 ### Specialized Conditions
 
 ```rust
 // Boolean conditions
-Operator::Bool
+IAMOperator::Bool
 
 // IP address conditions
-Operator::IpAddress            // IP within CIDR range
-Operator::NotIpAddress         // IP not in CIDR range
+IAMOperator::IpAddress            // IP within CIDR range
+IAMOperator::NotIpAddress         // IP not in CIDR range
 
 // ARN conditions
-Operator::ArnEquals            // Exact ARN match
-Operator::ArnLike              // ARN wildcard matching
-Operator::ArnNotEquals
-Operator::ArnNotLike
+IAMOperator::ArnEquals            // Exact ARN match
+IAMOperator::ArnLike              // ARN wildcard matching
+IAMOperator::ArnNotEquals
+IAMOperator::ArnNotLike
 
 // Null checks
-Operator::Null                 // Key exists/doesn't exist
+IAMOperator::Null                 // Key exists/doesn't exist
 
 // Binary data
-Operator::BinaryEquals         // Base64 binary comparison
+IAMOperator::BinaryEquals         // Base64 binary comparison
 ```
 
 ### Complex Condition Example
@@ -303,33 +303,33 @@ Operator::BinaryEquals         // Base64 binary comparison
 ```rust
 let statement = IAMStatement::new(Effect::Allow)
     .with_action(Action::Single("s3:GetObject".to_string()))
-    .with_resource(Resource::Single("arn:aws:s3:::secure-bucket/*".to_string()))
+    .with_resource(IAMResource::Single("arn:aws:s3:::secure-bucket/*".to_string()))
     // Must be from trusted IP range
     .with_condition(
-        Operator::IpAddress,
+        IAMOperator::IpAddress,
         "aws:SourceIp".to_string(),
         json!(["203.0.113.0/24", "198.51.100.0/24"])
     )
     // Must have MFA
     .with_condition(
-        Operator::Bool,
+        IAMOperator::Bool,
         "aws:MultiFactorAuthPresent".to_string(),
         json!(true)
     )
     // Must be during business hours
     .with_condition(
-        Operator::DateGreaterThan,
+        IAMOperator::DateGreaterThan,
         "aws:CurrentTime".to_string(),
         json!("08:00:00Z")
     )
     .with_condition(
-        Operator::DateLessThan,
+        IAMOperator::DateLessThan,
         "aws:CurrentTime".to_string(),
         json!("18:00:00Z")
     )
     // User must have required tag
     .with_condition(
-        Operator::StringEquals,
+        IAMOperator::StringEquals,
         "aws:PrincipalTag/clearance".to_string(),
         json!("high")
     );
@@ -380,14 +380,14 @@ let allow_policy = IAMPolicy::new()
     .add_statement(
         IAMStatement::new(Effect::Allow)
             .with_action(Action::Single("s3:*".to_string()))
-            .with_resource(Resource::Single("*".to_string()))
+            .with_resource(IAMResource::Single("*".to_string()))
     );
 
 let deny_policy = IAMPolicy::new()
     .add_statement(
         IAMStatement::new(Effect::Deny)  // This will override the Allow
             .with_action(Action::Single("s3:DeleteObject".to_string()))
-            .with_resource(Resource::Single("arn:aws:s3:::protected-bucket/*".to_string()))
+            .with_resource(IAMResource::Single("arn:aws:s3:::protected-bucket/*".to_string()))
     );
 
 let policies = vec![allow_policy, deny_policy];
@@ -440,7 +440,7 @@ let policy = IAMPolicy::new()
         IAMStatement::new(Effect::Allow)
             .with_sid("S3Access")
             .with_action(Action::Single("s3:GetObject".to_string()))
-            .with_resource(Resource::Single("arn:aws:s3:::my-bucket/*".to_string()))
+            .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string()))
     );
 
 // Export to JSON

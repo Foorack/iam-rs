@@ -1,6 +1,6 @@
 use crate::{
     OperatorType,
-    core::Operator,
+    core::IAMOperator,
     validation::{Validate, ValidationContext, ValidationError, ValidationResult, helpers},
 };
 use serde::{Deserialize, Serialize, Serializer};
@@ -118,7 +118,7 @@ impl ConditionValue {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct Condition {
     /// The condition operator (e.g., `StringEquals`, `DateGreaterThan`)
-    pub operator: Operator,
+    pub operator: IAMOperator,
     /// The condition key (e.g., "aws:username", "s3:prefix")
     pub key: String,
     /// The condition value(s)
@@ -132,7 +132,7 @@ pub struct Condition {
 pub struct ConditionBlock {
     /// Map of operators to their key-value pairs
     #[serde(flatten)]
-    pub conditions: HashMap<Operator, HashMap<String, ConditionValue>>,
+    pub conditions: HashMap<IAMOperator, HashMap<String, ConditionValue>>,
 }
 
 impl Serialize for ConditionBlock {
@@ -158,7 +158,7 @@ impl Serialize for ConditionBlock {
 
 impl Condition {
     /// Creates a new condition
-    pub fn new<K: Into<String>>(operator: Operator, key: K, value: ConditionValue) -> Self {
+    pub fn new<K: Into<String>>(operator: IAMOperator, key: K, value: ConditionValue) -> Self {
         Self {
             operator,
             key: key.into(),
@@ -167,22 +167,22 @@ impl Condition {
     }
 
     /// Creates a condition with a string value
-    pub fn string<K: Into<String>, V: Into<String>>(operator: Operator, key: K, value: V) -> Self {
+    pub fn string<K: Into<String>, V: Into<String>>(operator: IAMOperator, key: K, value: V) -> Self {
         Self::new(operator, key, ConditionValue::String(value.into()))
     }
 
     /// Creates a condition with a boolean value
-    pub fn boolean<K: Into<String>>(operator: Operator, key: K, value: bool) -> Self {
+    pub fn boolean<K: Into<String>>(operator: IAMOperator, key: K, value: bool) -> Self {
         Self::new(operator, key, ConditionValue::Boolean(value))
     }
 
     /// Creates a condition with a numeric value
-    pub fn number<K: Into<String>>(operator: Operator, key: K, value: i64) -> Self {
+    pub fn number<K: Into<String>>(operator: IAMOperator, key: K, value: i64) -> Self {
         Self::new(operator, key, ConditionValue::Number(value))
     }
 
     /// Creates a condition with an array of string values
-    pub fn string_array<K: Into<String>>(operator: Operator, key: K, values: Vec<String>) -> Self {
+    pub fn string_array<K: Into<String>>(operator: IAMOperator, key: K, values: Vec<String>) -> Self {
         Self::new(operator, key, ConditionValue::StringList(values))
     }
 }
@@ -213,7 +213,7 @@ impl ConditionBlock {
     #[must_use]
     pub fn with_condition_direct<K: Into<String>>(
         mut self,
-        operator: Operator,
+        operator: IAMOperator,
         key: K,
         value: ConditionValue,
     ) -> Self {
@@ -226,20 +226,20 @@ impl ConditionBlock {
     #[must_use]
     pub fn get_conditions_for_operator(
         &self,
-        operator: &Operator,
+        operator: &IAMOperator,
     ) -> Option<&HashMap<String, ConditionValue>> {
         self.conditions.get(operator)
     }
 
     /// Gets a specific condition value
     #[must_use]
-    pub fn get_condition_value(&self, operator: &Operator, key: &str) -> Option<&ConditionValue> {
+    pub fn get_condition_value(&self, operator: &IAMOperator, key: &str) -> Option<&ConditionValue> {
         self.conditions.get(operator)?.get(key)
     }
 
     /// Checks if a condition exists
     #[must_use]
-    pub fn has_condition(&self, operator: &Operator, key: &str) -> bool {
+    pub fn has_condition(&self, operator: &IAMOperator, key: &str) -> bool {
         self.conditions
             .get(operator)
             .is_some_and(|map| map.contains_key(key))
@@ -247,7 +247,7 @@ impl ConditionBlock {
 
     /// Gets all operators used in this condition block
     #[must_use]
-    pub fn operators(&self) -> Vec<&Operator> {
+    pub fn operators(&self) -> Vec<&IAMOperator> {
         self.conditions.keys().collect()
     }
 
@@ -284,7 +284,7 @@ impl ConditionBlock {
 
         for (op_str, condition_map) in legacy {
             let operator = op_str
-                .parse::<Operator>()
+                .parse::<IAMOperator>()
                 .map_err(|e| format!("Invalid operator '{op_str}': {e}"))?;
 
             let mut converted_conditions = HashMap::new();
@@ -500,9 +500,9 @@ mod tests {
 
     #[test]
     fn test_condition_creation() {
-        let condition = Condition::string(Operator::StringEquals, "aws:username", "john");
+        let condition = Condition::string(IAMOperator::StringEquals, "aws:username", "john");
 
-        assert_eq!(condition.operator, Operator::StringEquals);
+        assert_eq!(condition.operator, IAMOperator::StringEquals);
         assert_eq!(condition.key, "aws:username");
         assert_eq!(condition.value, ConditionValue::String("john".to_string()));
     }
@@ -511,21 +511,21 @@ mod tests {
     fn test_condition_block() {
         let block = ConditionBlock::new()
             .with_condition(Condition::string(
-                Operator::StringEquals,
+                IAMOperator::StringEquals,
                 "aws:username",
                 "john",
             ))
             .with_condition(Condition::boolean(
-                Operator::Bool,
+                IAMOperator::Bool,
                 "aws:SecureTransport",
                 true,
             ));
 
-        assert!(block.has_condition(&Operator::StringEquals, "aws:username"));
-        assert!(block.has_condition(&Operator::Bool, "aws:SecureTransport"));
-        assert!(!block.has_condition(&Operator::StringEquals, "nonexistent"));
+        assert!(block.has_condition(&IAMOperator::StringEquals, "aws:username"));
+        assert!(block.has_condition(&IAMOperator::Bool, "aws:SecureTransport"));
+        assert!(!block.has_condition(&IAMOperator::StringEquals, "nonexistent"));
 
-        let username = block.get_condition_value(&Operator::StringEquals, "aws:username");
+        let username = block.get_condition_value(&IAMOperator::StringEquals, "aws:username");
         assert_eq!(username, Some(&ConditionValue::String("john".to_string())));
     }
 
@@ -537,7 +537,7 @@ mod tests {
         legacy.insert("StringEquals".to_string(), string_conditions);
 
         let block = ConditionBlock::from_legacy_format(legacy.clone()).unwrap();
-        assert!(block.has_condition(&Operator::StringEquals, "aws:username"));
+        assert!(block.has_condition(&IAMOperator::StringEquals, "aws:username"));
 
         let converted_back = block.to_legacy_format();
         assert_eq!(converted_back, legacy);
@@ -545,7 +545,7 @@ mod tests {
 
     #[test]
     fn test_condition_serialization() {
-        let condition = Condition::string(Operator::StringEquals, "aws:username", "john");
+        let condition = Condition::string(IAMOperator::StringEquals, "aws:username", "john");
 
         let json = serde_json::to_string(&condition).unwrap();
         let deserialized: Condition = serde_json::from_str(&json).unwrap();
@@ -557,12 +557,12 @@ mod tests {
     fn test_condition_block_serialization() {
         let block = ConditionBlock::new()
             .with_condition(Condition::string_array(
-                Operator::StringEquals,
+                IAMOperator::StringEquals,
                 "aws:PrincipalTag/department",
                 vec!["finance".to_string(), "hr".to_string(), "legal".to_string()],
             ))
             .with_condition(Condition::string_array(
-                Operator::ArnLike,
+                IAMOperator::ArnLike,
                 "aws:PrincipalArn",
                 vec![
                     "arn:aws:iam::222222222222:user/Ana".to_string(),

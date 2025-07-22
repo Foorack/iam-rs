@@ -1,7 +1,7 @@
 use iam_rs::{
     Action, Arn, ConditionValue, Context, ContextValue, Decision, Effect, EvaluationOptions,
-    IAMPolicy, IAMRequest, IAMStatement, Operator, PolicyEvaluator, Principal, PrincipalId,
-    Resource, evaluate_policy,
+    IAMOperator, IAMPolicy, IAMRequest, IAMResource, IAMStatement, PolicyEvaluator, Principal,
+    PrincipalId, evaluate_policy,
 };
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -15,7 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             IAMStatement::new(Effect::Allow)
                 .with_sid("AllowS3Read")
                 .with_action(Action::Single("s3:GetObject".to_string()))
-                .with_resource(Resource::Single("arn:aws:s3:::my-bucket/*".to_string())),
+                .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
         );
 
     let request = IAMRequest::new(
@@ -41,7 +41,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             IAMStatement::new(Effect::Deny)
                 .with_sid("DenyS3Delete")
                 .with_action(Action::Single("s3:DeleteObject".to_string()))
-                .with_resource(Resource::Single(
+                .with_resource(IAMResource::Single(
                     "arn:aws:s3:::protected-bucket/*".to_string(),
                 )),
         );
@@ -69,7 +69,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             IAMStatement::new(Effect::Allow)
                 .with_sid("AllowAllS3")
                 .with_action(Action::Single("s3:*".to_string()))
-                .with_resource(Resource::Single("arn:aws:s3:::my-bucket/*".to_string())),
+                .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
         );
 
     let wildcard_request = IAMRequest::new(
@@ -105,11 +105,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             IAMStatement::new(Effect::Allow)
                 .with_sid("AllowWithCondition")
                 .with_action(Action::Single("s3:GetObject".to_string()))
-                .with_resource(Resource::Single(
+                .with_resource(IAMResource::Single(
                     "arn:aws:s3:::private-bucket/*".to_string(),
                 ))
                 .with_condition(
-                    Operator::StringEquals,
+                    IAMOperator::StringEquals,
                     "aws:userid".to_string(),
                     ConditionValue::String("alice".to_string()),
                 ),
@@ -164,7 +164,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 IAMStatement::new(Effect::Allow)
                     .with_sid("AllowAll")
                     .with_action(Action::Single("s3:*".to_string()))
-                    .with_resource(Resource::Single("*".to_string())),
+                    .with_resource(IAMResource::Single("*".to_string())),
             ),
         IAMPolicy::new()
             .with_id("550e8400-e29b-41d4-a716-446655440005")
@@ -172,7 +172,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 IAMStatement::new(Effect::Deny)
                     .with_sid("DenyProtected")
                     .with_action(Action::Single("s3:DeleteObject".to_string()))
-                    .with_resource(Resource::Single(
+                    .with_resource(IAMResource::Single(
                         "arn:aws:s3:::protected-bucket/*".to_string(),
                     )),
             ),
@@ -205,9 +205,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             IAMStatement::new(Effect::Allow)
                 .with_sid("AllowLimitedRequests")
                 .with_action(Action::Single("s3:GetObject".to_string()))
-                .with_resource(Resource::Single("*".to_string()))
+                .with_resource(IAMResource::Single("*".to_string()))
                 .with_condition(
-                    Operator::NumericLessThan,
+                    IAMOperator::NumericLessThan,
                     "aws:RequestCount".to_string(),
                     ConditionValue::Number(10),
                 ),
@@ -281,7 +281,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "s3:GetObject".to_string(),
                     "s3:PutObject".to_string(),
                 ]))
-                .with_resource(Resource::Single("arn:aws:s3:::user-data-*/*".to_string())),
+                .with_resource(IAMResource::Single(
+                    "arn:aws:s3:::user-data-*/*".to_string(),
+                )),
         );
 
     let pattern_request = IAMRequest::new(

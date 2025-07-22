@@ -1,4 +1,4 @@
-use crate::{Arn, Context, ContextValue, EvaluationError, Operator, OperatorType};
+use crate::{Arn, Context, ContextValue, EvaluationError, IAMOperator, OperatorType};
 use chrono::{DateTime, Utc};
 use ipnet::IpNet;
 
@@ -10,7 +10,7 @@ enum SetOperatorType {
 }
 
 impl SetOperatorType {
-    fn from_operator(operator: &Operator) -> Self {
+    fn from_operator(operator: &IAMOperator) -> Self {
         match operator.to_string().as_str() {
             s if s.starts_with("ForAnyValue:") => SetOperatorType::ForAnyValue,
             s if s.starts_with("ForAllValues:") => SetOperatorType::ForAllValues,
@@ -21,7 +21,7 @@ impl SetOperatorType {
 
 type Predicate<T> = Box<dyn Fn(T, T) -> bool>;
 type DatePredicate<T> = Box<dyn for<'a, 'b> Fn(&'a T, &'b T) -> bool>;
-type O = Operator;
+type O = IAMOperator;
 
 /// Evaluate a single condition
 ///
@@ -50,7 +50,7 @@ type O = Operator;
 #[allow(clippy::too_many_lines)]
 pub(super) fn evaluate_condition(
     ctx: &Context,
-    operator: &Operator,
+    operator: &IAMOperator,
     key: &str,
     value: &serde_json::Value,
 ) -> Result<bool, EvaluationError> {
@@ -447,7 +447,7 @@ mod tests {
         let ctx = create_test_context();
         let result = evaluate_condition(
             &ctx,
-            &Operator::StringEquals,
+            &IAMOperator::StringEquals,
             "string_key",
             &serde_json::Value::String("test_value".to_string()),
         )
@@ -456,7 +456,7 @@ mod tests {
 
         let result = evaluate_condition(
             &ctx,
-            &Operator::StringEquals,
+            &IAMOperator::StringEquals,
             "string_key",
             &serde_json::Value::String("different_value".to_string()),
         )
@@ -469,7 +469,7 @@ mod tests {
         let ctx = create_test_context();
         let result = evaluate_condition(
             &ctx,
-            &Operator::StringNotEquals,
+            &IAMOperator::StringNotEquals,
             "string_key",
             &serde_json::Value::String("different_value".to_string()),
         )
@@ -478,7 +478,7 @@ mod tests {
 
         let result = evaluate_condition(
             &ctx,
-            &Operator::StringNotEquals,
+            &IAMOperator::StringNotEquals,
             "string_key",
             &serde_json::Value::String("test_value".to_string()),
         )
@@ -491,7 +491,7 @@ mod tests {
         let ctx = create_test_context();
         let result = evaluate_condition(
             &ctx,
-            &Operator::StringEqualsIgnoreCase,
+            &IAMOperator::StringEqualsIgnoreCase,
             "string_key",
             &serde_json::Value::String("TEST_VALUE".to_string()),
         )
@@ -500,7 +500,7 @@ mod tests {
 
         let result = evaluate_condition(
             &ctx,
-            &Operator::StringEqualsIgnoreCase,
+            &IAMOperator::StringEqualsIgnoreCase,
             "string_key",
             &serde_json::Value::String("different_value".to_string()),
         )
@@ -513,7 +513,7 @@ mod tests {
         let ctx = create_test_context();
         let result = evaluate_condition(
             &ctx,
-            &Operator::StringLike,
+            &IAMOperator::StringLike,
             "string_key",
             &serde_json::Value::String("test_*".to_string()),
         )
@@ -522,7 +522,7 @@ mod tests {
 
         let result = evaluate_condition(
             &ctx,
-            &Operator::StringLike,
+            &IAMOperator::StringLike,
             "string_key",
             &serde_json::Value::String("other_*".to_string()),
         )
@@ -537,7 +537,7 @@ mod tests {
         // NumericEquals
         let result = evaluate_condition(
             &ctx,
-            &Operator::NumericEquals,
+            &IAMOperator::NumericEquals,
             "numeric_key",
             &serde_json::Value::Number(serde_json::Number::from_f64(42.0).unwrap()),
         )
@@ -547,7 +547,7 @@ mod tests {
         // NumericLessThan
         let result = evaluate_condition(
             &ctx,
-            &Operator::NumericLessThan,
+            &IAMOperator::NumericLessThan,
             "numeric_key",
             &serde_json::Value::Number(serde_json::Number::from_f64(50.0).unwrap()),
         )
@@ -557,7 +557,7 @@ mod tests {
         // NumericGreaterThan
         let result = evaluate_condition(
             &ctx,
-            &Operator::NumericGreaterThan,
+            &IAMOperator::NumericGreaterThan,
             "numeric_key",
             &serde_json::Value::Number(serde_json::Number::from_f64(30.0).unwrap()),
         )
@@ -567,7 +567,7 @@ mod tests {
         // Test with string that can be parsed as number
         let result = evaluate_condition(
             &ctx,
-            &Operator::NumericEquals,
+            &IAMOperator::NumericEquals,
             "numeric_string",
             &serde_json::Value::Number(serde_json::Number::from_f64(42.5).unwrap()),
         )
@@ -580,7 +580,7 @@ mod tests {
         let ctx = create_test_context();
         let result = evaluate_condition(
             &ctx,
-            &Operator::Bool,
+            &IAMOperator::Bool,
             "bool_key",
             &serde_json::Value::Bool(true),
         )
@@ -589,7 +589,7 @@ mod tests {
 
         let result = evaluate_condition(
             &ctx,
-            &Operator::Bool,
+            &IAMOperator::Bool,
             "bool_key",
             &serde_json::Value::Bool(false),
         )
@@ -604,7 +604,7 @@ mod tests {
         // DateEquals with ISO 8601 string
         let result = evaluate_condition(
             &ctx,
-            &Operator::DateEquals,
+            &IAMOperator::DateEquals,
             "datetime_key",
             &serde_json::Value::String("2024-01-01T00:00:00Z".to_string()),
         )
@@ -614,7 +614,7 @@ mod tests {
         // DateLessThan
         let result = evaluate_condition(
             &ctx,
-            &Operator::DateLessThan,
+            &IAMOperator::DateLessThan,
             "datetime_key",
             &serde_json::Value::String("2024-12-31T23:59:59Z".to_string()),
         )
@@ -624,7 +624,7 @@ mod tests {
         // Test with string context value
         let result = evaluate_condition(
             &ctx,
-            &Operator::DateEquals,
+            &IAMOperator::DateEquals,
             "date_key",
             &serde_json::Value::String("2024-01-01T00:00:00Z".to_string()),
         )
@@ -634,7 +634,7 @@ mod tests {
         // Test with epoch time
         let result = evaluate_condition(
             &ctx,
-            &Operator::DateEquals,
+            &IAMOperator::DateEquals,
             "datetime_key",
             &serde_json::Value::String("1704067200".to_string()), // 2024-01-01T00:00:00Z in epoch
         )
@@ -649,7 +649,7 @@ mod tests {
         // IpAddress - check if IP is in CIDR range
         let result = evaluate_condition(
             &ctx,
-            &Operator::IpAddress,
+            &IAMOperator::IpAddress,
             "ip_key",
             &serde_json::Value::String("192.168.1.0/24".to_string()),
         )
@@ -659,7 +659,7 @@ mod tests {
         // NotIpAddress
         let result = evaluate_condition(
             &ctx,
-            &Operator::NotIpAddress,
+            &IAMOperator::NotIpAddress,
             "ip_key",
             &serde_json::Value::String("10.0.0.0/8".to_string()),
         )
@@ -674,7 +674,7 @@ mod tests {
         // Key exists - should return false when checking if null
         let result = evaluate_condition(
             &ctx,
-            &Operator::Null,
+            &IAMOperator::Null,
             "string_key",
             &serde_json::Value::Bool(true),
         )
@@ -684,7 +684,7 @@ mod tests {
         // Key doesn't exist - should return true when checking if null
         let result = evaluate_condition(
             &ctx,
-            &Operator::Null,
+            &IAMOperator::Null,
             "nonexistent_key",
             &serde_json::Value::Bool(true),
         )
@@ -694,7 +694,7 @@ mod tests {
         // Key exists - should return true when checking if not null
         let result = evaluate_condition(
             &ctx,
-            &Operator::Null,
+            &IAMOperator::Null,
             "string_key",
             &serde_json::Value::Bool(false),
         )
@@ -709,7 +709,7 @@ mod tests {
         // Key exists and matches
         let result = evaluate_condition(
             &ctx,
-            &Operator::StringEqualsIfExists,
+            &IAMOperator::StringEqualsIfExists,
             "string_key",
             &serde_json::Value::String("test_value".to_string()),
         )
@@ -719,7 +719,7 @@ mod tests {
         // Key doesn't exist - should return true for IfExists operators
         let result = evaluate_condition(
             &ctx,
-            &Operator::StringEqualsIfExists,
+            &IAMOperator::StringEqualsIfExists,
             "nonexistent_key",
             &serde_json::Value::String("any_value".to_string()),
         )
@@ -729,7 +729,7 @@ mod tests {
         // Key exists but doesn't match
         let result = evaluate_condition(
             &ctx,
-            &Operator::StringEqualsIfExists,
+            &IAMOperator::StringEqualsIfExists,
             "string_key",
             &serde_json::Value::String("different_value".to_string()),
         )
@@ -744,7 +744,7 @@ mod tests {
         // ForAnyValue:StringEquals - should return true if any value matches
         let result = evaluate_condition(
             &ctx,
-            &Operator::ForAnyValueStringEquals,
+            &IAMOperator::ForAnyValueStringEquals,
             "string_list",
             &serde_json::Value::String("value2".to_string()),
         )
@@ -754,7 +754,7 @@ mod tests {
         // ForAnyValue:StringEquals - should return false if no value matches
         let result = evaluate_condition(
             &ctx,
-            &Operator::ForAnyValueStringEquals,
+            &IAMOperator::ForAnyValueStringEquals,
             "string_list",
             &serde_json::Value::String("nonexistent".to_string()),
         )
@@ -764,7 +764,7 @@ mod tests {
         // ForAnyValue:Bool
         let result = evaluate_condition(
             &ctx,
-            &Operator::ForAnyValueBool,
+            &IAMOperator::ForAnyValueBool,
             "bool_list",
             &serde_json::Value::Bool(false),
         )
@@ -790,7 +790,7 @@ mod tests {
         // ForAllValues:StringEquals - should return true if all values match
         let result = evaluate_condition(
             &ctx_all_same,
-            &Operator::ForAllValuesStringEquals,
+            &IAMOperator::ForAllValuesStringEquals,
             "all_same",
             &serde_json::Value::String("same".to_string()),
         )
@@ -800,7 +800,7 @@ mod tests {
         // ForAllValues:StringEquals - should return false if not all values match
         let result = evaluate_condition(
             &ctx,
-            &Operator::ForAllValuesStringEquals,
+            &IAMOperator::ForAllValuesStringEquals,
             "string_list",
             &serde_json::Value::String("value1".to_string()),
         )
@@ -819,7 +819,7 @@ mod tests {
         ]);
 
         let result =
-            evaluate_condition(&ctx, &Operator::StringEquals, "string_key", &array_value).unwrap();
+            evaluate_condition(&ctx, &IAMOperator::StringEquals, "string_key", &array_value).unwrap();
         assert!(result); // Should return true because one of the values matches
     }
 
@@ -830,7 +830,7 @@ mod tests {
         // String operator with non-string context value
         let result = evaluate_condition(
             &ctx,
-            &Operator::StringEquals,
+            &IAMOperator::StringEquals,
             "numeric_key",
             &serde_json::Value::String("test".to_string()),
         )
@@ -842,7 +842,7 @@ mod tests {
 
         let result = evaluate_condition(
             &ctx_with_unparseable,
-            &Operator::NumericEquals,
+            &IAMOperator::NumericEquals,
             "unparseable_string",
             &serde_json::Value::Number(serde_json::Number::from(42)),
         );
@@ -851,7 +851,7 @@ mod tests {
         // Boolean operator with non-boolean context value
         let result = evaluate_condition(
             &ctx,
-            &Operator::Bool,
+            &IAMOperator::Bool,
             "string_key",
             &serde_json::Value::Bool(true),
         )
@@ -866,7 +866,7 @@ mod tests {
         // String operator with non-string value
         let result = evaluate_condition(
             &ctx,
-            &Operator::StringEquals,
+            &IAMOperator::StringEquals,
             "string_key",
             &serde_json::Value::Number(serde_json::Number::from(42)),
         );
@@ -875,7 +875,7 @@ mod tests {
         // Numeric operator with non-numeric value
         let result = evaluate_condition(
             &ctx,
-            &Operator::NumericEquals,
+            &IAMOperator::NumericEquals,
             "numeric_key",
             &serde_json::Value::String("not_a_number".to_string()),
         );
@@ -884,7 +884,7 @@ mod tests {
         // Boolean operator with non-boolean value
         let result = evaluate_condition(
             &ctx,
-            &Operator::Bool,
+            &IAMOperator::Bool,
             "bool_key",
             &serde_json::Value::String("not_a_bool".to_string()),
         );
@@ -893,7 +893,7 @@ mod tests {
         // Date operator with invalid date string
         let result = evaluate_condition(
             &ctx,
-            &Operator::DateEquals,
+            &IAMOperator::DateEquals,
             "date_key",
             &serde_json::Value::String("invalid_date".to_string()),
         );
@@ -902,7 +902,7 @@ mod tests {
         // IP operator with invalid IP string
         let result = evaluate_condition(
             &ctx,
-            &Operator::IpAddress,
+            &IAMOperator::IpAddress,
             "ip_key",
             &serde_json::Value::String("invalid_ip".to_string()),
         );
@@ -911,7 +911,7 @@ mod tests {
         // Null operator with non-boolean value
         let result = evaluate_condition(
             &ctx,
-            &Operator::Null,
+            &IAMOperator::Null,
             "string_key",
             &serde_json::Value::String("not_a_bool".to_string()),
         );
@@ -920,7 +920,7 @@ mod tests {
         // Multivalued context without set operator
         let result = evaluate_condition(
             &ctx,
-            &Operator::StringEquals,
+            &IAMOperator::StringEquals,
             "string_list",
             &serde_json::Value::String("value1".to_string()),
         );
@@ -933,7 +933,7 @@ mod tests {
 
         let result = evaluate_condition(
             &ctx,
-            &Operator::BinaryEquals,
+            &IAMOperator::BinaryEquals,
             "binary_key",
             &serde_json::Value::String("SGVsbG8gV29ybGQ=".to_string()),
         )
@@ -943,7 +943,7 @@ mod tests {
         // Test case insensitive and padding removal
         let result = evaluate_condition(
             &ctx,
-            &Operator::BinaryEquals,
+            &IAMOperator::BinaryEquals,
             "binary_key",
             &serde_json::Value::String("sGVsbG8gV29ybGQ".to_string()), // Different case and no padding
         )
@@ -984,7 +984,7 @@ mod tests {
         // Test ForAnyValue prefix detection
         let result = evaluate_condition(
             &ctx,
-            &Operator::ForAnyValueStringEquals,
+            &IAMOperator::ForAnyValueStringEquals,
             "string_list",
             &serde_json::Value::String("value1".to_string()),
         )
@@ -1000,7 +1000,7 @@ mod tests {
 
         let result = evaluate_condition(
             &ctx_all_same,
-            &Operator::ForAllValuesStringEquals,
+            &IAMOperator::ForAllValuesStringEquals,
             "all_same",
             &serde_json::Value::String("same".to_string()),
         )
@@ -1015,7 +1015,7 @@ mod tests {
         // ArnEquals
         let result = evaluate_condition(
             &ctx,
-            &Operator::ArnEquals,
+            &IAMOperator::ArnEquals,
             "arn_key",
             &serde_json::Value::String("arn:aws:s3:::my-bucket/*".to_string()),
         )
@@ -1025,7 +1025,7 @@ mod tests {
         // ArnLike with wildcard
         let result = evaluate_condition(
             &ctx,
-            &Operator::ArnLike,
+            &IAMOperator::ArnLike,
             "arn_key",
             &serde_json::Value::String("arn:aws:s3:::my-bucket*".to_string()),
         )
@@ -1035,7 +1035,7 @@ mod tests {
         // ArnNotEquals
         let result = evaluate_condition(
             &ctx,
-            &Operator::ArnNotEquals,
+            &IAMOperator::ArnNotEquals,
             "arn_key",
             &serde_json::Value::String("arn:aws:s3:::other-bucket/*".to_string()),
         )
@@ -1053,7 +1053,7 @@ mod tests {
         // Test invalid numeric string
         let result = evaluate_condition(
             &ctx,
-            &Operator::NumericEquals,
+            &IAMOperator::NumericEquals,
             "invalid_numeric",
             &serde_json::Value::Number(serde_json::Number::from(42)),
         );
@@ -1062,7 +1062,7 @@ mod tests {
         // Test invalid IP string
         let result = evaluate_condition(
             &ctx,
-            &Operator::IpAddress,
+            &IAMOperator::IpAddress,
             "invalid_ip",
             &serde_json::Value::String("192.168.1.0/24".to_string()),
         );
@@ -1071,7 +1071,7 @@ mod tests {
         // Test invalid date string
         let result = evaluate_condition(
             &ctx,
-            &Operator::DateEquals,
+            &IAMOperator::DateEquals,
             "invalid_date",
             &serde_json::Value::String("2024-01-01T00:00:00Z".to_string()),
         );
@@ -1085,7 +1085,7 @@ mod tests {
         // Non-IfExists operators should return false for missing keys
         let result = evaluate_condition(
             &ctx,
-            &Operator::StringEquals,
+            &IAMOperator::StringEquals,
             "missing_key",
             &serde_json::Value::String("any_value".to_string()),
         )
@@ -1095,7 +1095,7 @@ mod tests {
         // Negative operators should return true for missing keys
         let _result = evaluate_condition(
             &ctx,
-            &Operator::StringNotEquals,
+            &IAMOperator::StringNotEquals,
             "missing_key",
             &serde_json::Value::String("any_value".to_string()),
         )

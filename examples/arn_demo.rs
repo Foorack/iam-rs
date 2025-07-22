@@ -1,4 +1,4 @@
-use iam_rs::{Action, Arn, Effect, IAMPolicy, IAMStatement, Resource};
+use iam_rs::{Action, Arn, Effect, IAMPolicy, IAMStatement, IAMResource};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== IAM ARN Validator Demo ===\n");
@@ -87,7 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     "s3:GetObject".to_string(),
                     "s3:ListBucket".to_string(),
                 ]))
-                .with_resource(Resource::Multiple(vec![
+                .with_resource(IAMResource::Multiple(vec![
                     "arn:aws:s3:::my-bucket".to_string(),
                     "arn:aws:s3:::my-bucket/*".to_string(),
                 ])),
@@ -96,7 +96,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             IAMStatement::new(Effect::Allow)
                 .with_sid("AllowS3Write")
                 .with_action(Action::Single("s3:PutObject".to_string()))
-                .with_resource(Resource::Single(
+                .with_resource(IAMResource::Single(
                     "arn:aws:s3:::my-bucket/uploads/*".to_string(),
                 )),
         );
@@ -116,8 +116,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
         let resources = match &statement.resource {
-            Some(Resource::Single(arn)) => vec![arn.clone()],
-            Some(Resource::Multiple(arns)) => arns.clone(),
+            Some(IAMResource::Single(arn)) => vec![arn.clone()],
+            Some(IAMResource::Multiple(arns)) => arns.clone(),
             None => vec![],
         };
 

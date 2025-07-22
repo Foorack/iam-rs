@@ -17,7 +17,7 @@ pub enum OperatorType {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Hash, PartialOrd, Ord)]
 #[serde(rename_all = "PascalCase")]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
-pub enum Operator {
+pub enum IAMOperator {
     // String condition operators
     #[serde(rename = "StringEquals")]
     StringEquals,
@@ -191,36 +191,36 @@ pub enum Operator {
     ArnNotLikeIfExists,
 }
 
-impl Operator {
+impl IAMOperator {
     /// Returns true if this operator is a string-based operator
     #[must_use]
     pub fn is_string_operator(&self) -> bool {
         matches!(
             self,
-            Operator::StringEquals
-                | Operator::StringNotEquals
-                | Operator::StringEqualsIgnoreCase
-                | Operator::StringNotEqualsIgnoreCase
-                | Operator::StringLike
-                | Operator::StringNotLike
-                | Operator::ForAllValuesStringEquals
-                | Operator::ForAllValuesStringEqualsIgnoreCase
-                | Operator::ForAnyValueStringEquals
-                | Operator::ForAnyValueStringEqualsIgnoreCase
-                | Operator::ForAllValuesStringNotEquals
-                | Operator::ForAllValuesStringNotEqualsIgnoreCase
-                | Operator::ForAnyValueStringNotEquals
-                | Operator::ForAnyValueStringNotEqualsIgnoreCase
-                | Operator::ForAllValuesStringLike
-                | Operator::ForAnyValueStringLike
-                | Operator::ForAllValuesStringNotLike
-                | Operator::ForAnyValueStringNotLike
-                | Operator::StringEqualsIfExists
-                | Operator::StringNotEqualsIfExists
-                | Operator::StringEqualsIgnoreCaseIfExists
-                | Operator::StringNotEqualsIgnoreCaseIfExists
-                | Operator::StringLikeIfExists
-                | Operator::StringNotLikeIfExists
+            IAMOperator::StringEquals
+                | IAMOperator::StringNotEquals
+                | IAMOperator::StringEqualsIgnoreCase
+                | IAMOperator::StringNotEqualsIgnoreCase
+                | IAMOperator::StringLike
+                | IAMOperator::StringNotLike
+                | IAMOperator::ForAllValuesStringEquals
+                | IAMOperator::ForAllValuesStringEqualsIgnoreCase
+                | IAMOperator::ForAnyValueStringEquals
+                | IAMOperator::ForAnyValueStringEqualsIgnoreCase
+                | IAMOperator::ForAllValuesStringNotEquals
+                | IAMOperator::ForAllValuesStringNotEqualsIgnoreCase
+                | IAMOperator::ForAnyValueStringNotEquals
+                | IAMOperator::ForAnyValueStringNotEqualsIgnoreCase
+                | IAMOperator::ForAllValuesStringLike
+                | IAMOperator::ForAnyValueStringLike
+                | IAMOperator::ForAllValuesStringNotLike
+                | IAMOperator::ForAnyValueStringNotLike
+                | IAMOperator::StringEqualsIfExists
+                | IAMOperator::StringNotEqualsIfExists
+                | IAMOperator::StringEqualsIgnoreCaseIfExists
+                | IAMOperator::StringNotEqualsIgnoreCaseIfExists
+                | IAMOperator::StringLikeIfExists
+                | IAMOperator::StringNotLikeIfExists
         )
     }
 
@@ -229,18 +229,18 @@ impl Operator {
     pub fn is_numeric_operator(&self) -> bool {
         matches!(
             self,
-            Operator::NumericEquals
-                | Operator::NumericNotEquals
-                | Operator::NumericLessThan
-                | Operator::NumericLessThanEquals
-                | Operator::NumericGreaterThan
-                | Operator::NumericGreaterThanEquals
-                | Operator::NumericEqualsIfExists
-                | Operator::NumericNotEqualsIfExists
-                | Operator::NumericLessThanIfExists
-                | Operator::NumericLessThanEqualsIfExists
-                | Operator::NumericGreaterThanIfExists
-                | Operator::NumericGreaterThanEqualsIfExists
+            IAMOperator::NumericEquals
+                | IAMOperator::NumericNotEquals
+                | IAMOperator::NumericLessThan
+                | IAMOperator::NumericLessThanEquals
+                | IAMOperator::NumericGreaterThan
+                | IAMOperator::NumericGreaterThanEquals
+                | IAMOperator::NumericEqualsIfExists
+                | IAMOperator::NumericNotEqualsIfExists
+                | IAMOperator::NumericLessThanIfExists
+                | IAMOperator::NumericLessThanEqualsIfExists
+                | IAMOperator::NumericGreaterThanIfExists
+                | IAMOperator::NumericGreaterThanEqualsIfExists
         )
     }
 
@@ -249,18 +249,18 @@ impl Operator {
     pub fn is_date_operator(&self) -> bool {
         matches!(
             self,
-            Operator::DateEquals
-                | Operator::DateNotEquals
-                | Operator::DateLessThan
-                | Operator::DateLessThanEquals
-                | Operator::DateGreaterThan
-                | Operator::DateGreaterThanEquals
-                | Operator::DateEqualsIfExists
-                | Operator::DateNotEqualsIfExists
-                | Operator::DateLessThanIfExists
-                | Operator::DateLessThanEqualsIfExists
-                | Operator::DateGreaterThanIfExists
-                | Operator::DateGreaterThanEqualsIfExists
+            IAMOperator::DateEquals
+                | IAMOperator::DateNotEquals
+                | IAMOperator::DateLessThan
+                | IAMOperator::DateLessThanEquals
+                | IAMOperator::DateGreaterThan
+                | IAMOperator::DateGreaterThanEquals
+                | IAMOperator::DateEqualsIfExists
+                | IAMOperator::DateNotEqualsIfExists
+                | IAMOperator::DateLessThanIfExists
+                | IAMOperator::DateLessThanEqualsIfExists
+                | IAMOperator::DateGreaterThanIfExists
+                | IAMOperator::DateGreaterThanEqualsIfExists
         )
     }
 
@@ -269,10 +269,10 @@ impl Operator {
     pub fn is_boolean_operator(&self) -> bool {
         matches!(
             self,
-            Operator::Bool
-                | Operator::ForAllValuesBool
-                | Operator::ForAnyValueBool
-                | Operator::BoolIfExists
+            IAMOperator::Bool
+                | IAMOperator::ForAllValuesBool
+                | IAMOperator::ForAnyValueBool
+                | IAMOperator::BoolIfExists
         )
     }
 
@@ -281,22 +281,22 @@ impl Operator {
     pub fn is_arn_operator(&self) -> bool {
         matches!(
             self,
-            Operator::ArnEquals
-                | Operator::ArnLike
-                | Operator::ArnNotEquals
-                | Operator::ArnNotLike
-                | Operator::ForAllValuesArnEquals
-                | Operator::ForAllValuesArnLike
-                | Operator::ForAnyValueArnEquals
-                | Operator::ForAnyValueArnLike
-                | Operator::ForAllValuesArnNotEquals
-                | Operator::ForAllValuesArnNotLike
-                | Operator::ForAnyValueArnNotEquals
-                | Operator::ForAnyValueArnNotLike
-                | Operator::ArnEqualsIfExists
-                | Operator::ArnLikeIfExists
-                | Operator::ArnNotEqualsIfExists
-                | Operator::ArnNotLikeIfExists
+            IAMOperator::ArnEquals
+                | IAMOperator::ArnLike
+                | IAMOperator::ArnNotEquals
+                | IAMOperator::ArnNotLike
+                | IAMOperator::ForAllValuesArnEquals
+                | IAMOperator::ForAllValuesArnLike
+                | IAMOperator::ForAnyValueArnEquals
+                | IAMOperator::ForAnyValueArnLike
+                | IAMOperator::ForAllValuesArnNotEquals
+                | IAMOperator::ForAllValuesArnNotLike
+                | IAMOperator::ForAnyValueArnNotEquals
+                | IAMOperator::ForAnyValueArnNotLike
+                | IAMOperator::ArnEqualsIfExists
+                | IAMOperator::ArnLikeIfExists
+                | IAMOperator::ArnNotEqualsIfExists
+                | IAMOperator::ArnNotLikeIfExists
         )
     }
 
@@ -305,10 +305,10 @@ impl Operator {
     pub fn is_ip_operator(&self) -> bool {
         matches!(
             self,
-            Operator::IpAddress
-                | Operator::NotIpAddress
-                | Operator::IpAddressIfExists
-                | Operator::NotIpAddressIfExists
+            IAMOperator::IpAddress
+                | IAMOperator::NotIpAddress
+                | IAMOperator::IpAddressIfExists
+                | IAMOperator::NotIpAddressIfExists
         )
     }
 
@@ -317,7 +317,7 @@ impl Operator {
     pub fn is_binary_operator(&self) -> bool {
         matches!(
             self,
-            Operator::BinaryEquals | Operator::BinaryEqualsIfExists
+            IAMOperator::BinaryEquals | IAMOperator::BinaryEqualsIfExists
         )
     }
 
@@ -326,30 +326,30 @@ impl Operator {
     pub fn supports_wildcards(&self) -> bool {
         matches!(
             self,
-            Operator::StringLike
-                | Operator::StringNotLike
-                | Operator::ForAllValuesStringLike
-                | Operator::ForAnyValueStringLike
-                | Operator::ForAllValuesStringNotLike
-                | Operator::ForAnyValueStringNotLike
-                | Operator::StringLikeIfExists
-                | Operator::StringNotLikeIfExists
-                | Operator::ArnEquals
-                | Operator::ArnLike
-                | Operator::ArnNotEquals
-                | Operator::ArnNotLike
-                | Operator::ForAllValuesArnEquals
-                | Operator::ForAllValuesArnLike
-                | Operator::ForAnyValueArnEquals
-                | Operator::ForAnyValueArnLike
-                | Operator::ForAllValuesArnNotEquals
-                | Operator::ForAllValuesArnNotLike
-                | Operator::ForAnyValueArnNotEquals
-                | Operator::ForAnyValueArnNotLike
-                | Operator::ArnEqualsIfExists
-                | Operator::ArnLikeIfExists
-                | Operator::ArnNotEqualsIfExists
-                | Operator::ArnNotLikeIfExists
+            IAMOperator::StringLike
+                | IAMOperator::StringNotLike
+                | IAMOperator::ForAllValuesStringLike
+                | IAMOperator::ForAnyValueStringLike
+                | IAMOperator::ForAllValuesStringNotLike
+                | IAMOperator::ForAnyValueStringNotLike
+                | IAMOperator::StringLikeIfExists
+                | IAMOperator::StringNotLikeIfExists
+                | IAMOperator::ArnEquals
+                | IAMOperator::ArnLike
+                | IAMOperator::ArnNotEquals
+                | IAMOperator::ArnNotLike
+                | IAMOperator::ForAllValuesArnEquals
+                | IAMOperator::ForAllValuesArnLike
+                | IAMOperator::ForAnyValueArnEquals
+                | IAMOperator::ForAnyValueArnLike
+                | IAMOperator::ForAllValuesArnNotEquals
+                | IAMOperator::ForAllValuesArnNotLike
+                | IAMOperator::ForAnyValueArnNotEquals
+                | IAMOperator::ForAnyValueArnNotLike
+                | IAMOperator::ArnEqualsIfExists
+                | IAMOperator::ArnLikeIfExists
+                | IAMOperator::ArnNotEqualsIfExists
+                | IAMOperator::ArnNotLikeIfExists
         )
     }
 
@@ -380,32 +380,32 @@ impl Operator {
     pub fn is_negated_operator(&self) -> bool {
         matches!(
             self,
-            Operator::StringNotEquals
-                | Operator::StringNotEqualsIgnoreCase
-                | Operator::StringNotLike
-                | Operator::ForAllValuesStringNotEquals
-                | Operator::ForAllValuesStringNotEqualsIgnoreCase
-                | Operator::ForAnyValueStringNotEquals
-                | Operator::ForAnyValueStringNotEqualsIgnoreCase
-                | Operator::ForAllValuesStringNotLike
-                | Operator::ForAnyValueStringNotLike
-                | Operator::NumericNotEquals
-                | Operator::DateNotEquals
-                | Operator::NotIpAddress
-                | Operator::ArnNotEquals
-                | Operator::ArnNotLike
-                | Operator::ForAllValuesArnNotEquals
-                | Operator::ForAllValuesArnNotLike
-                | Operator::ForAnyValueArnNotEquals
-                | Operator::ForAnyValueArnNotLike
-                | Operator::StringNotEqualsIfExists
-                | Operator::StringNotEqualsIgnoreCaseIfExists
-                | Operator::StringNotLikeIfExists
-                | Operator::NumericNotEqualsIfExists
-                | Operator::DateNotEqualsIfExists
-                | Operator::NotIpAddressIfExists
-                | Operator::ArnNotEqualsIfExists
-                | Operator::ArnNotLikeIfExists
+            IAMOperator::StringNotEquals
+                | IAMOperator::StringNotEqualsIgnoreCase
+                | IAMOperator::StringNotLike
+                | IAMOperator::ForAllValuesStringNotEquals
+                | IAMOperator::ForAllValuesStringNotEqualsIgnoreCase
+                | IAMOperator::ForAnyValueStringNotEquals
+                | IAMOperator::ForAnyValueStringNotEqualsIgnoreCase
+                | IAMOperator::ForAllValuesStringNotLike
+                | IAMOperator::ForAnyValueStringNotLike
+                | IAMOperator::NumericNotEquals
+                | IAMOperator::DateNotEquals
+                | IAMOperator::NotIpAddress
+                | IAMOperator::ArnNotEquals
+                | IAMOperator::ArnNotLike
+                | IAMOperator::ForAllValuesArnNotEquals
+                | IAMOperator::ForAllValuesArnNotLike
+                | IAMOperator::ForAnyValueArnNotEquals
+                | IAMOperator::ForAnyValueArnNotLike
+                | IAMOperator::StringNotEqualsIfExists
+                | IAMOperator::StringNotEqualsIgnoreCaseIfExists
+                | IAMOperator::StringNotLikeIfExists
+                | IAMOperator::NumericNotEqualsIfExists
+                | IAMOperator::DateNotEqualsIfExists
+                | IAMOperator::NotIpAddressIfExists
+                | IAMOperator::ArnNotEqualsIfExists
+                | IAMOperator::ArnNotLikeIfExists
         )
     }
 
@@ -416,7 +416,7 @@ impl Operator {
         // Most operators support multiple values except for these specific ones
         !matches!(
             self,
-            Operator::Null | Operator::Bool | Operator::BoolIfExists
+            IAMOperator::Null | IAMOperator::Bool | IAMOperator::BoolIfExists
         )
     }
 
@@ -442,7 +442,7 @@ impl Operator {
             OperatorType::IpAddress
         } else if self.is_arn_operator() {
             OperatorType::Arn
-        } else if matches!(self, Operator::Null) {
+        } else if matches!(self, IAMOperator::Null) {
             OperatorType::Null
         } else {
             panic!("Unknown operator category for operator: {}", self.as_str())
@@ -453,181 +453,187 @@ impl Operator {
     #[must_use]
     pub fn as_str(&self) -> &'static str {
         match self {
-            Operator::StringEquals => "StringEquals",
-            Operator::StringNotEquals => "StringNotEquals",
-            Operator::StringEqualsIgnoreCase => "StringEqualsIgnoreCase",
-            Operator::StringNotEqualsIgnoreCase => "StringNotEqualsIgnoreCase",
-            Operator::StringLike => "StringLike",
-            Operator::StringNotLike => "StringNotLike",
-            Operator::ForAllValuesStringEquals => "ForAllValues:StringEquals",
-            Operator::ForAllValuesStringEqualsIgnoreCase => "ForAllValues:StringEqualsIgnoreCase",
-            Operator::ForAnyValueStringEquals => "ForAnyValue:StringEquals",
-            Operator::ForAnyValueStringEqualsIgnoreCase => "ForAnyValue:StringEqualsIgnoreCase",
-            Operator::ForAllValuesStringNotEquals => "ForAllValues:StringNotEquals",
-            Operator::ForAllValuesStringNotEqualsIgnoreCase => {
+            IAMOperator::StringEquals => "StringEquals",
+            IAMOperator::StringNotEquals => "StringNotEquals",
+            IAMOperator::StringEqualsIgnoreCase => "StringEqualsIgnoreCase",
+            IAMOperator::StringNotEqualsIgnoreCase => "StringNotEqualsIgnoreCase",
+            IAMOperator::StringLike => "StringLike",
+            IAMOperator::StringNotLike => "StringNotLike",
+            IAMOperator::ForAllValuesStringEquals => "ForAllValues:StringEquals",
+            IAMOperator::ForAllValuesStringEqualsIgnoreCase => {
+                "ForAllValues:StringEqualsIgnoreCase"
+            }
+            IAMOperator::ForAnyValueStringEquals => "ForAnyValue:StringEquals",
+            IAMOperator::ForAnyValueStringEqualsIgnoreCase => "ForAnyValue:StringEqualsIgnoreCase",
+            IAMOperator::ForAllValuesStringNotEquals => "ForAllValues:StringNotEquals",
+            IAMOperator::ForAllValuesStringNotEqualsIgnoreCase => {
                 "ForAllValues:StringNotEqualsIgnoreCase"
             }
-            Operator::ForAnyValueStringNotEquals => "ForAnyValue:StringNotEquals",
-            Operator::ForAnyValueStringNotEqualsIgnoreCase => {
+            IAMOperator::ForAnyValueStringNotEquals => "ForAnyValue:StringNotEquals",
+            IAMOperator::ForAnyValueStringNotEqualsIgnoreCase => {
                 "ForAnyValue:StringNotEqualsIgnoreCase"
             }
-            Operator::ForAllValuesStringLike => "ForAllValues:StringLike",
-            Operator::ForAnyValueStringLike => "ForAnyValue:StringLike",
-            Operator::ForAllValuesStringNotLike => "ForAllValues:StringNotLike",
-            Operator::ForAnyValueStringNotLike => "ForAnyValue:StringNotLike",
-            Operator::NumericEquals => "NumericEquals",
-            Operator::NumericNotEquals => "NumericNotEquals",
-            Operator::NumericLessThan => "NumericLessThan",
-            Operator::NumericLessThanEquals => "NumericLessThanEquals",
-            Operator::NumericGreaterThan => "NumericGreaterThan",
-            Operator::NumericGreaterThanEquals => "NumericGreaterThanEquals",
-            Operator::DateEquals => "DateEquals",
-            Operator::DateNotEquals => "DateNotEquals",
-            Operator::DateLessThan => "DateLessThan",
-            Operator::DateLessThanEquals => "DateLessThanEquals",
-            Operator::DateGreaterThan => "DateGreaterThan",
-            Operator::DateGreaterThanEquals => "DateGreaterThanEquals",
-            Operator::Bool => "Bool",
-            Operator::ForAllValuesBool => "ForAllValues:Bool",
-            Operator::ForAnyValueBool => "ForAnyValue:Bool",
-            Operator::BinaryEquals => "BinaryEquals",
-            Operator::IpAddress => "IpAddress",
-            Operator::NotIpAddress => "NotIpAddress",
-            Operator::ArnEquals => "ArnEquals",
-            Operator::ArnLike => "ArnLike",
-            Operator::ArnNotEquals => "ArnNotEquals",
-            Operator::ArnNotLike => "ArnNotLike",
-            Operator::ForAllValuesArnEquals => "ForAllValues:ArnEquals",
-            Operator::ForAllValuesArnLike => "ForAllValues:ArnLike",
-            Operator::ForAnyValueArnEquals => "ForAnyValue:ArnEquals",
-            Operator::ForAnyValueArnLike => "ForAnyValue:ArnLike",
-            Operator::ForAllValuesArnNotEquals => "ForAllValues:ArnNotEquals",
-            Operator::ForAllValuesArnNotLike => "ForAllValues:ArnNotLike",
-            Operator::ForAnyValueArnNotEquals => "ForAnyValue:ArnNotEquals",
-            Operator::ForAnyValueArnNotLike => "ForAnyValue:ArnNotLike",
-            Operator::Null => "Null",
-            Operator::StringEqualsIfExists => "StringEqualsIfExists",
-            Operator::StringNotEqualsIfExists => "StringNotEqualsIfExists",
-            Operator::StringEqualsIgnoreCaseIfExists => "StringEqualsIgnoreCaseIfExists",
-            Operator::StringNotEqualsIgnoreCaseIfExists => "StringNotEqualsIgnoreCaseIfExists",
-            Operator::StringLikeIfExists => "StringLikeIfExists",
-            Operator::StringNotLikeIfExists => "StringNotLikeIfExists",
-            Operator::NumericEqualsIfExists => "NumericEqualsIfExists",
-            Operator::NumericNotEqualsIfExists => "NumericNotEqualsIfExists",
-            Operator::NumericLessThanIfExists => "NumericLessThanIfExists",
-            Operator::NumericLessThanEqualsIfExists => "NumericLessThanEqualsIfExists",
-            Operator::NumericGreaterThanIfExists => "NumericGreaterThanIfExists",
-            Operator::NumericGreaterThanEqualsIfExists => "NumericGreaterThanEqualsIfExists",
-            Operator::DateEqualsIfExists => "DateEqualsIfExists",
-            Operator::DateNotEqualsIfExists => "DateNotEqualsIfExists",
-            Operator::DateLessThanIfExists => "DateLessThanIfExists",
-            Operator::DateLessThanEqualsIfExists => "DateLessThanEqualsIfExists",
-            Operator::DateGreaterThanIfExists => "DateGreaterThanIfExists",
-            Operator::DateGreaterThanEqualsIfExists => "DateGreaterThanEqualsIfExists",
-            Operator::BoolIfExists => "BoolIfExists",
-            Operator::BinaryEqualsIfExists => "BinaryEqualsIfExists",
-            Operator::IpAddressIfExists => "IpAddressIfExists",
-            Operator::NotIpAddressIfExists => "NotIpAddressIfExists",
-            Operator::ArnEqualsIfExists => "ArnEqualsIfExists",
-            Operator::ArnLikeIfExists => "ArnLikeIfExists",
-            Operator::ArnNotEqualsIfExists => "ArnNotEqualsIfExists",
-            Operator::ArnNotLikeIfExists => "ArnNotLikeIfExists",
+            IAMOperator::ForAllValuesStringLike => "ForAllValues:StringLike",
+            IAMOperator::ForAnyValueStringLike => "ForAnyValue:StringLike",
+            IAMOperator::ForAllValuesStringNotLike => "ForAllValues:StringNotLike",
+            IAMOperator::ForAnyValueStringNotLike => "ForAnyValue:StringNotLike",
+            IAMOperator::NumericEquals => "NumericEquals",
+            IAMOperator::NumericNotEquals => "NumericNotEquals",
+            IAMOperator::NumericLessThan => "NumericLessThan",
+            IAMOperator::NumericLessThanEquals => "NumericLessThanEquals",
+            IAMOperator::NumericGreaterThan => "NumericGreaterThan",
+            IAMOperator::NumericGreaterThanEquals => "NumericGreaterThanEquals",
+            IAMOperator::DateEquals => "DateEquals",
+            IAMOperator::DateNotEquals => "DateNotEquals",
+            IAMOperator::DateLessThan => "DateLessThan",
+            IAMOperator::DateLessThanEquals => "DateLessThanEquals",
+            IAMOperator::DateGreaterThan => "DateGreaterThan",
+            IAMOperator::DateGreaterThanEquals => "DateGreaterThanEquals",
+            IAMOperator::Bool => "Bool",
+            IAMOperator::ForAllValuesBool => "ForAllValues:Bool",
+            IAMOperator::ForAnyValueBool => "ForAnyValue:Bool",
+            IAMOperator::BinaryEquals => "BinaryEquals",
+            IAMOperator::IpAddress => "IpAddress",
+            IAMOperator::NotIpAddress => "NotIpAddress",
+            IAMOperator::ArnEquals => "ArnEquals",
+            IAMOperator::ArnLike => "ArnLike",
+            IAMOperator::ArnNotEquals => "ArnNotEquals",
+            IAMOperator::ArnNotLike => "ArnNotLike",
+            IAMOperator::ForAllValuesArnEquals => "ForAllValues:ArnEquals",
+            IAMOperator::ForAllValuesArnLike => "ForAllValues:ArnLike",
+            IAMOperator::ForAnyValueArnEquals => "ForAnyValue:ArnEquals",
+            IAMOperator::ForAnyValueArnLike => "ForAnyValue:ArnLike",
+            IAMOperator::ForAllValuesArnNotEquals => "ForAllValues:ArnNotEquals",
+            IAMOperator::ForAllValuesArnNotLike => "ForAllValues:ArnNotLike",
+            IAMOperator::ForAnyValueArnNotEquals => "ForAnyValue:ArnNotEquals",
+            IAMOperator::ForAnyValueArnNotLike => "ForAnyValue:ArnNotLike",
+            IAMOperator::Null => "Null",
+            IAMOperator::StringEqualsIfExists => "StringEqualsIfExists",
+            IAMOperator::StringNotEqualsIfExists => "StringNotEqualsIfExists",
+            IAMOperator::StringEqualsIgnoreCaseIfExists => "StringEqualsIgnoreCaseIfExists",
+            IAMOperator::StringNotEqualsIgnoreCaseIfExists => "StringNotEqualsIgnoreCaseIfExists",
+            IAMOperator::StringLikeIfExists => "StringLikeIfExists",
+            IAMOperator::StringNotLikeIfExists => "StringNotLikeIfExists",
+            IAMOperator::NumericEqualsIfExists => "NumericEqualsIfExists",
+            IAMOperator::NumericNotEqualsIfExists => "NumericNotEqualsIfExists",
+            IAMOperator::NumericLessThanIfExists => "NumericLessThanIfExists",
+            IAMOperator::NumericLessThanEqualsIfExists => "NumericLessThanEqualsIfExists",
+            IAMOperator::NumericGreaterThanIfExists => "NumericGreaterThanIfExists",
+            IAMOperator::NumericGreaterThanEqualsIfExists => "NumericGreaterThanEqualsIfExists",
+            IAMOperator::DateEqualsIfExists => "DateEqualsIfExists",
+            IAMOperator::DateNotEqualsIfExists => "DateNotEqualsIfExists",
+            IAMOperator::DateLessThanIfExists => "DateLessThanIfExists",
+            IAMOperator::DateLessThanEqualsIfExists => "DateLessThanEqualsIfExists",
+            IAMOperator::DateGreaterThanIfExists => "DateGreaterThanIfExists",
+            IAMOperator::DateGreaterThanEqualsIfExists => "DateGreaterThanEqualsIfExists",
+            IAMOperator::BoolIfExists => "BoolIfExists",
+            IAMOperator::BinaryEqualsIfExists => "BinaryEqualsIfExists",
+            IAMOperator::IpAddressIfExists => "IpAddressIfExists",
+            IAMOperator::NotIpAddressIfExists => "NotIpAddressIfExists",
+            IAMOperator::ArnEqualsIfExists => "ArnEqualsIfExists",
+            IAMOperator::ArnLikeIfExists => "ArnLikeIfExists",
+            IAMOperator::ArnNotEqualsIfExists => "ArnNotEqualsIfExists",
+            IAMOperator::ArnNotLikeIfExists => "ArnNotLikeIfExists",
         }
     }
 }
 
-impl std::fmt::Display for Operator {
+impl std::fmt::Display for IAMOperator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
     }
 }
 
-impl std::str::FromStr for Operator {
+impl std::str::FromStr for IAMOperator {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s {
-            "StringEquals" => Ok(Operator::StringEquals),
-            "StringNotEquals" => Ok(Operator::StringNotEquals),
-            "StringEqualsIgnoreCase" => Ok(Operator::StringEqualsIgnoreCase),
-            "StringNotEqualsIgnoreCase" => Ok(Operator::StringNotEqualsIgnoreCase),
-            "StringLike" => Ok(Operator::StringLike),
-            "StringNotLike" => Ok(Operator::StringNotLike),
-            "ForAllValues:StringEquals" => Ok(Operator::ForAllValuesStringEquals),
+            "StringEquals" => Ok(IAMOperator::StringEquals),
+            "StringNotEquals" => Ok(IAMOperator::StringNotEquals),
+            "StringEqualsIgnoreCase" => Ok(IAMOperator::StringEqualsIgnoreCase),
+            "StringNotEqualsIgnoreCase" => Ok(IAMOperator::StringNotEqualsIgnoreCase),
+            "StringLike" => Ok(IAMOperator::StringLike),
+            "StringNotLike" => Ok(IAMOperator::StringNotLike),
+            "ForAllValues:StringEquals" => Ok(IAMOperator::ForAllValuesStringEquals),
             "ForAllValues:StringEqualsIgnoreCase" => {
-                Ok(Operator::ForAllValuesStringEqualsIgnoreCase)
+                Ok(IAMOperator::ForAllValuesStringEqualsIgnoreCase)
             }
-            "ForAnyValue:StringEquals" => Ok(Operator::ForAnyValueStringEquals),
-            "ForAnyValue:StringEqualsIgnoreCase" => Ok(Operator::ForAnyValueStringEqualsIgnoreCase),
-            "ForAllValues:StringNotEquals" => Ok(Operator::ForAllValuesStringNotEquals),
+            "ForAnyValue:StringEquals" => Ok(IAMOperator::ForAnyValueStringEquals),
+            "ForAnyValue:StringEqualsIgnoreCase" => {
+                Ok(IAMOperator::ForAnyValueStringEqualsIgnoreCase)
+            }
+            "ForAllValues:StringNotEquals" => Ok(IAMOperator::ForAllValuesStringNotEquals),
             "ForAllValues:StringNotEqualsIgnoreCase" => {
-                Ok(Operator::ForAllValuesStringNotEqualsIgnoreCase)
+                Ok(IAMOperator::ForAllValuesStringNotEqualsIgnoreCase)
             }
-            "ForAnyValue:StringNotEquals" => Ok(Operator::ForAnyValueStringNotEquals),
+            "ForAnyValue:StringNotEquals" => Ok(IAMOperator::ForAnyValueStringNotEquals),
             "ForAnyValue:StringNotEqualsIgnoreCase" => {
-                Ok(Operator::ForAnyValueStringNotEqualsIgnoreCase)
+                Ok(IAMOperator::ForAnyValueStringNotEqualsIgnoreCase)
             }
-            "ForAllValues:StringLike" => Ok(Operator::ForAllValuesStringLike),
-            "ForAnyValue:StringLike" => Ok(Operator::ForAnyValueStringLike),
-            "ForAllValues:StringNotLike" => Ok(Operator::ForAllValuesStringNotLike),
-            "ForAnyValue:StringNotLike" => Ok(Operator::ForAnyValueStringNotLike),
-            "NumericEquals" => Ok(Operator::NumericEquals),
-            "NumericNotEquals" => Ok(Operator::NumericNotEquals),
-            "NumericLessThan" => Ok(Operator::NumericLessThan),
-            "NumericLessThanEquals" => Ok(Operator::NumericLessThanEquals),
-            "NumericGreaterThan" => Ok(Operator::NumericGreaterThan),
-            "NumericGreaterThanEquals" => Ok(Operator::NumericGreaterThanEquals),
-            "DateEquals" => Ok(Operator::DateEquals),
-            "DateNotEquals" => Ok(Operator::DateNotEquals),
-            "DateLessThan" => Ok(Operator::DateLessThan),
-            "DateLessThanEquals" => Ok(Operator::DateLessThanEquals),
-            "DateGreaterThan" => Ok(Operator::DateGreaterThan),
-            "DateGreaterThanEquals" => Ok(Operator::DateGreaterThanEquals),
-            "Bool" => Ok(Operator::Bool),
-            "ForAllValues:Bool" => Ok(Operator::ForAllValuesBool),
-            "ForAnyValue:Bool" => Ok(Operator::ForAnyValueBool),
-            "BinaryEquals" => Ok(Operator::BinaryEquals),
-            "IpAddress" => Ok(Operator::IpAddress),
-            "NotIpAddress" => Ok(Operator::NotIpAddress),
-            "ArnEquals" => Ok(Operator::ArnEquals),
-            "ArnLike" => Ok(Operator::ArnLike),
-            "ArnNotEquals" => Ok(Operator::ArnNotEquals),
-            "ArnNotLike" => Ok(Operator::ArnNotLike),
-            "ForAllValues:ArnEquals" => Ok(Operator::ForAllValuesArnEquals),
-            "ForAllValues:ArnLike" => Ok(Operator::ForAllValuesArnLike),
-            "ForAnyValue:ArnEquals" => Ok(Operator::ForAnyValueArnEquals),
-            "ForAnyValue:ArnLike" => Ok(Operator::ForAnyValueArnLike),
-            "ForAllValues:ArnNotEquals" => Ok(Operator::ForAllValuesArnNotEquals),
-            "ForAllValues:ArnNotLike" => Ok(Operator::ForAllValuesArnNotLike),
-            "ForAnyValue:ArnNotEquals" => Ok(Operator::ForAnyValueArnNotEquals),
-            "ForAnyValue:ArnNotLike" => Ok(Operator::ForAnyValueArnNotLike),
-            "Null" => Ok(Operator::Null),
-            "StringEqualsIfExists" => Ok(Operator::StringEqualsIfExists),
-            "StringNotEqualsIfExists" => Ok(Operator::StringNotEqualsIfExists),
-            "StringEqualsIgnoreCaseIfExists" => Ok(Operator::StringEqualsIgnoreCaseIfExists),
-            "StringNotEqualsIgnoreCaseIfExists" => Ok(Operator::StringNotEqualsIgnoreCaseIfExists),
-            "StringLikeIfExists" => Ok(Operator::StringLikeIfExists),
-            "StringNotLikeIfExists" => Ok(Operator::StringNotLikeIfExists),
-            "NumericEqualsIfExists" => Ok(Operator::NumericEqualsIfExists),
-            "NumericNotEqualsIfExists" => Ok(Operator::NumericNotEqualsIfExists),
-            "NumericLessThanIfExists" => Ok(Operator::NumericLessThanIfExists),
-            "NumericLessThanEqualsIfExists" => Ok(Operator::NumericLessThanEqualsIfExists),
-            "NumericGreaterThanIfExists" => Ok(Operator::NumericGreaterThanIfExists),
-            "NumericGreaterThanEqualsIfExists" => Ok(Operator::NumericGreaterThanEqualsIfExists),
-            "DateEqualsIfExists" => Ok(Operator::DateEqualsIfExists),
-            "DateNotEqualsIfExists" => Ok(Operator::DateNotEqualsIfExists),
-            "DateLessThanIfExists" => Ok(Operator::DateLessThanIfExists),
-            "DateLessThanEqualsIfExists" => Ok(Operator::DateLessThanEqualsIfExists),
-            "DateGreaterThanIfExists" => Ok(Operator::DateGreaterThanIfExists),
-            "DateGreaterThanEqualsIfExists" => Ok(Operator::DateGreaterThanEqualsIfExists),
-            "BoolIfExists" => Ok(Operator::BoolIfExists),
-            "BinaryEqualsIfExists" => Ok(Operator::BinaryEqualsIfExists),
-            "IpAddressIfExists" => Ok(Operator::IpAddressIfExists),
-            "NotIpAddressIfExists" => Ok(Operator::NotIpAddressIfExists),
-            "ArnEqualsIfExists" => Ok(Operator::ArnEqualsIfExists),
-            "ArnLikeIfExists" => Ok(Operator::ArnLikeIfExists),
-            "ArnNotEqualsIfExists" => Ok(Operator::ArnNotEqualsIfExists),
-            "ArnNotLikeIfExists" => Ok(Operator::ArnNotLikeIfExists),
+            "ForAllValues:StringLike" => Ok(IAMOperator::ForAllValuesStringLike),
+            "ForAnyValue:StringLike" => Ok(IAMOperator::ForAnyValueStringLike),
+            "ForAllValues:StringNotLike" => Ok(IAMOperator::ForAllValuesStringNotLike),
+            "ForAnyValue:StringNotLike" => Ok(IAMOperator::ForAnyValueStringNotLike),
+            "NumericEquals" => Ok(IAMOperator::NumericEquals),
+            "NumericNotEquals" => Ok(IAMOperator::NumericNotEquals),
+            "NumericLessThan" => Ok(IAMOperator::NumericLessThan),
+            "NumericLessThanEquals" => Ok(IAMOperator::NumericLessThanEquals),
+            "NumericGreaterThan" => Ok(IAMOperator::NumericGreaterThan),
+            "NumericGreaterThanEquals" => Ok(IAMOperator::NumericGreaterThanEquals),
+            "DateEquals" => Ok(IAMOperator::DateEquals),
+            "DateNotEquals" => Ok(IAMOperator::DateNotEquals),
+            "DateLessThan" => Ok(IAMOperator::DateLessThan),
+            "DateLessThanEquals" => Ok(IAMOperator::DateLessThanEquals),
+            "DateGreaterThan" => Ok(IAMOperator::DateGreaterThan),
+            "DateGreaterThanEquals" => Ok(IAMOperator::DateGreaterThanEquals),
+            "Bool" => Ok(IAMOperator::Bool),
+            "ForAllValues:Bool" => Ok(IAMOperator::ForAllValuesBool),
+            "ForAnyValue:Bool" => Ok(IAMOperator::ForAnyValueBool),
+            "BinaryEquals" => Ok(IAMOperator::BinaryEquals),
+            "IpAddress" => Ok(IAMOperator::IpAddress),
+            "NotIpAddress" => Ok(IAMOperator::NotIpAddress),
+            "ArnEquals" => Ok(IAMOperator::ArnEquals),
+            "ArnLike" => Ok(IAMOperator::ArnLike),
+            "ArnNotEquals" => Ok(IAMOperator::ArnNotEquals),
+            "ArnNotLike" => Ok(IAMOperator::ArnNotLike),
+            "ForAllValues:ArnEquals" => Ok(IAMOperator::ForAllValuesArnEquals),
+            "ForAllValues:ArnLike" => Ok(IAMOperator::ForAllValuesArnLike),
+            "ForAnyValue:ArnEquals" => Ok(IAMOperator::ForAnyValueArnEquals),
+            "ForAnyValue:ArnLike" => Ok(IAMOperator::ForAnyValueArnLike),
+            "ForAllValues:ArnNotEquals" => Ok(IAMOperator::ForAllValuesArnNotEquals),
+            "ForAllValues:ArnNotLike" => Ok(IAMOperator::ForAllValuesArnNotLike),
+            "ForAnyValue:ArnNotEquals" => Ok(IAMOperator::ForAnyValueArnNotEquals),
+            "ForAnyValue:ArnNotLike" => Ok(IAMOperator::ForAnyValueArnNotLike),
+            "Null" => Ok(IAMOperator::Null),
+            "StringEqualsIfExists" => Ok(IAMOperator::StringEqualsIfExists),
+            "StringNotEqualsIfExists" => Ok(IAMOperator::StringNotEqualsIfExists),
+            "StringEqualsIgnoreCaseIfExists" => Ok(IAMOperator::StringEqualsIgnoreCaseIfExists),
+            "StringNotEqualsIgnoreCaseIfExists" => {
+                Ok(IAMOperator::StringNotEqualsIgnoreCaseIfExists)
+            }
+            "StringLikeIfExists" => Ok(IAMOperator::StringLikeIfExists),
+            "StringNotLikeIfExists" => Ok(IAMOperator::StringNotLikeIfExists),
+            "NumericEqualsIfExists" => Ok(IAMOperator::NumericEqualsIfExists),
+            "NumericNotEqualsIfExists" => Ok(IAMOperator::NumericNotEqualsIfExists),
+            "NumericLessThanIfExists" => Ok(IAMOperator::NumericLessThanIfExists),
+            "NumericLessThanEqualsIfExists" => Ok(IAMOperator::NumericLessThanEqualsIfExists),
+            "NumericGreaterThanIfExists" => Ok(IAMOperator::NumericGreaterThanIfExists),
+            "NumericGreaterThanEqualsIfExists" => Ok(IAMOperator::NumericGreaterThanEqualsIfExists),
+            "DateEqualsIfExists" => Ok(IAMOperator::DateEqualsIfExists),
+            "DateNotEqualsIfExists" => Ok(IAMOperator::DateNotEqualsIfExists),
+            "DateLessThanIfExists" => Ok(IAMOperator::DateLessThanIfExists),
+            "DateLessThanEqualsIfExists" => Ok(IAMOperator::DateLessThanEqualsIfExists),
+            "DateGreaterThanIfExists" => Ok(IAMOperator::DateGreaterThanIfExists),
+            "DateGreaterThanEqualsIfExists" => Ok(IAMOperator::DateGreaterThanEqualsIfExists),
+            "BoolIfExists" => Ok(IAMOperator::BoolIfExists),
+            "BinaryEqualsIfExists" => Ok(IAMOperator::BinaryEqualsIfExists),
+            "IpAddressIfExists" => Ok(IAMOperator::IpAddressIfExists),
+            "NotIpAddressIfExists" => Ok(IAMOperator::NotIpAddressIfExists),
+            "ArnEqualsIfExists" => Ok(IAMOperator::ArnEqualsIfExists),
+            "ArnLikeIfExists" => Ok(IAMOperator::ArnLikeIfExists),
+            "ArnNotEqualsIfExists" => Ok(IAMOperator::ArnNotEqualsIfExists),
+            "ArnNotLikeIfExists" => Ok(IAMOperator::ArnNotLikeIfExists),
             _ => Err(format!("Unknown operator: {s}")),
         }
     }
@@ -640,79 +646,79 @@ mod tests {
 
     #[test]
     fn test_operator_serialization() {
-        let operator = Operator::StringEquals;
+        let operator = IAMOperator::StringEquals;
         let json = serde_json::to_string(&operator).unwrap();
         assert_eq!(json, "\"StringEquals\"");
 
-        let deserialized: Operator = serde_json::from_str(&json).unwrap();
+        let deserialized: IAMOperator = serde_json::from_str(&json).unwrap();
         assert_eq!(operator, deserialized);
     }
 
     #[test]
     fn test_multivalued_operators() {
-        let operator = Operator::ForAllValuesStringEquals;
+        let operator = IAMOperator::ForAllValuesStringEquals;
         let json = serde_json::to_string(&operator).unwrap();
         assert_eq!(json, "\"ForAllValues:StringEquals\"");
 
-        let deserialized: Operator = serde_json::from_str(&json).unwrap();
+        let deserialized: IAMOperator = serde_json::from_str(&json).unwrap();
         assert_eq!(operator, deserialized);
     }
 
     #[test]
     fn test_operator_categories() {
-        assert!(Operator::StringEquals.is_string_operator());
-        assert!(Operator::NumericEquals.is_numeric_operator());
-        assert!(Operator::DateEquals.is_date_operator());
-        assert!(Operator::Bool.is_boolean_operator());
-        assert!(Operator::ArnEquals.is_arn_operator());
-        assert!(Operator::IpAddress.is_ip_operator());
-        assert!(Operator::BinaryEquals.is_binary_operator());
+        assert!(IAMOperator::StringEquals.is_string_operator());
+        assert!(IAMOperator::NumericEquals.is_numeric_operator());
+        assert!(IAMOperator::DateEquals.is_date_operator());
+        assert!(IAMOperator::Bool.is_boolean_operator());
+        assert!(IAMOperator::ArnEquals.is_arn_operator());
+        assert!(IAMOperator::IpAddress.is_ip_operator());
+        assert!(IAMOperator::BinaryEquals.is_binary_operator());
     }
 
     #[test]
     fn test_operator_features() {
-        assert!(Operator::StringLike.supports_wildcards());
-        assert!(Operator::StringEquals.supports_policy_variables());
-        assert!(!Operator::NumericEquals.supports_policy_variables());
-        assert!(Operator::ForAllValuesStringEquals.is_multivalued_operator());
-        assert!(Operator::StringEqualsIfExists.is_if_exists_operator());
-        assert!(Operator::StringNotEquals.is_negated_operator());
+        assert!(IAMOperator::StringLike.supports_wildcards());
+        assert!(IAMOperator::StringEquals.supports_policy_variables());
+        assert!(!IAMOperator::NumericEquals.supports_policy_variables());
+        assert!(IAMOperator::ForAllValuesStringEquals.is_multivalued_operator());
+        assert!(IAMOperator::StringEqualsIfExists.is_if_exists_operator());
+        assert!(IAMOperator::StringNotEquals.is_negated_operator());
 
         // Test multiple values support
-        assert!(Operator::StringEquals.supports_multiple_values());
-        assert!(Operator::StringNotEquals.supports_multiple_values());
-        assert!(Operator::NumericEquals.supports_multiple_values());
-        assert!(Operator::DateEquals.supports_multiple_values());
-        assert!(Operator::IpAddress.supports_multiple_values());
-        assert!(Operator::ArnEquals.supports_multiple_values());
+        assert!(IAMOperator::StringEquals.supports_multiple_values());
+        assert!(IAMOperator::StringNotEquals.supports_multiple_values());
+        assert!(IAMOperator::NumericEquals.supports_multiple_values());
+        assert!(IAMOperator::DateEquals.supports_multiple_values());
+        assert!(IAMOperator::IpAddress.supports_multiple_values());
+        assert!(IAMOperator::ArnEquals.supports_multiple_values());
 
         // These should not support multiple values
-        assert!(!Operator::Bool.supports_multiple_values());
-        assert!(!Operator::BoolIfExists.supports_multiple_values());
-        assert!(!Operator::Null.supports_multiple_values());
+        assert!(!IAMOperator::Bool.supports_multiple_values());
+        assert!(!IAMOperator::BoolIfExists.supports_multiple_values());
+        assert!(!IAMOperator::Null.supports_multiple_values());
     }
 
     #[test]
     fn test_operator_category_strings() {
-        assert_eq!(Operator::StringEquals.category(), OperatorType::String);
-        assert_eq!(Operator::NumericEquals.category(), OperatorType::Numeric);
-        assert_eq!(Operator::DateEquals.category(), OperatorType::Date);
-        assert_eq!(Operator::Bool.category(), OperatorType::Boolean);
-        assert_eq!(Operator::BinaryEquals.category(), OperatorType::Binary);
-        assert_eq!(Operator::IpAddress.category(), OperatorType::IpAddress);
-        assert_eq!(Operator::ArnEquals.category(), OperatorType::Arn);
-        assert_eq!(Operator::Null.category(), OperatorType::Null);
+        assert_eq!(IAMOperator::StringEquals.category(), OperatorType::String);
+        assert_eq!(IAMOperator::NumericEquals.category(), OperatorType::Numeric);
+        assert_eq!(IAMOperator::DateEquals.category(), OperatorType::Date);
+        assert_eq!(IAMOperator::Bool.category(), OperatorType::Boolean);
+        assert_eq!(IAMOperator::BinaryEquals.category(), OperatorType::Binary);
+        assert_eq!(IAMOperator::IpAddress.category(), OperatorType::IpAddress);
+        assert_eq!(IAMOperator::ArnEquals.category(), OperatorType::Arn);
+        assert_eq!(IAMOperator::Null.category(), OperatorType::Null);
     }
 
     #[test]
     fn test_operator_string_conversion() {
-        assert_eq!(Operator::StringEquals.as_str(), "StringEquals");
+        assert_eq!(IAMOperator::StringEquals.as_str(), "StringEquals");
         assert_eq!(
-            Operator::ForAllValuesStringEquals.as_str(),
+            IAMOperator::ForAllValuesStringEquals.as_str(),
             "ForAllValues:StringEquals"
         );
         assert_eq!(
-            Operator::StringEqualsIfExists.as_str(),
+            IAMOperator::StringEqualsIfExists.as_str(),
             "StringEqualsIfExists"
         );
     }
@@ -720,18 +726,18 @@ mod tests {
     #[test]
     fn test_operator_from_str() {
         assert_eq!(
-            "StringEquals".parse::<Operator>().unwrap(),
-            Operator::StringEquals
+            "StringEquals".parse::<IAMOperator>().unwrap(),
+            IAMOperator::StringEquals
         );
         assert_eq!(
-            "ForAllValues:StringEquals".parse::<Operator>().unwrap(),
-            Operator::ForAllValuesStringEquals
+            "ForAllValues:StringEquals".parse::<IAMOperator>().unwrap(),
+            IAMOperator::ForAllValuesStringEquals
         );
         assert_eq!(
-            "StringEqualsIfExists".parse::<Operator>().unwrap(),
-            Operator::StringEqualsIfExists
+            "StringEqualsIfExists".parse::<IAMOperator>().unwrap(),
+            IAMOperator::StringEqualsIfExists
         );
 
-        assert!("InvalidOperator".parse::<Operator>().is_err());
+        assert!("InvalidOperator".parse::<IAMOperator>().is_err());
     }
 }
