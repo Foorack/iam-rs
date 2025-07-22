@@ -13,7 +13,7 @@ license = "MIT"
 name = "iam-rs"
 readme = "README.md"
 repository = "https://github.com/foorack/iam-rs"
-version = "0.0.16"
+version = "0.0.17"
 
 [dependencies]
 serde = { version = "1.0.219", features = ["derive"], default-features = false }
