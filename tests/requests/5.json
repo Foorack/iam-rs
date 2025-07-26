@@ -1,0 +1,28 @@
+{
+  "result": "Allow",
+  "request": {
+    "Principal": {
+      "AWS": "arn:aws:iam::123456789012:user/martha"
+    },
+    "Action": "s3:CreateBucket",
+    "Resource": "arn:aws:s3:::amzn-s3-demo-bucket1",
+    "Context": {
+      "resalt:EpochTime": "2000"
+    }
+  },
+  "policy": {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": "s3:CreateBucket",
+        "Resource": "*",
+        "Condition": {
+          "NumericGreaterThan": {
+            "resalt:EpochTime": "1000"
+          }
+        }
+      }
+    ]
+  }
+}

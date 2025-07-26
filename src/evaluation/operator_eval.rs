@@ -253,9 +253,15 @@ fn ev_numeric(
     predicate: &Predicate<f64>,
     if_exists: bool,
 ) -> Result<bool, EvaluationError> {
-    let value = value.as_f64().ok_or_else(|| {
-        EvaluationError::ConditionError("Numeric condition value must be a number".to_string())
-    })?;
+    let value = value
+        .to_string()
+        .trim_matches('"') // Remove quotes if present
+        .parse::<f64>()
+        .map_err(|err| {
+            EvaluationError::ConditionError(format!(
+                "Numeric condition value must be a number, was {value}. ParseFloatError: {err}",
+            ))
+        })?;
 
     let context_value = match ctx.get(key) {
         Some(ContextValue::Number(n)) => *n,
@@ -297,7 +303,9 @@ fn ev_date(
     if_exists: bool,
 ) -> Result<bool, EvaluationError> {
     let value = value.as_str().ok_or_else(|| {
-        EvaluationError::ConditionError("Date condition value must be a string".to_string())
+        EvaluationError::ConditionError(format!(
+            "Date condition value must be a string, got {value}"
+        ))
     })?;
     let value: DateTime<Utc> = parse_date(value)
         .map_err(|_| EvaluationError::ConditionError("Invalid date condition value".to_string()))?;
@@ -328,9 +336,15 @@ fn ev_bool(
     if_exists: bool,
     set_operator: SetOperatorType,
 ) -> Result<bool, EvaluationError> {
-    let value = value.as_bool().ok_or_else(|| {
-        EvaluationError::ConditionError("Boolean condition value must be a boolean".to_string())
-    })?;
+    let value = value
+        .to_string()
+        .trim_matches('"') // Remove quotes if present
+        .parse::<bool>()
+        .map_err(|err| {
+            EvaluationError::ConditionError(format!(
+                "Boolean condition value must be a boolean, got {value}. Error: {err}",
+            ))
+        })?;
 
     match ctx.get(key) {
         Some(ContextValue::Boolean(b)) => Ok(predicate(*b, value)),
@@ -819,7 +833,8 @@ mod tests {
         ]);
 
         let result =
-            evaluate_condition(&ctx, &IAMOperator::StringEquals, "string_key", &array_value).unwrap();
+            evaluate_condition(&ctx, &IAMOperator::StringEquals, "string_key", &array_value)
+                .unwrap();
         assert!(result); // Should return true because one of the values matches
     }
 
