@@ -211,15 +211,9 @@ impl PolicyEvaluator {
                     match statement.effect {
                         IAMEffect::Allow => {
                             has_explicit_allow = true;
-                            if self.options.collect_match_details {
-                                matched_statements.push(statement_result);
-                            }
                         }
                         IAMEffect::Deny => {
                             has_explicit_deny = true;
-                            if self.options.collect_match_details {
-                                matched_statements.push(statement_result);
-                            }
                             if self.options.stop_on_explicit_deny {
                                 return Ok(EvaluationResult {
                                     decision: Decision::Deny,
