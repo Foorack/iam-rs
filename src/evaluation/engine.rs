@@ -65,7 +65,7 @@ impl std::fmt::Display for EvaluationError {
 impl std::error::Error for EvaluationError {}
 
 /// Evaluation result with decision and metadata
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct EvaluationResult {
     /// The final decision
@@ -77,7 +77,7 @@ pub struct EvaluationResult {
 }
 
 /// Information about a statement that matched during evaluation
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct StatementMatch {
     /// Statement ID if available
