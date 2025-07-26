@@ -8,16 +8,22 @@ use std::collections::HashMap;
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum ContextValue {
     /// String value (e.g., user ID, IP address)
+    #[cfg_attr(feature = "utoipa", schema(title = "String"))]
     String(String),
     /// Boolean value (e.g., MFA present)
+    #[cfg_attr(feature = "utoipa", schema(title = "Boolean"))]
     Boolean(bool),
     /// Numeric value (e.g., MFA age in seconds, epoch time)
+    #[cfg_attr(feature = "utoipa", schema(title = "Number"))]
     Number(f64),
     /// `DateTime` value (e.g., request time)
+    #[cfg_attr(feature = "utoipa", schema(title = "DateTime"))]
     DateTime(DateTime<Utc>),
     /// List of strings (e.g., list of ARNs)
+    #[cfg_attr(feature = "utoipa", schema(title = "StringList"))]
     StringList(Vec<String>),
     /// List of booleans
+    #[cfg_attr(feature = "utoipa", schema(title = "BooleanList"))]
     BooleanList(Vec<bool>),
 }
 
