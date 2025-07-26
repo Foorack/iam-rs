@@ -2,6 +2,14 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+struct StringList(Vec<String>);
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+struct BooleanList(Vec<bool>);
+
 /// Represents different types of context values
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -20,10 +28,10 @@ pub enum ContextValue {
     #[cfg_attr(feature = "utoipa", schema(title = "DateTime"))]
     DateTime(DateTime<Utc>),
     /// List of strings (e.g., list of ARNs)
-    #[cfg_attr(feature = "utoipa", schema(title = "StringList"))]
+    #[cfg_attr(feature = "utoipa", schema(title = "StringList", value_type = StringList))]
     StringList(Vec<String>),
     /// List of booleans
-    #[cfg_attr(feature = "utoipa", schema(title = "BooleanList"))]
+    #[cfg_attr(feature = "utoipa", schema(title = "BooleanList", value_type = BooleanList))]
     BooleanList(Vec<bool>),
 }
 
