@@ -110,6 +110,8 @@ pub struct EvaluationOptions {
     pub collect_match_details: bool,
     /// Maximum number of statements to evaluate (for safety)
     pub max_statements: usize,
+    /// Whether to ignore resource constraints
+    pub ignore_resource_constraints: bool,
 }
 
 impl Default for EvaluationOptions {
@@ -118,6 +120,7 @@ impl Default for EvaluationOptions {
             stop_on_explicit_deny: true,
             collect_match_details: false,
             max_statements: 1000,
+            ignore_resource_constraints: false,
         }
     }
 }
@@ -179,7 +182,7 @@ impl PolicyEvaluator {
                 "Action cannot be empty".to_string(),
             ));
         }
-        if !request.resource.is_valid() {
+        if !request.resource.is_valid() && !self.options.ignore_resource_constraints {
             return Err(EvaluationError::InvalidRequest(
                 "Invalid resource ARN".to_string(),
             ));
@@ -200,7 +203,7 @@ impl PolicyEvaluator {
                     ));
                 }
 
-                let statement_result = Self::evaluate_statement(statement, request)?;
+                let statement_result = Self::evaluate_statement(statement, request, &self.options)?;
 
                 if self.options.collect_match_details {
                     matched_statements.push(statement_result.clone());
@@ -248,10 +251,11 @@ impl PolicyEvaluator {
     fn evaluate_statement(
         statement: &IAMStatement,
         request: &IAMRequest,
+        options: &EvaluationOptions,
     ) -> Result<StatementMatch, EvaluationError> {
         // Check if principal matches (for resource-based policies)
-        if let Some(ref principal) = statement.principal {
-            if !Self::principal_matches(principal, &request.principal)? {
+        if let Some(ref principal) = statement.principal
+            && !Self::principal_matches(principal, &request.principal)? {
                 return Ok(StatementMatch {
                     sid: statement.sid.clone(),
                     effect: statement.effect,
@@ -259,10 +263,9 @@ impl PolicyEvaluator {
                     reason: "Principal does not match".to_string(),
                 });
             }
-        }
 
-        if let Some(ref not_principal) = statement.not_principal {
-            if Self::principal_matches(not_principal, &request.principal)? {
+        if let Some(ref not_principal) = statement.not_principal
+            && Self::principal_matches(not_principal, &request.principal)? {
                 return Ok(StatementMatch {
                     sid: statement.sid.clone(),
                     effect: statement.effect,
@@ -270,7 +273,6 @@ impl PolicyEvaluator {
                     reason: "Principal matches NotPrincipal exclusion".to_string(),
                 });
             }
-        }
 
         // Check if action matches
         let action_matches = if let Some(ref action) = statement.action {
@@ -296,7 +298,9 @@ impl PolicyEvaluator {
         }
 
         // Check if resource matches
-        let resource_matches = if let Some(ref resource) = statement.resource {
+        let resource_matches = if options.ignore_resource_constraints {
+            true
+        } else if let Some(ref resource) = statement.resource {
             Self::resource_matches(resource, &request.resource, &request.context)?
         } else if let Some(ref not_resource) = statement.not_resource {
             !Self::resource_matches(not_resource, &request.resource, &request.context)?
@@ -319,8 +323,8 @@ impl PolicyEvaluator {
         }
 
         // Check conditions
-        if let Some(ref condition_block) = statement.condition {
-            if !Self::evaluate_conditions(condition_block, &request.context)? {
+        if let Some(ref condition_block) = statement.condition
+            && !Self::evaluate_conditions(condition_block, &request.context)? {
                 return Ok(StatementMatch {
                     sid: statement.sid.clone(),
                     effect: statement.effect,
@@ -328,7 +332,6 @@ impl PolicyEvaluator {
                     reason: "Conditions not satisfied".to_string(),
                 });
             }
-        }
 
         // All checks passed
         Ok(StatementMatch {

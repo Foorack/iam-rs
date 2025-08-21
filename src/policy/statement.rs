@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use super::ConditionBlock;
 use crate::{
-    core::{IAMAction, IAMEffect, IAMOperator, Principal, IAMResource},
+    core::{IAMAction, IAMEffect, IAMOperator, IAMResource, Principal},
     policy::condition::ConditionValue,
     validation::{Validate, ValidationContext, ValidationError, ValidationResult, helpers},
 };
@@ -438,14 +438,14 @@ impl Validate for IAMStatement {
             }
 
             // Validate Sid format if present
-            if let Some(ref sid) = self.sid {
-                if !sid.chars().all(|c| c.is_ascii_alphanumeric()) {
-                    results.push(Err(ValidationError::InvalidValue {
-                        field: "Sid".to_string(),
-                        value: sid.clone(),
-                        reason: "Sid must contain only ASCII alphanumeric characters".to_string(),
-                    }));
-                }
+            if let Some(ref sid) = self.sid
+                && !sid.chars().all(|c| c.is_ascii_alphanumeric())
+            {
+                results.push(Err(ValidationError::InvalidValue {
+                    field: "Sid".to_string(),
+                    value: sid.clone(),
+                    reason: "Sid must contain only ASCII alphanumeric characters".to_string(),
+                }));
             }
 
             helpers::collect_errors(results)
@@ -552,7 +552,8 @@ mod tests {
         let condition_block = statement.condition.as_ref().unwrap();
 
         assert!(
-            condition_block.has_condition(&IAMOperator::StringEquals, "aws:PrincipalTag/department")
+            condition_block
+                .has_condition(&IAMOperator::StringEquals, "aws:PrincipalTag/department")
         );
         assert!(condition_block.has_condition(&IAMOperator::ArnLike, "aws:PrincipalArn"));
     }

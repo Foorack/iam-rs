@@ -17,7 +17,7 @@ use std::collections::HashSet;
 ///
 /// Some JSON policy elements are mutually exclusive.
 /// This means that you cannot create a policy that uses both.
-/// For example, you cannot use both Action and NotAction in the same policy statement.
+/// For example, you cannot use both Action and `NotAction` in the same policy statement.
 /// Other pairs that are mutually exclusive include Principal/NotPrincipal and Resource/NotResource.
 ///
 /// The details of what goes into a policy vary for each service, depending on what actions the service makes available, what types of resources it contains, and so on.
@@ -25,7 +25,7 @@ use std::collections::HashSet;
 ///
 /// When you create or edit a JSON policy, `iam-rw` can perform policy validation to help you create an effective policy.
 ///
-/// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements.html
+/// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements.html>
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
@@ -35,7 +35,7 @@ pub struct IAMPolicy {
     /// To use all of the available policy features, include the following Version element outside the Statement element in all policies.
     /// `Version` is a required element in all IAM policies and must always be set to at least `2012-10-17`.
     ///
-    /// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_version.html
+    /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_version.html>
     #[serde(rename = "Version")]
     pub version: IAMVersion,
 
@@ -46,7 +46,7 @@ pub struct IAMPolicy {
     ///
     /// Recommendation is to use a UUID (GUID) for the value, or incorporate a UUID as part of the ID to ensure uniqueness.
     ///
-    /// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_id.html
+    /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_id.html>
     #[serde(rename = "Id", skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
 
@@ -56,7 +56,7 @@ pub struct IAMPolicy {
     /// Each individual statement block must be enclosed in curly braces { }.
     /// For multiple statements, the array must be enclosed in square brackets [ ].
     ///
-    /// https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_statement.html
+    /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_statement.html>
     #[serde(rename = "Statement")]
     #[serde_as(as = "OneOrMany<_, PreferOne>")]
     #[cfg_attr(
@@ -191,14 +191,14 @@ impl Validate for IAMPolicy {
             }
 
             // Validate policy ID format if present
-            if let Some(ref id) = self.id {
-                if id.is_empty() {
-                    results.push(Err(ValidationError::InvalidValue {
-                        field: "Id".to_string(),
-                        value: id.clone(),
-                        reason: "Policy ID cannot be empty".to_string(),
-                    }));
-                }
+            if let Some(ref id) = self.id
+                && id.is_empty()
+            {
+                results.push(Err(ValidationError::InvalidValue {
+                    field: "Id".to_string(),
+                    value: id.clone(),
+                    reason: "Policy ID cannot be empty".to_string(),
+                }));
             }
 
             helpers::collect_errors(results)

@@ -1,5 +1,5 @@
 use iam_rs::{
-    IAMAction, Arn, ConditionValue, Context, ContextValue, Decision, EvaluationOptions, IAMEffect,
+    Arn, ConditionValue, Context, ContextValue, Decision, EvaluationOptions, IAMAction, IAMEffect,
     IAMOperator, IAMPolicy, IAMRequest, IAMResource, IAMStatement, PolicyEvaluator, Principal,
     PrincipalId, evaluate_policy,
 };
@@ -236,6 +236,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             collect_match_details: true,
             stop_on_explicit_deny: false,
             max_statements: 100,
+            ignore_resource_constraints: false,
         });
 
     let detailed_result = detailed_evaluator.evaluate(&request)?;
