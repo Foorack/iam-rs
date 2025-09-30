@@ -255,24 +255,26 @@ impl PolicyEvaluator {
     ) -> Result<StatementMatch, EvaluationError> {
         // Check if principal matches (for resource-based policies)
         if let Some(ref principal) = statement.principal
-            && !Self::principal_matches(principal, &request.principal)? {
-                return Ok(StatementMatch {
-                    sid: statement.sid.clone(),
-                    effect: statement.effect,
-                    conditions_satisfied: false,
-                    reason: "Principal does not match".to_string(),
-                });
-            }
+            && !Self::principal_matches(principal, &request.principal)?
+        {
+            return Ok(StatementMatch {
+                sid: statement.sid.clone(),
+                effect: statement.effect,
+                conditions_satisfied: false,
+                reason: "Principal does not match".to_string(),
+            });
+        }
 
         if let Some(ref not_principal) = statement.not_principal
-            && Self::principal_matches(not_principal, &request.principal)? {
-                return Ok(StatementMatch {
-                    sid: statement.sid.clone(),
-                    effect: statement.effect,
-                    conditions_satisfied: false,
-                    reason: "Principal matches NotPrincipal exclusion".to_string(),
-                });
-            }
+            && Self::principal_matches(not_principal, &request.principal)?
+        {
+            return Ok(StatementMatch {
+                sid: statement.sid.clone(),
+                effect: statement.effect,
+                conditions_satisfied: false,
+                reason: "Principal matches NotPrincipal exclusion".to_string(),
+            });
+        }
 
         // Check if action matches
         let action_matches = if let Some(ref action) = statement.action {
@@ -324,14 +326,15 @@ impl PolicyEvaluator {
 
         // Check conditions
         if let Some(ref condition_block) = statement.condition
-            && !Self::evaluate_conditions(condition_block, &request.context)? {
-                return Ok(StatementMatch {
-                    sid: statement.sid.clone(),
-                    effect: statement.effect,
-                    conditions_satisfied: false,
-                    reason: "Conditions not satisfied".to_string(),
-                });
-            }
+            && !Self::evaluate_conditions(condition_block, &request.context)?
+        {
+            return Ok(StatementMatch {
+                sid: statement.sid.clone(),
+                effect: statement.effect,
+                conditions_satisfied: false,
+                reason: "Conditions not satisfied".to_string(),
+            });
+        }
 
         // All checks passed
         Ok(StatementMatch {
@@ -347,7 +350,7 @@ impl PolicyEvaluator {
         principal: &Principal,
         request_principal: &Principal,
     ) -> Result<bool, EvaluationError> {
-        if request_principal.is_single() {
+        if !request_principal.is_single() {
             return Err(EvaluationError::InvalidRequest(
                 "Request principal must be a single entity".to_string(),
             ));

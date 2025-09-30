@@ -4,10 +4,12 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+#[allow(dead_code)] // rust 1.90.0 says it's unused
 struct StringList(Vec<String>);
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
+#[allow(dead_code)] // rust 1.90.0 says it's unused
 struct BooleanList(Vec<bool>);
 
 /// Represents different types of context values
