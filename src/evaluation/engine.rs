@@ -11,7 +11,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 
 /// Result of policy evaluation
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum Decision {
     /// Access is explicitly allowed
