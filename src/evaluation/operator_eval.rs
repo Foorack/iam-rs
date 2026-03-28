@@ -58,15 +58,15 @@ pub(super) fn evaluate_condition(
     let set_operator = SetOperatorType::from_operator(operator);
 
     let mut predicate_str: Predicate<String> =
-        Box::new(|_a, _b| panic!("Logic error, predicate not set before use"));
+        Box::new(|_a, _b| unreachable!("predicate_str invoked for non-string operator category"));
     let mut predicate_num: Predicate<f64> =
-        Box::new(|_a, _b| panic!("Logic error, predicate not set before use"));
+        Box::new(|_a, _b| unreachable!("predicate_num invoked for non-numeric operator category"));
     let mut predicate_date: DatePredicate<DateTime<Utc>> =
-        Box::new(|_a, _b| panic!("Logic error, predicate not set before use"));
+        Box::new(|_a, _b| unreachable!("predicate_date invoked for non-date operator category"));
     let mut predicate_bool: Predicate<bool> =
-        Box::new(|_a, _b| panic!("Logic error, predicate not set before use"));
+        Box::new(|_a, _b| unreachable!("predicate_bool invoked for non-boolean operator category"));
     let mut predicate_ip: Predicate<IpNet> =
-        Box::new(|_a, _b| panic!("Logic error, predicate not set before use"));
+        Box::new(|_a, _b| unreachable!("predicate_ip invoked for non-IP operator category"));
 
     match operator {
         // String conditions
