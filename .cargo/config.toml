@@ -1,0 +1,4 @@
+[alias]
+lint = "clippy --workspace --all-features --tests --examples --bins -- -Dclippy::todo"
+l = "lint"
+t = "test --workspace --all-features"
