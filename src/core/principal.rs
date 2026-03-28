@@ -60,11 +60,9 @@ impl Principal {
 }
 
 fn validate_domain(domain: &str) -> ValidationResult {
-    // Domain, for now simple check if it contains dots, not uppercase, at ends with letter, and not empty
-    if !domain.contains('.')
-        || domain.to_lowercase() != domain
+    if domain.is_empty()
+        || !domain.contains('.')
         || !domain.ends_with(|c: char| c.is_alphabetic())
-        || domain.is_empty()
     {
         return Err(ValidationError::InvalidPrincipal {
             principal: domain.to_string(),
