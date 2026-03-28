@@ -98,12 +98,6 @@ impl ConditionValue {
             }
             serde_json::Value::String(s) => Ok(ConditionValue::String(s)),
             serde_json::Value::Array(arr) => {
-                const MAX_CONDITION_LIST_SIZE: usize = 1024;
-                if arr.len() > MAX_CONDITION_LIST_SIZE {
-                    return Err(format!(
-                        "Condition value array exceeds maximum allowed size of {MAX_CONDITION_LIST_SIZE}"
-                    ));
-                }
                 let mut strings = Vec::new();
                 for item in arr {
                     if let serde_json::Value::String(s) = item {
