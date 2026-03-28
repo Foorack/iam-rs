@@ -571,7 +571,7 @@ mod tests {
             ));
 
         let json = serde_json::to_string_pretty(&block).unwrap();
-        println!("Current serialization:\n{}", json);
+        println!("Current serialization:\n{json}");
 
         // Test that it can be deserialized back
         let deserialized: ConditionBlock = serde_json::from_str(&json).unwrap();

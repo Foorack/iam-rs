@@ -2,10 +2,12 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 struct StringList(Vec<String>);
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 struct BooleanList(Vec<bool>);
@@ -194,7 +196,7 @@ mod tests {
             .with_number("key3", 42.0);
 
         assert_eq!(context.get("key1").unwrap().as_string().unwrap(), "value1");
-        assert_eq!(context.get("key2").unwrap().as_boolean().unwrap(), true);
+        assert!(context.get("key2").unwrap().as_boolean().unwrap());
         assert_eq!(context.get("key3").unwrap().as_number().unwrap(), 42.0);
     }
 }

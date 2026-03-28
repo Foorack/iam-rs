@@ -1,0 +1,783 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "iam-rs",
+    "description": "Complete Rust library for parsing, validating, and evaluating IAM policies. Provider-agnostic authorization engine with full AWS IAM compatibility.",
+    "contact": {
+      "name": "Foorack",
+      "email": "max@foorack.com"
+    },
+    "license": {
+      "name": "MIT",
+      "identifier": "MIT"
+    },
+    "version": "0.0.23"
+  },
+  "paths": {},
+  "components": {
+    "schemas": {
+      "Arn": {
+        "type": "object",
+        "description": "Represents an Amazon Resource Name (ARN)\n\nARNs uniquely identify AWS resources. The general format is:\n`arn:partition:service:region:account-id:resource-type/resource-id`\n\nSome services use slightly different formats:\n- `arn:partition:service:region:account-id:resource-type:resource-id`\n- `arn:partition:service:region:account-id:resource-type/resource-id/sub-resource`",
+        "required": [
+          "partition",
+          "service",
+          "region",
+          "account_id",
+          "resource"
+        ],
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "description": "The account ID (12-digit number, can be empty for some services)"
+          },
+          "partition": {
+            "type": "string",
+            "description": "The partition (e.g., \"aws\", \"aws-cn\", \"aws-us-gov\")"
+          },
+          "region": {
+            "type": "string",
+            "description": "The region (e.g., \"us-east-1\", can be empty for global services)"
+          },
+          "resource": {
+            "type": "string",
+            "description": "The resource specification (format varies by service)"
+          },
+          "service": {
+            "type": "string",
+            "description": "The service namespace (e.g., \"s3\", \"ec2\", \"iam\")"
+          }
+        }
+      },
+      "ArnError": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "ARN doesn't start with \"arn:\"",
+            "enum": ["InvalidPrefix"]
+          },
+          {
+            "type": "string",
+            "description": "ARN has incorrect number of components",
+            "enum": ["InvalidFormat"]
+          },
+          {
+            "type": "object",
+            "description": "Partition is empty or invalid",
+            "required": ["InvalidPartition"],
+            "properties": {
+              "InvalidPartition": {
+                "type": "string",
+                "description": "Partition is empty or invalid"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Service is empty or invalid",
+            "required": ["InvalidService"],
+            "properties": {
+              "InvalidService": {
+                "type": "string",
+                "description": "Service is empty or invalid"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Account ID format is invalid (should be 12 digits or empty)",
+            "required": ["InvalidAccountId"],
+            "properties": {
+              "InvalidAccountId": {
+                "type": "string",
+                "description": "Account ID format is invalid (should be 12 digits or empty)"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Resource format is invalid",
+            "required": ["InvalidResource"],
+            "properties": {
+              "InvalidResource": {
+                "type": "string",
+                "description": "Resource format is invalid"
+              }
+            }
+          }
+        ],
+        "description": "Error types for ARN parsing and validation"
+      },
+      "BooleanList": {
+        "type": "array",
+        "items": {
+          "type": "boolean"
+        }
+      },
+      "Condition": {
+        "type": "object",
+        "description": "Represents a single condition in an IAM policy",
+        "required": ["operator", "key", "value"],
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "The condition key (e.g., \"aws:username\", \"s3:prefix\")"
+          },
+          "operator": {
+            "$ref": "#/components/schemas/IAMOperator",
+            "description": "The condition operator (e.g., `StringEquals`, `DateGreaterThan`)"
+          },
+          "value": {
+            "$ref": "#/components/schemas/ConditionValue",
+            "description": "The condition value(s)"
+          }
+        }
+      },
+      "ConditionBlock": {
+        "type": "object",
+        "description": "Represents a condition block in an IAM policy\nThis is a collection of conditions grouped by operator",
+        "additionalProperties": {
+          "type": "object",
+          "description": "Map of operators to their key-value pairs",
+          "additionalProperties": {
+            "$ref": "#/components/schemas/ConditionValue"
+          },
+          "propertyNames": {
+            "type": "string"
+          }
+        }
+      },
+      "ConditionValue": {
+        "oneOf": [
+          {
+            "type": "boolean",
+            "description": "A boolean value (e.g., `true`, `false`)"
+          },
+          {
+            "type": "integer",
+            "format": "int64",
+            "description": "A numeric value (e.g., `42`, `3.14`)"
+          },
+          {
+            "type": "string",
+            "description": "A single string value (e.g., `\"us-east-1\"`)"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Multiple string values (e.g., `[\"us-east-1\", \"us-west-2\"]`)"
+          }
+        ],
+        "description": "Represents a condition value that can be a boolean, number, string, or list of strings"
+      },
+      "Context": {
+        "type": "object",
+        "description": "Context for IAM evaluation containing key-value pairs",
+        "required": ["data"],
+        "properties": {
+          "data": {
+            "type": "object",
+            "description": "Context keys and their values",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ContextValue"
+            },
+            "propertyNames": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "ContextValue": {
+        "oneOf": [
+          {
+            "type": "string",
+            "title": "String",
+            "description": "String value (e.g., user ID, IP address)"
+          },
+          {
+            "type": "boolean",
+            "title": "Boolean",
+            "description": "Boolean value (e.g., MFA present)"
+          },
+          {
+            "type": "number",
+            "title": "Number",
+            "format": "double",
+            "description": "Numeric value (e.g., MFA age in seconds, epoch time)"
+          },
+          {
+            "type": "string",
+            "title": "DateTime",
+            "format": "date-time",
+            "description": "`DateTime` value (e.g., request time)"
+          },
+          {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/StringList",
+                "description": "List of strings (e.g., list of ARNs)"
+              }
+            ],
+            "title": "StringList"
+          },
+          {
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/BooleanList",
+                "description": "List of booleans"
+              }
+            ],
+            "title": "BooleanList"
+          }
+        ],
+        "description": "Represents different types of context values"
+      },
+      "Decision": {
+        "type": "string",
+        "description": "Result of policy evaluation",
+        "enum": ["Allow", "Deny", "NotApplicable"]
+      },
+      "EvaluationError": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "Invalid request context",
+            "required": ["InvalidRequest"],
+            "properties": {
+              "InvalidRequest": {
+                "type": "string",
+                "description": "Invalid request context"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Policy parsing or validation error",
+            "required": ["InvalidPolicy"],
+            "properties": {
+              "InvalidPolicy": {
+                "type": "string",
+                "description": "Policy parsing or validation error"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "ARN format error during evaluation",
+            "required": ["InvalidArn"],
+            "properties": {
+              "InvalidArn": {
+                "type": "string",
+                "description": "ARN format error during evaluation"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Invalid variable reference",
+            "required": ["InvalidVariable"],
+            "properties": {
+              "InvalidVariable": {
+                "type": "string",
+                "description": "Invalid variable reference"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Condition evaluation error",
+            "required": ["ConditionError"],
+            "properties": {
+              "ConditionError": {
+                "type": "string",
+                "description": "Condition evaluation error"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Internal evaluation error",
+            "required": ["InternalError"],
+            "properties": {
+              "InternalError": {
+                "type": "string",
+                "description": "Internal evaluation error"
+              }
+            }
+          }
+        ],
+        "description": "Error types for policy evaluation"
+      },
+      "EvaluationOptions": {
+        "type": "object",
+        "description": "Options for policy evaluation",
+        "required": [
+          "stop_on_explicit_deny",
+          "collect_match_details",
+          "max_statements",
+          "ignore_resource_constraints"
+        ],
+        "properties": {
+          "collect_match_details": {
+            "type": "boolean",
+            "description": "Whether to collect detailed match information"
+          },
+          "ignore_resource_constraints": {
+            "type": "boolean",
+            "description": "Whether to ignore resource constraints"
+          },
+          "max_statements": {
+            "type": "integer",
+            "description": "Maximum number of statements to evaluate (for safety)",
+            "minimum": 0
+          },
+          "stop_on_explicit_deny": {
+            "type": "boolean",
+            "description": "Whether to continue evaluation after finding an explicit deny"
+          }
+        }
+      },
+      "EvaluationResult": {
+        "type": "object",
+        "description": "Evaluation result with decision and metadata",
+        "required": ["decision", "matched_statements", "context"],
+        "properties": {
+          "context": {
+            "$ref": "#/components/schemas/IAMRequest",
+            "description": "Evaluation context used"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/Decision",
+            "description": "The final decision"
+          },
+          "matched_statements": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StatementMatch"
+            },
+            "description": "Statements that matched (for debugging/auditing)"
+          }
+        }
+      },
+      "IAMAction": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "A single action (e.g., \"s3:GetObject\")"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Multiple actions"
+          }
+        ],
+        "description": "Represents an action in an IAM policy"
+      },
+      "IAMEffect": {
+        "type": "string",
+        "description": "Represents the effect of an IAM statement\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_effect.html>",
+        "enum": ["Allow", "Deny"]
+      },
+      "IAMOperator": {
+        "type": "string",
+        "description": "Represents the different types of condition operators available in IAM policies",
+        "enum": [
+          "StringEquals",
+          "StringNotEquals",
+          "StringEqualsIgnoreCase",
+          "StringNotEqualsIgnoreCase",
+          "StringLike",
+          "StringNotLike",
+          "ForAllValues:StringEquals",
+          "ForAllValues:StringEqualsIgnoreCase",
+          "ForAnyValue:StringEquals",
+          "ForAnyValue:StringEqualsIgnoreCase",
+          "ForAllValues:StringNotEquals",
+          "ForAllValues:StringNotEqualsIgnoreCase",
+          "ForAnyValue:StringNotEquals",
+          "ForAnyValue:StringNotEqualsIgnoreCase",
+          "ForAllValues:StringLike",
+          "ForAnyValue:StringLike",
+          "ForAllValues:StringNotLike",
+          "ForAnyValue:StringNotLike",
+          "NumericEquals",
+          "NumericNotEquals",
+          "NumericLessThan",
+          "NumericLessThanEquals",
+          "NumericGreaterThan",
+          "NumericGreaterThanEquals",
+          "DateEquals",
+          "DateNotEquals",
+          "DateLessThan",
+          "DateLessThanEquals",
+          "DateGreaterThan",
+          "DateGreaterThanEquals",
+          "Bool",
+          "ForAllValues:Bool",
+          "ForAnyValue:Bool",
+          "BinaryEquals",
+          "IpAddress",
+          "NotIpAddress",
+          "ArnEquals",
+          "ArnLike",
+          "ArnNotEquals",
+          "ArnNotLike",
+          "ForAllValues:ArnEquals",
+          "ForAllValues:ArnLike",
+          "ForAnyValue:ArnEquals",
+          "ForAnyValue:ArnLike",
+          "ForAllValues:ArnNotEquals",
+          "ForAllValues:ArnNotLike",
+          "ForAnyValue:ArnNotEquals",
+          "ForAnyValue:ArnNotLike",
+          "Null",
+          "StringEqualsIfExists",
+          "StringNotEqualsIfExists",
+          "StringEqualsIgnoreCaseIfExists",
+          "StringNotEqualsIgnoreCaseIfExists",
+          "StringLikeIfExists",
+          "StringNotLikeIfExists",
+          "NumericEqualsIfExists",
+          "NumericNotEqualsIfExists",
+          "NumericLessThanIfExists",
+          "NumericLessThanEqualsIfExists",
+          "NumericGreaterThanIfExists",
+          "NumericGreaterThanEqualsIfExists",
+          "DateEqualsIfExists",
+          "DateNotEqualsIfExists",
+          "DateLessThanIfExists",
+          "DateLessThanEqualsIfExists",
+          "DateGreaterThanIfExists",
+          "DateGreaterThanEqualsIfExists",
+          "BoolIfExists",
+          "BinaryEqualsIfExists",
+          "IpAddressIfExists",
+          "NotIpAddressIfExists",
+          "ArnEqualsIfExists",
+          "ArnLikeIfExists",
+          "ArnNotEqualsIfExists",
+          "ArnNotLikeIfExists"
+        ]
+      },
+      "IAMPolicy": {
+        "type": "object",
+        "description": "JSON policy documents are made up of elements.\nThe elements are listed here in the general order you use them in a policy.\nThe order of the elements doesn't matter—for example, the Resource element can come before the Action element.\nYou're not required to specify any Condition elements in the policy.\nTo learn more about the general structure and purpose of a JSON policy document, see Overview of JSON policies.\n\nSome JSON policy elements are mutually exclusive.\nThis means that you cannot create a policy that uses both.\nFor example, you cannot use both Action and `NotAction` in the same policy statement.\nOther pairs that are mutually exclusive include Principal/NotPrincipal and Resource/NotResource.\n\nThe details of what goes into a policy vary for each service, depending on what actions the service makes available, what types of resources it contains, and so on.\nWhen you're writing policies for a specific service, it's helpful to see examples of policies for that service.\n\nWhen you create or edit a JSON policy, `iam-rw` can perform policy validation to help you create an effective policy.\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements.html>",
+        "required": ["Version", "Statement"],
+        "properties": {
+          "Id": {
+            "type": ["string", "null"],
+            "description": "The `Id` element specifies an optional identifier for the policy.\n\nThe ID is used differently in different services.\nID is allowed in resource-based policies, but not in identity-based policies.\n\nRecommendation is to use a UUID (GUID) for the value, or incorporate a UUID as part of the ID to ensure uniqueness.\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_id.html>"
+          },
+          "Statement": {
+            "$ref": "#/components/schemas/IAMStatements",
+            "description": "The Statement element is the main element for a policy.\n\nThe Statement element can contain a single statement or an array of individual statements.\nEach individual statement block must be enclosed in curly braces { }.\nFor multiple statements, the array must be enclosed in square brackets [ ].\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_statement.html>"
+          },
+          "Version": {
+            "$ref": "#/components/schemas/IAMVersion",
+            "description": "The `Version` policy element specifies the language syntax rules that are to be used to process a policy.\n\nTo use all of the available policy features, include the following Version element outside the Statement element in all policies.\n`Version` is a required element in all IAM policies and must always be set to at least `2012-10-17`.\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_version.html>"
+          }
+        }
+      },
+      "IAMRequest": {
+        "type": "object",
+        "description": "Core IAM request containing principal, action, and resource\n\n## Understanding the PARC model\n\nThe PARC model represents the request context based on the four JSON elements in the policy language:\n\n* Principal – The entity making the request.\n  A principal represents a human user or programmatic workload that can be authenticated and\n  then authorized to perform actions in AWS accounts.\n* Action – The operation being performed. Often the action will map to an API action.\n* Resource – The AWS resource on which the action is being performed.\n* Condition – Additional constraints that must be met for the request to be allowed.\n\nThe following shows an example of how the PARC model might represent a request context:\n\n```text\nPrincipal: AIDA123456789EXAMPLE\nAction: s3:CreateBucket\nResource: arn:aws:s3:::amzn-s3-demo-bucket1\nContext:\n- aws:UserId=AIDA123456789EXAMPLE:BobsSession\n- aws:PrincipalAccount=123456789012\n- aws:PrincipalOrgId=o-example\n- aws:PrincipalARN=arn:aws:iam::AIDA123456789EXAMPLE:role/HR\n- aws:MultiFactorAuthPresent=true\n- aws:CurrentTime=...\n- aws:EpochTime=...\n- aws:SourceIp=...\n- aws:PrincipalTag/dept=123\n- aws:PrincipalTag/project=blue\n- aws:RequestTag/dept=123\n```\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic_policy-eval-reqcontext.html>",
+        "required": ["Principal", "Action", "Resource"],
+        "properties": {
+          "Action": {
+            "type": "string",
+            "description": "The action being requested (e.g., iam:DeactivateMFADevice)"
+          },
+          "Context": {
+            "$ref": "#/components/schemas/Context",
+            "description": "Additional context for condition evaluation"
+          },
+          "Principal": {
+            "$ref": "#/components/schemas/Principal",
+            "description": "The principal making the request (e.g., AROA123456789EXAMPLE)"
+          },
+          "Resource": {
+            "$ref": "#/components/schemas/Arn",
+            "description": "The resource being accessed (e.g., `arn:aws:iam::user/martha`)"
+          }
+        }
+      },
+      "IAMResource": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "A single resource (e.g., \"`arn:aws:s3:::bucket/*`\")"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Multiple resources"
+          }
+        ],
+        "description": "Represents a resource in an IAM policy"
+      },
+      "IAMStatement": {
+        "type": "object",
+        "description": "Represents a single statement in an IAM policy\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_statement.html>",
+        "required": ["Effect"],
+        "properties": {
+          "Action": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/IAMAction",
+                "description": "Optional action(s) - what actions are allowed/denied\n\nThe `Action` element describes the specific action or actions that will be allowed or denied.\nStatements must include either an `Action` or `NotAction` element.\nEach service has its own set of actions that describe tasks that you can perform with that service.\n\nFor example:\n* the list of actions for Amazon S3 can be found at Specifying Permissions in a Policy in the *Amazon Simple Storage Service User Guide*\n* the list of actions for Amazon EC2 can be found in the [Amazon EC2 API Reference](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/query-apis.html)\n* the list of actions for AWS Identity and Access Management can be found in the [IAM API Reference](https://docs.aws.amazon.com/IAM/latest/APIReference/API_Operations.html)\n\nTo find the list of actions for other AWS services, consult the [API reference](http://aws.amazon.com/documentation) documentation for the service.\nFor non-AWS services, consult the service documentation for the actions that are supported by that service.\n\nYou specify a value using a service namespace as an action prefix (`iam`, `ec2`, `sqs`, `sns`, `s3`, etc.) followed by the name of the action to allow or deny.\nThe name must match an action that is supported by the service.\nThe prefix and the action name are case insensitive.\nFor example, `iam:ListAccessKeys` is the same as `IAM:listaccesskeys`.\n\nThe following examples show Action elements for different services:\n* `Action: \"sqs:SendMessage\"` - allows the `SendMessage` action on SQS.\n* `Action: \"ec2:StartInstances\"` - allows the `StartInstances` action on EC2.\n* `Action: \"iam:ChangePassword\"` - allows the `ChangePassword` action on IAM.\n* `Action: \"s3:GetObject\"` - allows the `GetObject` action on S3.\n\nYou can specify multiple values for the Action element:\n* `Action: [ \"sqs:SendMessage\", \"sqs:ReceiveMessage\", \"ec2:StartInstances\", \"iam:ChangePassword\", \"s3:GetObject\" ]`\n\nYou can use wildcards to match multiple actions:\n* `Action: \"s3:*\"` - allows all actions on S3.\n\nYou can also use wildcards (`*` or `?`) as part of the action name. For example, the following Action element applies to all IAM actions that include the string `AccessKey`, including `CreateAccessKey`, `DeleteAccessKey`, `ListAccessKeys`, and `UpdateAccessKey`:\n\n`\"Action\": \"iam:*AccessKey*\"`\n\nSome services let you limit the actions that are available.\nFor example, Amazon SQS lets you make available just a subset of all the possible Amazon SQS actions.\nIn that case, the `*` wildcard doesn't allow complete control of the queue; it allows only the subset of actions that you've shared.\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_action.html>"
+              }
+            ]
+          },
+          "Condition": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ConditionBlock",
+                "description": "Optional conditions for the statement\n\nThe `Condition` element (or Condition block) lets you specify conditions for when a policy is in effect. The Condition element is optional.\n\nIn the Condition element, you build expressions in which you use condition operators (equal, less than, and others) to match the context keys and values in the policy against keys and values in the request context.\nTo learn more about the request context, see [Components of a request](https://docs.aws.amazon.com/IAM/latest/UserGuide/intro-structure.html#intro-structure-request).\n\n```json\n\"Condition\" : { \"{condition-operator}\" : { \"{condition-key}\" : \"{condition-value}\" }}\n```\n\nThe context key that you specify in a policy condition can be a global condition context key or a service-specific context key.\n* Global condition context keys have the aws: prefix.\n* Service-specific context keys have the service's prefix.\n\n  For example, Amazon EC2 lets you write a condition using the ec2:InstanceType context key, which is unique to that service.\n\nContext key names are not case-sensitive.\nFor example, including the aws:SourceIP context key is equivalent to testing for `AWS:SourceIp`.\nCase-sensitivity of context key values depends on the condition operator that you use.\nFor example, the following condition includes the `StringEquals` operator to make sure that only requests made by john match.\nUsers named John are denied access.\n\n```json\n\"Condition\" : { \"StringEquals\" : { \"aws:username\" : \"john\" }}\n```\nThe following condition uses the `StringEqualsIgnoreCase` operator to match users named john or John.\n```json\n\"Condition\" : { \"StringEqualsIgnoreCase\" : { \"aws:username\" : \"john\" }}\n```\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition.html>"
+              }
+            ]
+          },
+          "Effect": {
+            "$ref": "#/components/schemas/IAMEffect",
+            "description": "The effect of the statement (Allow or Deny)\n\nThe `Effect` element is required and specifies whether the statement results in an allow or an explicit deny.\nValid values for Effect are **Allow** and **Deny**.\nThe Effect value is case sensitive.\n\nBy default, access to resources is denied.\nTo allow access to a resource, you must set the Effect element to Allow.\nTo override an allow (for example, to override an allow that is otherwise in force), you set the Effect element to Deny.\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_effect.html>"
+          },
+          "NotAction": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/IAMAction",
+                "description": "Optional not action(s) - what actions are not covered\n\n`NotAction` is an advanced policy element that explicitly matches everything except the specified list of actions.\nUsing `NotAction` can result in a shorter policy by listing only a few actions that should not match, rather than including a long list of actions that will match.\n\nActions specified in `NotAction` are not impacted by the Allow or Deny effect in a policy statement.\nThis, in turn, means that all of the applicable actions or services that are not listed are allowed if you use the Allow effect.\nIn addition, such unlisted actions or services are denied if you use the Deny effect.\n\nWhen you use `NotAction` with the Resource element, you provide scope for the policy.\nThis is how AWS determines which actions or services are applicable.\n\nFor more information, see the following example policy.\n\n# `NotAction` with Allow\n\nYou can use the `NotAction` element in a statement with `\"Effect\": \"Allow\"` to provide access to all of the actions in an AWS service, except for the actions specified in `NotAction`.\nYou can use it with the Resource element to provide scope for the policy, limiting the allowed actions to the actions that can be performed on the specified resource.\n\nExample: Allow all S3 actions except deleting a bucket:\n```json\n\"Effect\": \"Allow\",\n\"NotAction\": \"s3:DeleteBucket\",\n\"Resource\": \"arn:aws:s3:::*\"\n```\n\nExample: Allow all actions except IAM:\n```json\n\"Effect\": \"Allow\",\n\"NotAction\": \"iam:*\",\n\"Resource\": \"*\"\n```\n\nBe careful using `NotAction` with `\"Effect\": \"Allow\"` as it could grant more permissions than intended.\n\n# `NotAction` with Deny\n\nYou can use the `NotAction` element in a statement with `\"Effect\": \"Deny\"` to deny access to all of the listed resources except for the actions specified in `NotAction`.\nThis combination does not allow the listed items, but instead explicitly denies the actions not listed.\n\nExample: Deny all actions except IAM actions if not using MFA:\n```json\n{\n    \"Sid\": \"DenyAllUsersNotUsingMFA\",\n    \"Effect\": \"Deny\",\n    \"NotAction\": \"iam:*\",\n    \"Resource\": \"*\",\n    \"Condition\": {\"BoolIfExists\": {\"aws:MultiFactorAuthPresent\": \"false\"}}\n}\n```\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_notaction.html>"
+              }
+            ]
+          },
+          "NotPrincipal": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Principal",
+                "description": "Optional not principal(s) - who the statement does not apply to\n\nThe `NotPrincipal` element uses \"Effect\":\"Deny\" to deny access to all principals except the principal specified in the `NotPrincipal` element.\nA principal can usually be a user, federated user, role, assumed role, account, service, or other principal type.\n\n`NotPrincipal` must be used with `\"Effect\":\"Deny\"`. Using it with `\"Effect\":\"Allow\"` is not supported.\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_notprincipal.html>"
+              }
+            ]
+          },
+          "NotResource": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/IAMResource",
+                "description": "Optional not resource(s) - what resources are not covered\n\n`NotResource` is an advanced policy element that explicitly matches every resource except those specified.\nUsing `NotResource` can result in a shorter policy by listing only a few resources that should not match, rather than including a long list of resources that will match.\nThis is particularly useful for policies that apply within a single AWS service.\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_notresource.html>"
+              }
+            ]
+          },
+          "Principal": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Principal",
+                "description": "Optional principal(s) - who the statement applies to\n\nUse the `Principal` element in a resource-based JSON policy to specify the principal that is allowed or denied access to a resource.\n\nYou must use the `Principal` element in resource-based policies.\nYou cannot use the `Principal` element in an identity-based policy.\n\nIdentity-based policies are permissions policies that you attach to IAM identities (users, groups, or roles).\nIn those cases, the principal is implicitly the identity where the policy is attached.\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_principal.html>"
+              }
+            ]
+          },
+          "Resource": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/IAMResource",
+                "description": "Optional resource(s) - what resources the statement applies to\n\nThe `Resource` element specifies the object(s) that the statement applies to.\n\nYou must include either a `Resource` or a `NotResource` element in a statement.\n\nYou specify a resource using an Amazon Resource Name (ARN). The ARN format depends on the AWS service and the specific resource.\nFor more information about ARNs, see: <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_identifiers.html#identifiers-arns>\n\nSome AWS services do not support resource-level permissions. In those cases, use the wildcard character (`*`) in the Resource element.\n\nExamples:\n* Specific SQS queue:\n  `\"Resource\": \"arn:aws:sqs:us-east-2:account-ID-without-hyphens:queue1\"`\n* Specific IAM user (user name is case sensitive):\n  `\"Resource\": \"arn:aws:iam::account-ID-without-hyphens:user/Bob\"`\n\n# Using wildcards in resource ARNs\n\nYou can use wildcard characters (`*` and `?`) within the individual segments of an ARN (the parts separated by colons) to represent:\n- Any combination of characters (`*`)\n- Any single character (`?`)\n\nYou can use multiple `*` or `?` characters in each segment.\nIf the `*` wildcard is the last character of a resource ARN segment, it can expand to match beyond the colon boundaries.\nIt is recommended to use wildcards within ARN segments separated by a colon.\n\n**Note:** You can't use a wildcard in the service segment that identifies the AWS product.\n\n## Examples\n\nAll IAM users whose path is `/accounting`:\n```text\n\"Resource\": \"arn:aws:iam::account-ID-without-hyphens:user/accounting/*\"\n```\n\nAll items within a specific Amazon S3 bucket:\n```text\n\"Resource\": \"arn:aws:s3:::amzn-s3-demo-bucket/*\"\n```\n\nWildcards can match across slashes and other characters:\n```text\n\"Resource\": \"arn:aws:s3:::amzn-s3-demo-bucket/*/test/*\"\n```\nThis matches:\n- amzn-s3-demo-bucket/1/test/object.jpg\n- amzn-s3-demo-bucket/1/2/test/object.jpg\n- amzn-s3-demo-bucket/1/2/test/3/object.jpg\n- amzn-s3-demo-bucket/1/2/3/test/4/object.jpg\n- amzn-s3-demo-bucket/1///test///object.jpg\n- amzn-s3-demo-bucket/1/test/.jpg\n- amzn-s3-demo-bucket//test/object.jpg\n- amzn-s3-demo-bucket/1/test/\n\nBut does **not** match:\n- amzn-s3-demo-bucket/1-test/object.jpg\n- amzn-s3-demo-bucket/test/object.jpg\n- amzn-s3-demo-bucket/1/2/test.jpg\n\n## Specifying multiple resources\n\nYou can specify multiple resources in the `Resource` element by using an array of ARNs:\n```json\n\"Resource\": [\n    \"arn:aws:dynamodb:us-east-2:account-ID-without-hyphens:table/books_table\",\n    \"arn:aws:dynamodb:us-east-2:account-ID-without-hyphens:table/magazines_table\"\n]\n```\n\n## Using policy variables in resource ARNs\n\nYou can use JSON policy variables in the part of the ARN that identifies the specific resource. For example:\n```text\n\"Resource\": \"arn:aws:dynamodb:us-east-2:account-id:table/${aws:username}\"\n```\nThis allows access to a `DynamoDB` table that matches the current user's name.\n\nFor more information about JSON policy variables, see [IAM policy elements: Variables and tags](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_variables.html).\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_resource.html>"
+              }
+            ]
+          },
+          "Sid": {
+            "type": ["string", "null"],
+            "description": "Optional statement ID\n\nYou can provide a `Sid` (statement ID) as an optional identifier for the policy statement.\nYou can assign a `Sid` value to each statement in a statement array.\nYou can use the `Sid` value as a description for the policy statement.\n\nIn services that let you specify an ID element, such as AWS SQS and AWS SNS, the `Sid` value is just a sub-ID of the policy document ID.\nIn IAM, the `Sid` value must be unique within a JSON policy.\n\nThe Sid element supports ASCII uppercase letters (A-Z), lowercase letters (a-z), and numbers (0-9).\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_sid.html>"
+          }
+        }
+      },
+      "IAMStatements": {
+        "oneOf": [
+          {
+            "$ref": "#/components/schemas/IAMStatement",
+            "description": "A single IAM statement"
+          },
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IAMStatement"
+            },
+            "description": "Multiple IAM statements"
+          }
+        ]
+      },
+      "IAMVersion": {
+        "type": "string",
+        "description": "Represents the version of the IAM policy language",
+        "enum": ["2012-10-17", "2008-10-17"]
+      },
+      "OperatorType": {
+        "type": "string",
+        "enum": [
+          "String",
+          "Numeric",
+          "Date",
+          "Boolean",
+          "Binary",
+          "IpAddress",
+          "Arn",
+          "Null"
+        ]
+      },
+      "PolicyEvaluator": {
+        "type": "object",
+        "description": "Policy evaluation engine",
+        "required": ["policies", "options"],
+        "properties": {
+          "options": {
+            "$ref": "#/components/schemas/EvaluationOptions",
+            "description": "Evaluation options"
+          },
+          "policies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/IAMPolicy"
+            },
+            "description": "Policies to evaluate"
+          }
+        }
+      },
+      "PolicyVariable": {
+        "type": "object",
+        "description": "Represents a parsed policy variable",
+        "required": ["key"],
+        "properties": {
+          "default_value": {
+            "type": ["string", "null"],
+            "description": "Optional default value if key is not found"
+          },
+          "key": {
+            "type": "string",
+            "description": "The context key to look up"
+          }
+        }
+      },
+      "Principal": {
+        "oneOf": [
+          {
+            "type": "object",
+            "description": "AWS principals (users, roles, root accounts)",
+            "required": ["AWS"],
+            "properties": {
+              "AWS": {
+                "$ref": "#/components/schemas/PrincipalId",
+                "description": "AWS principals (users, roles, root accounts)"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Federated principals (SAML, OIDC providers)",
+            "required": ["Federated"],
+            "properties": {
+              "Federated": {
+                "$ref": "#/components/schemas/PrincipalId",
+                "description": "Federated principals (SAML, OIDC providers)"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "AWS service principals",
+            "required": ["Service"],
+            "properties": {
+              "Service": {
+                "$ref": "#/components/schemas/PrincipalId",
+                "description": "AWS service principals"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "description": "Canonical user principals",
+            "required": ["CanonicalUser"],
+            "properties": {
+              "CanonicalUser": {
+                "$ref": "#/components/schemas/PrincipalId",
+                "description": "Canonical user principals"
+              }
+            }
+          },
+          {
+            "type": "string",
+            "description": "Wildcard principal (matches all principals)",
+            "enum": ["*"]
+          }
+        ],
+        "description": "Represents a principal in an IAM policy\n\n`<principal_block>` = (\"Principal\" | \"`NotPrincipal`\") : (\"*\" | `<principal_map>`)\n`<principal_map>` = { `<principal_map_entry>`, `<principal_map_entry>`, ... }\n`<principal_map_entry>` = (\"AWS\" | \"Federated\" | \"Service\" | \"`CanonicalUser`\") :\n    [`<principal_id_string>`, `<principal_id_string>`, ...]\n\n(e.g., {\"AWS\": \"`arn:aws:iam::123456789012:user/username`\"})\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_principal.html>"
+      },
+      "PrincipalId": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "Single principal ID as a string"
+          },
+          {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Multiple principal IDs as an array of strings"
+          }
+        ],
+        "description": "Principal ID (can be either string or array of strings)"
+      },
+      "StatementMatch": {
+        "type": "object",
+        "description": "Information about a statement that matched during evaluation",
+        "required": ["effect", "conditions_satisfied", "reason"],
+        "properties": {
+          "conditions_satisfied": {
+            "type": "boolean",
+            "description": "Whether all conditions were satisfied"
+          },
+          "effect": {
+            "$ref": "#/components/schemas/IAMEffect",
+            "description": "Effect of the statement"
+          },
+          "reason": {
+            "type": "string",
+            "description": "Reason for the match/non-match"
+          },
+          "sid": {
+            "type": ["string", "null"],
+            "description": "Statement ID if available"
+          }
+        }
+      },
+      "StringList": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

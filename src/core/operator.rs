@@ -642,7 +642,6 @@ impl std::str::FromStr for IAMOperator {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json;
 
     #[test]
     fn test_operator_serialization() {

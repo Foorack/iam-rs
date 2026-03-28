@@ -509,7 +509,7 @@ mod tests {
 
         for arn_str in valid_arns {
             let arn = Arn::parse(arn_str).unwrap();
-            assert!(arn.is_valid(), "ARN should be valid: {}", arn_str);
+            assert!(arn.is_valid(), "ARN should be valid: {arn_str}");
         }
     }
 
@@ -533,9 +533,7 @@ mod tests {
         for pattern in matching_patterns {
             assert!(
                 resource_arn.matches(pattern).unwrap(),
-                "Pattern '{}' should match ARN '{}'",
-                pattern,
-                resource_arn
+                "Pattern '{pattern}' should match ARN '{resource_arn}'"
             );
         }
 
@@ -551,9 +549,7 @@ mod tests {
         for pattern in non_matching_patterns {
             assert!(
                 !resource_arn.matches(pattern).unwrap(),
-                "Pattern '{}' should NOT match ARN '{}'",
-                pattern,
-                resource_arn
+                "Pattern '{pattern}' should NOT match ARN '{resource_arn}'"
             );
         }
     }
@@ -594,14 +590,12 @@ mod tests {
             assert_eq!(
                 arn.resource_type(),
                 expected_type,
-                "Resource type mismatch for {}",
-                arn_str
+                "Resource type mismatch for {arn_str}"
             );
             assert_eq!(
                 arn.resource_id(),
                 expected_id,
-                "Resource ID mismatch for {}",
-                arn_str
+                "Resource ID mismatch for {arn_str}"
             );
         }
     }
@@ -616,7 +610,7 @@ mod tests {
         // These should fail parsing entirely (basic format issues)
         for invalid_arn in invalid_arns {
             let result = Arn::parse(invalid_arn);
-            assert!(result.is_err(), "ARN should fail parsing: {}", invalid_arn);
+            assert!(result.is_err(), "ARN should fail parsing: {invalid_arn}");
         }
 
         let validation_invalid_arns = vec![
@@ -630,8 +624,8 @@ mod tests {
 
         // These should parse but fail validation
         for invalid_arn in validation_invalid_arns {
-            let arn = Arn::parse(invalid_arn).expect(&format!("Should parse: {}", invalid_arn));
-            assert!(!arn.is_valid(), "ARN should be invalid: {}", invalid_arn);
+            let arn = Arn::parse(invalid_arn).unwrap_or_else(|_| panic!("Should parse: {invalid_arn}"));
+            assert!(!arn.is_valid(), "ARN should be invalid: {invalid_arn}");
         }
     }
 
@@ -664,8 +658,7 @@ mod tests {
             let reconstructed = arn.to_string();
             assert_eq!(
                 reconstructed, arn_string,
-                "Reconstructed ARN does not match original: {}",
-                arn_string
+                "Reconstructed ARN does not match original: {arn_string}"
             );
 
             // Check if the ARN passes validation
@@ -673,32 +666,25 @@ mod tests {
                 // Additional checks for well-formed ARNs
                 assert!(
                     !arn.partition.is_empty(),
-                    "Partition should not be empty for ARN: {}",
-                    arn_string
+                    "Partition should not be empty for ARN: {arn_string}"
                 );
                 assert!(
                     !arn.service.is_empty(),
-                    "Service should not be empty for ARN: {}",
-                    arn_string
+                    "Service should not be empty for ARN: {arn_string}"
                 );
                 assert!(
                     !arn.resource.is_empty(),
-                    "Resource should not be empty for ARN: {}",
-                    arn_string
+                    "Resource should not be empty for ARN: {arn_string}"
                 );
 
                 // Test that the ARN can be round-tripped
-                let reparsed = Arn::parse(&reconstructed).expect(&format!(
-                    "Failed to reparse reconstructed ARN: {}",
-                    reconstructed
-                ));
+                let reparsed = Arn::parse(&reconstructed).unwrap_or_else(|_| panic!("Failed to reparse reconstructed ARN: {reconstructed}"));
                 assert_eq!(
                     arn, reparsed,
-                    "Round-trip parsing failed for ARN: {}",
-                    arn_string
+                    "Round-trip parsing failed for ARN: {arn_string}"
                 );
             } else {
-                panic!("ARN parsed but failed validation: {}", arn_string);
+                panic!("ARN parsed but failed validation: {arn_string}");
             }
         }
     }

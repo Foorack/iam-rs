@@ -855,7 +855,7 @@ mod tests {
         let request_dir = "tests/requests";
         let mut request_files = std::fs::read_dir(request_dir)
             .unwrap_or_else(|e| {
-                panic!("Failed to read requests directory '{}': {}", request_dir, e)
+                panic!("Failed to read requests directory '{request_dir}': {e}")
             })
             .filter_map(|entry| {
                 let entry = entry.ok()?;
@@ -871,8 +871,7 @@ mod tests {
         // Verify we actually found request files to test
         assert!(
             !request_files.is_empty(),
-            "No request JSON files found in {}/",
-            request_dir
+            "No request JSON files found in {request_dir}/"
         );
 
         // Sort files by name for consistent test order
@@ -880,8 +879,8 @@ mod tests {
         request_files.sort_by_key(|p| {
             p.file_name()
                 .and_then(|n| n.to_str())
-                .map(|s| s.split(".").next().unwrap().parse::<u32>().unwrap())
-                .map(|n| format!("{:010}", n))
+                .map(|s| s.split('.').next().unwrap().parse::<u32>().unwrap())
+                .map(|n| format!("{n:010}"))
         });
 
         println!(
@@ -899,7 +898,7 @@ mod tests {
             println!("Testing request #{}: {} ... ", index + 1, filename);
 
             // Read the JSON file
-            let json_content = std::fs::read_to_string(&request_file).unwrap_or_else(|e| {
+            let json_content = std::fs::read_to_string(request_file).unwrap_or_else(|e| {
                 panic!("Failed to read file '{}': {}", request_file.display(), e)
             });
 

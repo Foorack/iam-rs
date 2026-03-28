@@ -122,7 +122,7 @@ impl Validate for Principal {
                     return Ok(());
                 }
                 let arn = Arn::parse(id).map_err(|e| ValidationError::InvalidPrincipal {
-                    principal: id.to_string(),
+                    principal: id.clone(),
                     reason: e.to_string(),
                 })?;
                 arn.validate(ctx)
@@ -131,7 +131,7 @@ impl Validate for Principal {
                 // If starts with "arn:", validate as ARN
                 if id.starts_with("arn:") {
                     let arn = Arn::parse(id).map_err(|e| ValidationError::InvalidPrincipal {
-                        principal: id.to_string(),
+                        principal: id.clone(),
                         reason: e.to_string(),
                     })?;
                     arn.validate(ctx)?;
@@ -147,7 +147,7 @@ impl Validate for Principal {
                     return Ok(());
                 }
                 Err(ValidationError::InvalidPrincipal {
-                    principal: id.to_string(),
+                    principal: id.clone(),
                     reason: "Canonical user ID must be a 64-character hex string".to_string(),
                 })
             }
@@ -173,7 +173,7 @@ mod tests {
         assert!(!Principal::Aws(PrincipalId::String("invalid-principal".into())).is_valid());
 
         // Empty principal should be invalid
-        assert!(!Principal::Aws(PrincipalId::String("".into())).is_valid());
+        assert!(!Principal::Aws(PrincipalId::String(String::new())).is_valid());
 
         // Empty array principal should be invalid
         assert!(!Principal::Aws(PrincipalId::Array(vec![])).is_valid());

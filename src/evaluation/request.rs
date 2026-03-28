@@ -117,7 +117,7 @@ mod tests {
         let context = Context::new()
             .with_string("aws:UserId", "AIDA123456789EXAMPLE:BobsSession")
             .with_boolean("aws:MultiFactorAuthPresent", true)
-            .with_number("aws:EpochTime", 1633072800.0);
+            .with_number("aws:EpochTime", 1_633_072_800.0);
         let request = IAMRequest::new_with_context(
             Principal::Aws(PrincipalId::String("principal".into())),
             "action",
@@ -134,14 +134,13 @@ mod tests {
                 .unwrap(),
             "AIDA123456789EXAMPLE:BobsSession"
         );
-        assert_eq!(
+        assert!(
             request
                 .context
                 .get("aws:MultiFactorAuthPresent")
                 .unwrap()
                 .as_boolean()
-                .unwrap(),
-            true
+                .unwrap()
         );
         assert_eq!(
             request
@@ -150,7 +149,7 @@ mod tests {
                 .unwrap()
                 .as_number()
                 .unwrap(),
-            1633072800.0
+            1_633_072_800.0
         );
     }
 }

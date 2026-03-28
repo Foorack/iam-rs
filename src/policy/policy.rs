@@ -250,7 +250,7 @@ mod tests {
     fn test_policy_id_validation() {
         // Empty ID
         let mut empty_id_policy = IAMPolicy::new();
-        empty_id_policy.id = Some("".to_string());
+        empty_id_policy.id = Some(String::new());
         empty_id_policy.statement.push(
             IAMStatement::new(IAMEffect::Allow)
                 .with_action(IAMAction::Single("s3:GetObject".to_string()))
@@ -304,8 +304,7 @@ mod tests {
         let mut policy_files = std::fs::read_dir(policies_dir)
             .unwrap_or_else(|e| {
                 panic!(
-                    "Failed to read policies directory '{}': {}",
-                    policies_dir, e
+                    "Failed to read policies directory '{policies_dir}': {e}"
                 )
             })
             .filter_map(|entry| {
@@ -322,8 +321,7 @@ mod tests {
         // Verify we actually found policy files to test
         assert!(
             !policy_files.is_empty(),
-            "No policy JSON files found in {}/",
-            policies_dir
+            "No policy JSON files found in {policies_dir}/"
         );
 
         // Sort files by name for consistent test order
@@ -331,8 +329,8 @@ mod tests {
         policy_files.sort_by_key(|p| {
             p.file_name()
                 .and_then(|n| n.to_str())
-                .map(|s| s.split(".").next().unwrap().parse::<u32>().unwrap())
-                .map(|n| format!("{:010}", n))
+                .map(|s| s.split('.').next().unwrap().parse::<u32>().unwrap())
+                .map(|n| format!("{n:010}"))
         });
 
         println!(
@@ -350,13 +348,13 @@ mod tests {
             println!("Testing policy #{}: {} ... ", index + 1, filename);
 
             // Read the JSON file
-            let json_content = std::fs::read_to_string(&policy_file).unwrap_or_else(|e| {
+            let json_content = std::fs::read_to_string(policy_file).unwrap_or_else(|e| {
                 panic!("Failed to read file '{}': {}", policy_file.display(), e)
             });
 
             // Parse the policy from JSON
             let original_policy = IAMPolicy::from_json(&json_content)
-                .unwrap_or_else(|e| panic!("Failed to parse JSON policy: {:?}", e));
+                .unwrap_or_else(|e| panic!("Failed to parse JSON policy: {e:?}"));
 
             // Validate the parsed policy
             assert!(
@@ -369,14 +367,13 @@ mod tests {
             // Serialize the policy back to JSON
             let serialized_json = original_policy
                 .to_json()
-                .unwrap_or_else(|e| panic!("Failed to serialize policy to JSON: {:?}", e));
+                .unwrap_or_else(|e| panic!("Failed to serialize policy to JSON: {e:?}"));
 
             // Compare the serialized JSON with the prettified original
             assert_eq!(
                 serialized_json,
-                json_content.trim_end_matches("\n"),
-                "Serialized JSON does not match original prettified JSON for file '{}'",
-                filename
+                json_content.trim_end_matches('\n'),
+                "Serialized JSON does not match original prettified JSON for file '{filename}'"
             );
         }
     }

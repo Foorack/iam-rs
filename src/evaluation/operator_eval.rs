@@ -224,16 +224,16 @@ fn ev_str(
     })?;
 
     match ctx.get(key) {
-        Some(ContextValue::String(s)) => Ok(predicate(s.to_string(), value.to_string())),
+        Some(ContextValue::String(s)) => Ok(predicate(s.clone(), value.to_string())),
         Some(ContextValue::StringList(list)) => match set_operator {
             // ForAnyValue: return true if any value matches
             SetOperatorType::ForAnyValue => Ok(list
                 .iter()
-                .any(|val| predicate(val.to_string(), value.to_string()))),
+                .any(|val| predicate(val.clone(), value.to_string()))),
             // ForAllValues: return true only if all values match
             SetOperatorType::ForAllValues => Ok(list
                 .iter()
-                .all(|val| predicate(val.to_string(), value.to_string()))),
+                .all(|val| predicate(val.clone(), value.to_string()))),
             SetOperatorType::None => Err(EvaluationError::ConditionError(
                 "Multivalued context keys require a condition set operator.".to_string(),
             )),
