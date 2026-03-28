@@ -401,8 +401,6 @@ fn ev_ip(
         None => return Ok(if_exists), // Missing context (return true if operator is IfExists)
     };
 
-    println!("Evaluating IP condition: {context_value} against {value}");
-
     Ok(predicate(context_value, value))
 }
 
