@@ -189,6 +189,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(clippy::float_cmp)]
     fn test_context_creation() {
         let context = Context::new()
             .with_string("key1", "value1")

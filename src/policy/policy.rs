@@ -69,7 +69,7 @@ pub struct IAMPolicy {
 #[cfg(feature = "utoipa")]
 #[derive(utoipa::ToSchema, Serialize, Deserialize)]
 #[serde(untagged)]
-#[allow(dead_code)]
+#[allow(dead_code, clippy::large_enum_variant)]
 enum IAMStatements {
     /// A single IAM statement
     Single(IAMStatement),
@@ -302,11 +302,7 @@ mod tests {
         let policies_dir = "tests/policies";
 
         let mut policy_files = std::fs::read_dir(policies_dir)
-            .unwrap_or_else(|e| {
-                panic!(
-                    "Failed to read policies directory '{policies_dir}': {e}"
-                )
-            })
+            .unwrap_or_else(|e| panic!("Failed to read policies directory '{policies_dir}': {e}"))
             .filter_map(|entry| {
                 let entry = entry.ok()?;
                 let path = entry.path();

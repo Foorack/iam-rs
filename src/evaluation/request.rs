@@ -113,6 +113,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::float_cmp)]
     fn test_parc_request_with_context() {
         let context = Context::new()
             .with_string("aws:UserId", "AIDA123456789EXAMPLE:BobsSession")

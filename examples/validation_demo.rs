@@ -3,7 +3,7 @@ use iam_rs::{
     Principal, PrincipalId, Validate, ValidationError,
 };
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() {
     println!("=== IAM Policy Validation Demo ===\n");
 
     // Example 1: Valid Policy
@@ -30,7 +30,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match valid_policy.validate_result() {
         Ok(()) => println!("✓ Policy passes validation"),
-        Err(e) => println!("✗ Policy fails validation: {}", e),
+        Err(e) => println!("✗ Policy fails validation: {e}"),
     }
 
     println!();
@@ -42,7 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if !invalid_policy.is_valid() {
         println!("✗ Policy is invalid (as expected)");
         match invalid_policy.validate_result() {
-            Err(e) => println!("   Validation errors: {}", e),
+            Err(e) => println!("   Validation errors: {e}"),
             Ok(()) => println!("   Unexpected: validation passed"),
         }
     }
@@ -79,7 +79,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         Err(e) => {
-            println!("✗ Single validation error: {}", e);
+            println!("✗ Single validation error: {e}");
         }
         Ok(()) => {
             println!("✓ Unexpected: validation passed");
@@ -105,7 +105,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match comprehensive_policy.validate_result() {
         Ok(()) => println!("✓ Policy passes validation"),
-        Err(e) => println!("✗ Policy fails validation: {}", e),
+        Err(e) => println!("✗ Policy fails validation: {e}"),
     }
 
     println!();
@@ -122,7 +122,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )));
 
     match logical_error_policy.validate_result() {
-        Err(e) => println!("✗ Logical error detected: {}", e),
+        Err(e) => println!("✗ Logical error detected: {e}"),
         Ok(()) => println!("✓ Unexpected: validation passed"),
     }
 
@@ -133,7 +133,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     conflicting_statement.resource = Some(IAMResource::Single("*".to_string()));
 
     match conflicting_statement.validate_result() {
-        Err(e) => println!("✗ Logical error detected: {}", e),
+        Err(e) => println!("✗ Logical error detected: {e}"),
         Ok(()) => println!("✓ Unexpected: validation passed"),
     }
 
@@ -145,14 +145,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Invalid action
     let invalid_action = IAMAction::Single("invalid-action".to_string());
     match invalid_action.validate_result() {
-        Err(e) => println!("✗ Invalid action: {}", e),
+        Err(e) => println!("✗ Invalid action: {e}"),
         Ok(()) => println!("✓ Action is valid"),
     }
 
     // Invalid principal
     let invalid_principal = Principal::Aws(PrincipalId::String("invalid-principal".to_string()));
     match invalid_principal.validate_result() {
-        Err(e) => println!("✗ Invalid principal: {}", e),
+        Err(e) => println!("✗ Invalid principal: {e}"),
         Ok(()) => println!("✓ Principal is valid"),
     }
 
@@ -166,6 +166,4 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!("\n=== Validation Demo Complete ===");
-
-    Ok(())
 }

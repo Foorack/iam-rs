@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for arn_str in &valid_arns {
         match Arn::parse(arn_str) {
             Ok(arn) => {
-                println!("✓ Valid ARN: {}", arn);
+                println!("✓ Valid ARN: {arn}");
                 println!("  - Service: {}", arn.service);
                 println!(
                     "  - Region: {}",
@@ -37,14 +37,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 );
                 if let Some(resource_type) = arn.resource_type() {
-                    println!("  - Resource Type: {}", resource_type);
+                    println!("  - Resource Type: {resource_type}");
                 }
                 if let Some(resource_id) = arn.resource_id() {
-                    println!("  - Resource ID: {}", resource_id);
+                    println!("  - Resource ID: {resource_id}");
                 }
                 println!();
             }
-            Err(e) => println!("✗ Invalid ARN {}: {}", arn_str, e),
+            Err(e) => println!("✗ Invalid ARN {arn_str}: {e}"),
         }
     }
 
@@ -52,7 +52,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("2. Wildcard pattern matching:");
 
     let resource_arn = Arn::parse("arn:aws:s3:::my-bucket/uploads/user123/document.pdf")?;
-    println!("Resource ARN: {}", resource_arn);
+    println!("Resource ARN: {resource_arn}");
 
     let patterns = vec![
         "arn:aws:s3:::my-bucket/*",
@@ -69,9 +69,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         match resource_arn.matches(pattern) {
             Ok(matches) => {
                 let status = if matches { "✓ MATCH" } else { "✗ NO MATCH" };
-                println!("  {} Pattern: {}", status, pattern);
+                println!("  {status} Pattern: {pattern}");
             }
-            Err(e) => println!("  ✗ ERROR Pattern: {} ({})", pattern, e),
+            Err(e) => println!("  ✗ ERROR Pattern: {pattern} ({e})"),
         }
     }
 
@@ -103,7 +103,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let policy_json = policy.to_json()?;
     println!("Generated IAM Policy:");
-    println!("{}", policy_json);
+    println!("{policy_json}");
 
     // Example 4: Validate all ARNs in the policy
     println!("\n4. Validating ARNs in policy:");
@@ -129,9 +129,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     } else {
                         "⚠ Invalid"
                     };
-                    println!("  {} Resource: {}", validity, resource);
+                    println!("  {validity} Resource: {resource}");
                 }
-                Err(e) => println!("  ✗ Parse Error: {} ({})", resource, e),
+                Err(e) => println!("  ✗ Parse Error: {resource} ({e})"),
             }
         }
     }

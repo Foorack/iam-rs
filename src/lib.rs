@@ -13,6 +13,7 @@ pub use policy::*;
 pub use validation::*;
 
 #[cfg(all(feature = "utoipa", test))]
+#[allow(clippy::needless_for_each)]
 mod openapi_tests {
     use utoipa::OpenApi;
 
