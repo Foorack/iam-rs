@@ -1,10 +1,6 @@
 # iam-rs
 
-# STILL IN FINAL DEV AND VERIFICATION PHASE - CAUTION ON USAGE
-
-# STILL IN FINAL DEV AND VERIFICATION PHASE - CAUTION ON USAGE
-
-# STILL IN FINAL DEV AND VERIFICATION PHASE - CAUTION ON USAGE
+# STILL IN FINAL DEVELOPMENT AND VERIFICATION PHASE - CAUTION ON USAGE
 
 [![Crates.io](https://img.shields.io/crates/v/iam-rs.svg)](https://crates.io/crates/iam-rs)
 [![Documentation](https://docs.rs/iam-rs/badge.svg)](https://docs.rs/iam-rs)
