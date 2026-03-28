@@ -15,4 +15,3 @@ pub enum IAMVersion {
     #[deprecated(since = "2012-10-17", note = "Use V20121017 instead")]
     V20081017,
 }
-

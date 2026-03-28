@@ -60,9 +60,7 @@ impl Principal {
 }
 
 fn validate_domain(domain: &str) -> ValidationResult {
-    if domain.is_empty()
-        || !domain.contains('.')
-        || !domain.ends_with(|c: char| c.is_alphabetic())
+    if domain.is_empty() || !domain.contains('.') || !domain.ends_with(|c: char| c.is_alphabetic())
     {
         return Err(ValidationError::InvalidPrincipal {
             principal: domain.to_string(),

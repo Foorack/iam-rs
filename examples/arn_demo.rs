@@ -1,4 +1,4 @@
-use iam_rs::{IAMAction, Arn, IAMEffect, IAMPolicy, IAMStatement, IAMResource};
+use iam_rs::{Arn, IAMAction, IAMEffect, IAMPolicy, IAMResource, IAMStatement};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("=== IAM ARN Validator Demo ===\n");

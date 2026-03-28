@@ -309,7 +309,7 @@ mod tests {
 
     #[test]
     fn test_policy_validation_integration() {
-        use crate::{IAMAction, IAMEffect, IAMPolicy, IAMStatement, IAMResource};
+        use crate::{IAMAction, IAMEffect, IAMPolicy, IAMResource, IAMStatement};
 
         // Test valid policy with UUID-like ID
         let valid_policy = IAMPolicy::new()
@@ -350,7 +350,7 @@ mod tests {
 
     #[test]
     fn test_condition_validation_integration() {
-        use crate::{IAMAction, IAMEffect, IAMStatement, IAMOperator, IAMResource};
+        use crate::{IAMAction, IAMEffect, IAMOperator, IAMResource, IAMStatement};
 
         // Valid condition
         let valid_statement = IAMStatement::new(IAMEffect::Allow)

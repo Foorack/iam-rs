@@ -624,7 +624,8 @@ mod tests {
 
         // These should parse but fail validation
         for invalid_arn in validation_invalid_arns {
-            let arn = Arn::parse(invalid_arn).unwrap_or_else(|_| panic!("Should parse: {invalid_arn}"));
+            let arn =
+                Arn::parse(invalid_arn).unwrap_or_else(|_| panic!("Should parse: {invalid_arn}"));
             assert!(!arn.is_valid(), "ARN should be invalid: {invalid_arn}");
         }
     }
@@ -678,7 +679,9 @@ mod tests {
                 );
 
                 // Test that the ARN can be round-tripped
-                let reparsed = Arn::parse(&reconstructed).unwrap_or_else(|_| panic!("Failed to reparse reconstructed ARN: {reconstructed}"));
+                let reparsed = Arn::parse(&reconstructed).unwrap_or_else(|_| {
+                    panic!("Failed to reparse reconstructed ARN: {reconstructed}")
+                });
                 assert_eq!(
                     arn, reparsed,
                     "Round-trip parsing failed for ARN: {arn_string}"

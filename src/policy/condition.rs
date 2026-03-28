@@ -167,7 +167,11 @@ impl Condition {
     }
 
     /// Creates a condition with a string value
-    pub fn string<K: Into<String>, V: Into<String>>(operator: IAMOperator, key: K, value: V) -> Self {
+    pub fn string<K: Into<String>, V: Into<String>>(
+        operator: IAMOperator,
+        key: K,
+        value: V,
+    ) -> Self {
         Self::new(operator, key, ConditionValue::String(value.into()))
     }
 
@@ -182,7 +186,11 @@ impl Condition {
     }
 
     /// Creates a condition with an array of string values
-    pub fn string_array<K: Into<String>>(operator: IAMOperator, key: K, values: Vec<String>) -> Self {
+    pub fn string_array<K: Into<String>>(
+        operator: IAMOperator,
+        key: K,
+        values: Vec<String>,
+    ) -> Self {
         Self::new(operator, key, ConditionValue::StringList(values))
     }
 }
@@ -233,7 +241,11 @@ impl ConditionBlock {
 
     /// Gets a specific condition value
     #[must_use]
-    pub fn get_condition_value(&self, operator: &IAMOperator, key: &str) -> Option<&ConditionValue> {
+    pub fn get_condition_value(
+        &self,
+        operator: &IAMOperator,
+        key: &str,
+    ) -> Option<&ConditionValue> {
         self.conditions.get(operator)?.get(key)
     }
 
