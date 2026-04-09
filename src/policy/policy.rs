@@ -4,10 +4,42 @@ use crate::{
     validation::{Validate, ValidationContext, ValidationError, ValidationResult, helpers},
 };
 use serde::{Deserialize, Serialize};
-use serde_with::OneOrMany;
-use serde_with::formats::PreferOne;
-use serde_with::serde_as;
 use std::collections::HashSet;
+
+mod one_or_many {
+    use serde::de::DeserializeOwned;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<T, S>(value: &Vec<T>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        T: Serialize,
+        S: Serializer,
+    {
+        if value.len() == 1 {
+            value[0].serialize(serializer)
+        } else {
+            value.serialize(serializer)
+        }
+    }
+
+    pub fn deserialize<'de, T, D>(deserializer: D) -> Result<Vec<T>, D::Error>
+    where
+        T: DeserializeOwned,
+        D: Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum OneOrMany<T> {
+            One(T),
+            Many(Vec<T>),
+        }
+
+        match OneOrMany::deserialize(deserializer)? {
+            OneOrMany::One(val) => Ok(vec![val]),
+            OneOrMany::Many(vals) => Ok(vals),
+        }
+    }
+}
 
 /// JSON policy documents are made up of elements.
 /// The elements are listed here in the general order you use them in a policy.
@@ -26,7 +58,6 @@ use std::collections::HashSet;
 /// When you create or edit a JSON policy, `iam-rw` can perform policy validation to help you create an effective policy.
 ///
 /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements.html>
-#[serde_as]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct IAMPolicy {
@@ -57,8 +88,7 @@ pub struct IAMPolicy {
     /// For multiple statements, the array must be enclosed in square brackets [ ].
     ///
     /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_statement.html>
-    #[serde(rename = "Statement")]
-    #[serde_as(as = "OneOrMany<_, PreferOne>")]
+    #[serde(rename = "Statement", with = "one_or_many")]
     #[cfg_attr(
         feature = "utoipa",
         schema(value_type = IAMStatements)
