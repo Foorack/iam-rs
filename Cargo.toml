@@ -23,7 +23,7 @@ serde = { version = "1.0.228", features = [
 serde_json = { version = "1.0.149", features = [
     "std",
 ], default-features = false }
-chrono = { version = "0.4.44", features = [
+chrono = { version = "0.4.45", features = [
     "alloc",
     "serde",
 ], default-features = false }
