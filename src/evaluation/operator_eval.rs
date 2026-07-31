@@ -216,7 +216,7 @@ pub(super) fn evaluate_condition(
                         ));
                     }
                 };
-                let is_null = ctx.get(key).is_none();
+                let is_null = ctx.get_ci(key).is_none();
                 return Ok(is_null == should_be_null);
             }
         };
@@ -283,7 +283,7 @@ fn evaluate_set_operator(
                 }
             };
 
-            match ctx.get(key) {
+            match ctx.get_ci(key) {
                 Some(ContextValue::StringList(list)) => {
                     if for_all_values {
                         Ok(list.iter().all(satisfies))
@@ -321,7 +321,7 @@ fn evaluate_set_operator(
                 }
             };
 
-            match ctx.get(key) {
+            match ctx.get_ci(key) {
                 Some(ContextValue::BooleanList(list)) => {
                     if for_all_values {
                         Ok(list.iter().all(satisfies))
@@ -354,7 +354,7 @@ fn ev_str(
         EvaluationError::ConditionError("String condition value must be a string".to_string())
     })?;
 
-    match ctx.get(key) {
+    match ctx.get_ci(key) {
         Some(ContextValue::String(s)) => Ok(predicate(s.clone(), value.to_string())),
         // A multivalued context key with a plain operator matches if any value
         // matches (implicit ForAnyValue semantics).
@@ -388,7 +388,7 @@ fn ev_numeric(
             ))
         })?;
 
-    let context_value = match ctx.get(key) {
+    let context_value = match ctx.get_ci(key) {
         Some(ContextValue::Number(n)) => *n,
         Some(ContextValue::String(s)) => s.parse::<f64>().map_err(|_| {
             EvaluationError::ConditionError("Invalid numeric context value".to_string())
@@ -437,7 +437,7 @@ fn ev_date(
     let value: DateTime<Utc> = parse_date(value)
         .map_err(|_| EvaluationError::ConditionError("Invalid date condition value".to_string()))?;
 
-    let context_value: DateTime<Utc> = match ctx.get(key) {
+    let context_value: DateTime<Utc> = match ctx.get_ci(key) {
         Some(ContextValue::DateTime(dt)) => *dt,
         Some(ContextValue::Number(epoch)) => parse_date(&epoch.to_string()).map_err(|_| {
             EvaluationError::ConditionError("Invalid epoch context value".to_string())
@@ -473,7 +473,7 @@ fn ev_bool(
             ))
         })?;
 
-    match ctx.get(key) {
+    match ctx.get_ci(key) {
         Some(ContextValue::Boolean(b)) => Ok(predicate(*b, value)),
         // A multivalued context key with a plain operator matches if any value
         // matches (implicit ForAnyValue semantics).
@@ -515,7 +515,7 @@ fn ev_ip(
         .parse()
         .map_err(|_| EvaluationError::ConditionError("Invalid IP condition value".to_string()))?;
 
-    let context_value = match ctx.get(key) {
+    let context_value = match ctx.get_ci(key) {
         Some(ContextValue::String(ip_addr)) => ip_subnet(ip_addr)
             .parse::<IpNet>()
             .map_err(|_| EvaluationError::ConditionError("Invalid IP context value".to_string()))?,
@@ -1442,6 +1442,21 @@ mod tests {
             &IAMOperator::Bool,
             "bool_list",
             &serde_json::Value::Bool(true),
+        )
+        .unwrap();
+        assert!(result);
+    }
+
+    #[test]
+    fn test_context_key_case_insensitive() {
+        // AWS: context key names are case-insensitive (aws:SourceIP == AWS:SourceIp).
+        let ctx = Context::new().with_string("AWS:USERNAME", "alice");
+
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::StringEquals,
+            "aws:username",
+            &serde_json::Value::String("alice".to_string()),
         )
         .unwrap();
         assert!(result);

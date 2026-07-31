@@ -1013,6 +1013,38 @@ mod tests {
     }
 
     #[test]
+    fn test_context_key_case_insensitive() {
+        // AWS: context key names are case-insensitive.
+        let policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                .with_resource(IAMResource::Single("*".to_string()))
+                .with_condition(
+                    IAMOperator::StringEquals,
+                    "aws:username".to_string(),
+                    ConditionValue::String("alice".to_string()),
+                ),
+        );
+
+        // Context uses a different case for the key name.
+        let mut ctx = Context::new();
+        ctx.insert(
+            "AWS:UserName".to_string(),
+            ContextValue::String("alice".to_string()),
+        );
+        let mut request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
+            "s3:GetObject",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        );
+        request.context = ctx;
+        let result = evaluate_policy(&policy, &request).unwrap();
+        assert_eq!(result, Decision::Allow);
+    }
+
+    #[test]
     fn test_explicit_deny_overrides_allow() {
         let policies = vec![
             IAMPolicy::new().add_statement(

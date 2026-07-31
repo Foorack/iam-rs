@@ -50,7 +50,7 @@ impl PolicyVariable {
     /// Resolve the variable against a context
     #[must_use]
     pub fn resolve(&self, context: &Context) -> String {
-        match context.get(&self.key) {
+        match context.get_ci(&self.key) {
             Some(ContextValue::String(value)) => value.clone(),
             Some(other) => {
                 // Convert other types to string representation
