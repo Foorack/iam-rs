@@ -1,6 +1,6 @@
 # iam-rs
 
-# STILL IN FINAL DEVELOPMENT AND VERIFICATION PHASE - CAUTION ON USAGE
+## USAGE NOTICE: This library is still in final phase of verification and may have breaking changes. Pin exact version. It is functional and ready to use, but it has not been externally verified. Small differences may exist compared to AWS's own internal implementation. Please report any discrepancies.
 
 [![Crates.io](https://img.shields.io/crates/v/iam-rs.svg)](https://crates.io/crates/iam-rs)
 [![Documentation](https://docs.rs/iam-rs/badge.svg)](https://docs.rs/iam-rs)
