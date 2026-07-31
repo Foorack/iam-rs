@@ -14,7 +14,8 @@ pub enum ConditionValue {
     /// A boolean value (e.g., `true`, `false`)
     Boolean(bool),
     /// A numeric value (e.g., `42`, `3.14`)
-    Number(i64),
+    #[cfg_attr(feature = "utoipa", schema(value_type = f64))]
+    Number(serde_json::Number),
     /// A single string value (e.g., `"us-east-1"`)
     String(String),
     /// Multiple string values (e.g., `["us-east-1", "us-west-2"]`)
@@ -75,7 +76,7 @@ impl ConditionValue {
     pub fn to_json_value(&self) -> serde_json::Value {
         match self {
             ConditionValue::Boolean(b) => serde_json::Value::Bool(*b),
-            ConditionValue::Number(n) => serde_json::Value::Number((*n).into()),
+            ConditionValue::Number(n) => serde_json::Value::Number(n.clone()),
             ConditionValue::String(s) => serde_json::Value::String(s.clone()),
             ConditionValue::StringList(list) => serde_json::Value::Array(
                 list.iter()
@@ -89,13 +90,7 @@ impl ConditionValue {
     pub fn from_json_value(value: serde_json::Value) -> Result<Self, String> {
         match value {
             serde_json::Value::Bool(b) => Ok(ConditionValue::Boolean(b)),
-            serde_json::Value::Number(n) => {
-                if let Some(i) = n.as_i64() {
-                    Ok(ConditionValue::Number(i))
-                } else {
-                    Err(format!("Unsupported number format: {n}"))
-                }
-            }
+            serde_json::Value::Number(n) => Ok(ConditionValue::Number(n)),
             serde_json::Value::String(s) => Ok(ConditionValue::String(s)),
             serde_json::Value::Array(arr) => {
                 let mut strings = Vec::new();
@@ -182,7 +177,18 @@ impl Condition {
 
     /// Creates a condition with a numeric value
     pub fn number<K: Into<String>>(operator: IAMOperator, key: K, value: i64) -> Self {
-        Self::new(operator, key, ConditionValue::Number(value))
+        Self::new(operator, key, ConditionValue::Number(value.into()))
+    }
+
+    /// Creates a condition with a floating-point numeric value
+    ///
+    /// # Panics
+    ///
+    /// Panics if `value` is not finite (NaN or infinity).
+    pub fn float<K: Into<String>>(operator: IAMOperator, key: K, value: f64) -> Self {
+        let number = serde_json::Number::from_f64(value)
+            .expect("float value must be finite (not NaN or infinity)");
+        Self::new(operator, key, ConditionValue::Number(number))
     }
 
     /// Creates a condition with an array of string values
@@ -588,5 +594,33 @@ mod tests {
         // Test that it can be deserialized back
         let deserialized: ConditionBlock = serde_json::from_str(&json).unwrap();
         assert_eq!(block, deserialized);
+    }
+
+    #[test]
+    fn test_condition_value_float_number() {
+        // JSON integers deserialize as integers and round-trip without ".0".
+        let int_value: ConditionValue = serde_json::from_str("10").unwrap();
+        assert_eq!(int_value, ConditionValue::Number(10.into()));
+        assert_eq!(serde_json::to_string(&int_value).unwrap(), "10");
+
+        // JSON floats deserialize and round-trip exactly.
+        let float_value: ConditionValue = serde_json::from_str("10.5").unwrap();
+        assert_eq!(
+            float_value,
+            ConditionValue::Number(serde_json::Number::from_f64(10.5).unwrap())
+        );
+        assert_eq!(serde_json::to_string(&float_value).unwrap(), "10.5");
+
+        // from_json_value / to_json_value round-trip a float.
+        let cv = ConditionValue::from_json_value(serde_json::json!(1234.5)).unwrap();
+        assert_eq!(cv.to_json_value(), serde_json::json!(1234.5));
+
+        // The float builder constructs a float condition.
+        let condition = Condition::float(
+            IAMOperator::NumericLessThan,
+            "aws:multifactorAuthAge",
+            1234.5,
+        );
+        assert!(condition.value.is_number());
     }
 }

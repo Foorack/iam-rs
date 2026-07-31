@@ -170,8 +170,8 @@
             "description": "A boolean value (e.g., `true`, `false`)"
           },
           {
-            "type": "integer",
-            "format": "int64",
+            "type": "number",
+            "format": "double",
             "description": "A numeric value (e.g., `42`, `3.14`)"
           },
           {

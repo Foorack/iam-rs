@@ -209,7 +209,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 .with_condition(
                     IAMOperator::NumericLessThan,
                     "aws:RequestCount".to_string(),
-                    ConditionValue::Number(10),
+                    ConditionValue::Number(10.into()),
                 ),
         );
 

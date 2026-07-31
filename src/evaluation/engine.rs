@@ -915,6 +915,54 @@ mod tests {
     }
 
     #[test]
+    fn test_float_numeric_condition() {
+        let policy_json = r#"{
+            "Version": "2012-10-17",
+            "Statement": [{
+                "Effect": "Allow",
+                "Action": "s3:GetObject",
+                "Resource": "*",
+                "Condition": {"NumericLessThan": {"aws:multifactorAuthAge": 1234.5}}
+            }]
+        }"#;
+        let policy = IAMPolicy::from_json(policy_json).unwrap();
+
+        // Context value 500.0 < 1234.5 -> allowed.
+        let mut ctx = Context::new();
+        ctx.insert(
+            "aws:multifactorAuthAge".to_string(),
+            ContextValue::Number(500.0),
+        );
+        let mut request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
+            "s3:GetObject",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        );
+        request.context = ctx;
+        let result = evaluate_policy(&policy, &request).unwrap();
+        assert_eq!(result, Decision::Allow);
+
+        // Context value 2000.0 >= 1234.5 -> not applicable.
+        let mut ctx = Context::new();
+        ctx.insert(
+            "aws:multifactorAuthAge".to_string(),
+            ContextValue::Number(2000.0),
+        );
+        let mut request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
+            "s3:GetObject",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        );
+        request.context = ctx;
+        let result = evaluate_policy(&policy, &request).unwrap();
+        assert_eq!(result, Decision::NotApplicable);
+    }
+
+    #[test]
     fn test_explicit_deny_overrides_allow() {
         let policies = vec![
             IAMPolicy::new().add_statement(
@@ -980,7 +1028,7 @@ mod tests {
                 .with_condition(
                     IAMOperator::NumericLessThan,
                     "aws:RequestedRegion".to_string(),
-                    ConditionValue::Number(10),
+                    ConditionValue::Number(10.into()),
                 ),
         );
 
