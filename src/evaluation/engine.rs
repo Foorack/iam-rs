@@ -476,8 +476,12 @@ impl PolicyEvaluator {
             // ARN-based principal matching
             let matcher = ArnMatcher::from_pattern(principal_str)
                 .map_err(|e| EvaluationError::InvalidArn(e.to_string()))?;
+            // A request principal that isn't a valid ARN can't match an ARN pattern
+            let Ok(request_arn) = Arn::parse(request_principal) else {
+                return Ok(false);
+            };
             matcher
-                .matches(&Arn::parse(request_principal).unwrap())
+                .matches(&request_arn)
                 .map_err(|e| EvaluationError::InvalidArn(e.to_string()))
         } else {
             Ok(false)
@@ -782,6 +786,31 @@ mod tests {
 
         let result = evaluate_policies(&policies, &request).unwrap();
         assert_eq!(result, Decision::Deny);
+    }
+
+    #[test]
+    fn test_non_arn_principal_does_not_panic() {
+        // A request principal that is valid but not an ARN (e.g. a 12-digit
+        // account ID) must not panic when matched against a wildcard ARN
+        // principal. Previously this hit an unwrap on a failed ARN parse.
+        let policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_principal(Principal::Aws(PrincipalId::String(
+                    "arn:aws:iam::123456789012:role/*".to_string(),
+                )))
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                .with_resource(IAMResource::Single("*".to_string())),
+        );
+
+        let request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String("123456789012".to_string())),
+            "s3:GetObject",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        );
+
+        // Principal doesn't match the ARN pattern -> statement not applicable.
+        let result = evaluate_policy(&policy, &request).unwrap();
+        assert_eq!(result, Decision::NotApplicable);
     }
 
     #[test]
