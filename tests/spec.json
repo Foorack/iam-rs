@@ -11,7 +11,7 @@
       "name": "MIT",
       "identifier": "MIT"
     },
-    "version": "0.0.23"
+    "version": "0.1.1"
   },
   "paths": {},
   "components": {
@@ -54,17 +54,23 @@
           {
             "type": "string",
             "description": "ARN doesn't start with \"arn:\"",
-            "enum": ["InvalidPrefix"]
+            "enum": [
+              "InvalidPrefix"
+            ]
           },
           {
             "type": "string",
             "description": "ARN has incorrect number of components",
-            "enum": ["InvalidFormat"]
+            "enum": [
+              "InvalidFormat"
+            ]
           },
           {
             "type": "object",
             "description": "Partition is empty or invalid",
-            "required": ["InvalidPartition"],
+            "required": [
+              "InvalidPartition"
+            ],
             "properties": {
               "InvalidPartition": {
                 "type": "string",
@@ -75,7 +81,9 @@
           {
             "type": "object",
             "description": "Service is empty or invalid",
-            "required": ["InvalidService"],
+            "required": [
+              "InvalidService"
+            ],
             "properties": {
               "InvalidService": {
                 "type": "string",
@@ -86,7 +94,9 @@
           {
             "type": "object",
             "description": "Account ID format is invalid (should be 12 digits or empty)",
-            "required": ["InvalidAccountId"],
+            "required": [
+              "InvalidAccountId"
+            ],
             "properties": {
               "InvalidAccountId": {
                 "type": "string",
@@ -97,7 +107,9 @@
           {
             "type": "object",
             "description": "Resource format is invalid",
-            "required": ["InvalidResource"],
+            "required": [
+              "InvalidResource"
+            ],
             "properties": {
               "InvalidResource": {
                 "type": "string",
@@ -117,7 +129,11 @@
       "Condition": {
         "type": "object",
         "description": "Represents a single condition in an IAM policy",
-        "required": ["operator", "key", "value"],
+        "required": [
+          "operator",
+          "key",
+          "value"
+        ],
         "properties": {
           "key": {
             "type": "string",
@@ -175,7 +191,9 @@
       "Context": {
         "type": "object",
         "description": "Context for IAM evaluation containing key-value pairs",
-        "required": ["data"],
+        "required": [
+          "data"
+        ],
         "properties": {
           "data": {
             "type": "object",
@@ -237,14 +255,20 @@
       "Decision": {
         "type": "string",
         "description": "Result of policy evaluation",
-        "enum": ["Allow", "Deny", "NotApplicable"]
+        "enum": [
+          "Allow",
+          "Deny",
+          "NotApplicable"
+        ]
       },
       "EvaluationError": {
         "oneOf": [
           {
             "type": "object",
             "description": "Invalid request context",
-            "required": ["InvalidRequest"],
+            "required": [
+              "InvalidRequest"
+            ],
             "properties": {
               "InvalidRequest": {
                 "type": "string",
@@ -255,7 +279,9 @@
           {
             "type": "object",
             "description": "Policy parsing or validation error",
-            "required": ["InvalidPolicy"],
+            "required": [
+              "InvalidPolicy"
+            ],
             "properties": {
               "InvalidPolicy": {
                 "type": "string",
@@ -266,7 +292,9 @@
           {
             "type": "object",
             "description": "ARN format error during evaluation",
-            "required": ["InvalidArn"],
+            "required": [
+              "InvalidArn"
+            ],
             "properties": {
               "InvalidArn": {
                 "type": "string",
@@ -277,7 +305,9 @@
           {
             "type": "object",
             "description": "Invalid variable reference",
-            "required": ["InvalidVariable"],
+            "required": [
+              "InvalidVariable"
+            ],
             "properties": {
               "InvalidVariable": {
                 "type": "string",
@@ -288,7 +318,9 @@
           {
             "type": "object",
             "description": "Condition evaluation error",
-            "required": ["ConditionError"],
+            "required": [
+              "ConditionError"
+            ],
             "properties": {
               "ConditionError": {
                 "type": "string",
@@ -299,7 +331,9 @@
           {
             "type": "object",
             "description": "Internal evaluation error",
-            "required": ["InternalError"],
+            "required": [
+              "InternalError"
+            ],
             "properties": {
               "InternalError": {
                 "type": "string",
@@ -342,7 +376,11 @@
       "EvaluationResult": {
         "type": "object",
         "description": "Evaluation result with decision and metadata",
-        "required": ["decision", "matched_statements", "context"],
+        "required": [
+          "decision",
+          "matched_statements",
+          "context"
+        ],
         "properties": {
           "context": {
             "$ref": "#/components/schemas/IAMRequest",
@@ -380,7 +418,10 @@
       "IAMEffect": {
         "type": "string",
         "description": "Represents the effect of an IAM statement\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_effect.html>",
-        "enum": ["Allow", "Deny"]
+        "enum": [
+          "Allow",
+          "Deny"
+        ]
       },
       "IAMOperator": {
         "type": "string",
@@ -466,10 +507,16 @@
       "IAMPolicy": {
         "type": "object",
         "description": "JSON policy documents are made up of elements.\nThe elements are listed here in the general order you use them in a policy.\nThe order of the elements doesn't matter—for example, the Resource element can come before the Action element.\nYou're not required to specify any Condition elements in the policy.\nTo learn more about the general structure and purpose of a JSON policy document, see Overview of JSON policies.\n\nSome JSON policy elements are mutually exclusive.\nThis means that you cannot create a policy that uses both.\nFor example, you cannot use both Action and `NotAction` in the same policy statement.\nOther pairs that are mutually exclusive include Principal/NotPrincipal and Resource/NotResource.\n\nThe details of what goes into a policy vary for each service, depending on what actions the service makes available, what types of resources it contains, and so on.\nWhen you're writing policies for a specific service, it's helpful to see examples of policies for that service.\n\nWhen you create or edit a JSON policy, `iam-rw` can perform policy validation to help you create an effective policy.\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements.html>",
-        "required": ["Version", "Statement"],
+        "required": [
+          "Version",
+          "Statement"
+        ],
         "properties": {
           "Id": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "The `Id` element specifies an optional identifier for the policy.\n\nThe ID is used differently in different services.\nID is allowed in resource-based policies, but not in identity-based policies.\n\nRecommendation is to use a UUID (GUID) for the value, or incorporate a UUID as part of the ID to ensure uniqueness.\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_id.html>"
           },
           "Statement": {
@@ -485,7 +532,11 @@
       "IAMRequest": {
         "type": "object",
         "description": "Core IAM request containing principal, action, and resource\n\n## Understanding the PARC model\n\nThe PARC model represents the request context based on the four JSON elements in the policy language:\n\n* Principal – The entity making the request.\n  A principal represents a human user or programmatic workload that can be authenticated and\n  then authorized to perform actions in AWS accounts.\n* Action – The operation being performed. Often the action will map to an API action.\n* Resource – The AWS resource on which the action is being performed.\n* Condition – Additional constraints that must be met for the request to be allowed.\n\nThe following shows an example of how the PARC model might represent a request context:\n\n```text\nPrincipal: AIDA123456789EXAMPLE\nAction: s3:CreateBucket\nResource: arn:aws:s3:::amzn-s3-demo-bucket1\nContext:\n- aws:UserId=AIDA123456789EXAMPLE:BobsSession\n- aws:PrincipalAccount=123456789012\n- aws:PrincipalOrgId=o-example\n- aws:PrincipalARN=arn:aws:iam::AIDA123456789EXAMPLE:role/HR\n- aws:MultiFactorAuthPresent=true\n- aws:CurrentTime=...\n- aws:EpochTime=...\n- aws:SourceIp=...\n- aws:PrincipalTag/dept=123\n- aws:PrincipalTag/project=blue\n- aws:RequestTag/dept=123\n```\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_evaluation-logic_policy-eval-reqcontext.html>",
-        "required": ["Principal", "Action", "Resource"],
+        "required": [
+          "Principal",
+          "Action",
+          "Resource"
+        ],
         "properties": {
           "Action": {
             "type": "string",
@@ -524,7 +575,9 @@
       "IAMStatement": {
         "type": "object",
         "description": "Represents a single statement in an IAM policy\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_statement.html>",
-        "required": ["Effect"],
+        "required": [
+          "Effect"
+        ],
         "properties": {
           "Action": {
             "oneOf": [
@@ -608,7 +661,10 @@
             ]
           },
           "Sid": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Optional statement ID\n\nYou can provide a `Sid` (statement ID) as an optional identifier for the policy statement.\nYou can assign a `Sid` value to each statement in a statement array.\nYou can use the `Sid` value as a description for the policy statement.\n\nIn services that let you specify an ID element, such as AWS SQS and AWS SNS, the `Sid` value is just a sub-ID of the policy document ID.\nIn IAM, the `Sid` value must be unique within a JSON policy.\n\nThe Sid element supports ASCII uppercase letters (A-Z), lowercase letters (a-z), and numbers (0-9).\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_sid.html>"
           }
         }
@@ -631,7 +687,10 @@
       "IAMVersion": {
         "type": "string",
         "description": "Represents the version of the IAM policy language",
-        "enum": ["2012-10-17", "2008-10-17"]
+        "enum": [
+          "2012-10-17",
+          "2008-10-17"
+        ]
       },
       "OperatorType": {
         "type": "string",
@@ -649,7 +708,10 @@
       "PolicyEvaluator": {
         "type": "object",
         "description": "Policy evaluation engine",
-        "required": ["policies", "options"],
+        "required": [
+          "policies",
+          "options"
+        ],
         "properties": {
           "options": {
             "$ref": "#/components/schemas/EvaluationOptions",
@@ -667,10 +729,15 @@
       "PolicyVariable": {
         "type": "object",
         "description": "Represents a parsed policy variable",
-        "required": ["key"],
+        "required": [
+          "key"
+        ],
         "properties": {
           "default_value": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Optional default value if key is not found"
           },
           "key": {
@@ -683,8 +750,11 @@
         "oneOf": [
           {
             "type": "object",
+            "title": "PrincipalAws",
             "description": "AWS principals (users, roles, root accounts)",
-            "required": ["AWS"],
+            "required": [
+              "AWS"
+            ],
             "properties": {
               "AWS": {
                 "$ref": "#/components/schemas/PrincipalId",
@@ -694,8 +764,11 @@
           },
           {
             "type": "object",
+            "title": "PrincipalFederated",
             "description": "Federated principals (SAML, OIDC providers)",
-            "required": ["Federated"],
+            "required": [
+              "Federated"
+            ],
             "properties": {
               "Federated": {
                 "$ref": "#/components/schemas/PrincipalId",
@@ -705,8 +778,11 @@
           },
           {
             "type": "object",
+            "title": "PrincipalService",
             "description": "AWS service principals",
-            "required": ["Service"],
+            "required": [
+              "Service"
+            ],
             "properties": {
               "Service": {
                 "$ref": "#/components/schemas/PrincipalId",
@@ -716,8 +792,11 @@
           },
           {
             "type": "object",
+            "title": "PrincipalCanonicalUser",
             "description": "Canonical user principals",
-            "required": ["CanonicalUser"],
+            "required": [
+              "CanonicalUser"
+            ],
             "properties": {
               "CanonicalUser": {
                 "$ref": "#/components/schemas/PrincipalId",
@@ -727,8 +806,11 @@
           },
           {
             "type": "string",
+            "title": "PrincipalWildcard",
             "description": "Wildcard principal (matches all principals)",
-            "enum": ["*"]
+            "enum": [
+              "*"
+            ]
           }
         ],
         "description": "Represents a principal in an IAM policy\n\n`<principal_block>` = (\"Principal\" | \"`NotPrincipal`\") : (\"*\" | `<principal_map>`)\n`<principal_map>` = { `<principal_map_entry>`, `<principal_map_entry>`, ... }\n`<principal_map_entry>` = (\"AWS\" | \"Federated\" | \"Service\" | \"`CanonicalUser`\") :\n    [`<principal_id_string>`, `<principal_id_string>`, ...]\n\n(e.g., {\"AWS\": \"`arn:aws:iam::123456789012:user/username`\"})\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_principal.html>"
@@ -752,7 +834,11 @@
       "StatementMatch": {
         "type": "object",
         "description": "Information about a statement that matched during evaluation",
-        "required": ["effect", "conditions_satisfied", "reason"],
+        "required": [
+          "effect",
+          "conditions_satisfied",
+          "reason"
+        ],
         "properties": {
           "conditions_satisfied": {
             "type": "boolean",
@@ -767,7 +853,10 @@
             "description": "Reason for the match/non-match"
           },
           "sid": {
-            "type": ["string", "null"],
+            "type": [
+              "string",
+              "null"
+            ],
             "description": "Statement ID if available"
           }
         }

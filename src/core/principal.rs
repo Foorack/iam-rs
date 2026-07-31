@@ -29,18 +29,23 @@ pub enum PrincipalId {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum Principal {
     /// AWS principals (users, roles, root accounts)
+    #[cfg_attr(feature = "utoipa", schema(title = "PrincipalAws"))]
     #[serde(rename = "AWS")]
     Aws(PrincipalId),
     /// Federated principals (SAML, OIDC providers)
+    #[cfg_attr(feature = "utoipa", schema(title = "PrincipalFederated"))]
     #[serde(rename = "Federated")]
     Federated(PrincipalId),
     /// AWS service principals
+    #[cfg_attr(feature = "utoipa", schema(title = "PrincipalService"))]
     #[serde(rename = "Service")]
     Service(PrincipalId),
     /// Canonical user principals
+    #[cfg_attr(feature = "utoipa", schema(title = "PrincipalCanonicalUser"))]
     #[serde(rename = "CanonicalUser")]
     CanonicalUser(PrincipalId),
     /// Wildcard principal (matches all principals)
+    #[cfg_attr(feature = "utoipa", schema(title = "PrincipalWildcard"))]
     #[serde(rename = "*")]
     Wildcard,
 }
