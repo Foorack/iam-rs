@@ -56,6 +56,9 @@ pub(super) fn evaluate_condition(
 ) -> Result<bool, EvaluationError> {
     let if_exists = operator.is_if_exists_operator();
     let set_operator = SetOperatorType::from_operator(operator);
+    // AWS: for negated operators (StringNotLike, ArnNotLike, ...) the condition
+    // is true when the key is absent from the request context.
+    let is_negated = operator.is_negated_operator();
 
     let mut predicate_str: Predicate<String> =
         Box::new(|_a, _b| unreachable!("predicate_str invoked for non-string operator category"));
@@ -176,15 +179,25 @@ pub(super) fn evaluate_condition(
 
     for value in values {
         let result = match operator.category() {
-            OperatorType::String | OperatorType::Arn | OperatorType::Binary => {
-                ev_str(ctx, key, value, &predicate_str, if_exists, set_operator)?
+            OperatorType::String | OperatorType::Arn | OperatorType::Binary => ev_str(
+                ctx,
+                key,
+                value,
+                &predicate_str,
+                if_exists,
+                is_negated,
+                set_operator,
+            )?,
+            OperatorType::Numeric => {
+                ev_numeric(ctx, key, value, &predicate_num, if_exists, is_negated)?
             }
-            OperatorType::Numeric => ev_numeric(ctx, key, value, &predicate_num, if_exists)?,
-            OperatorType::Date => ev_date(ctx, key, value, &predicate_date, if_exists)?,
+            OperatorType::Date => ev_date(ctx, key, value, &predicate_date, if_exists, is_negated)?,
             OperatorType::Boolean => {
                 ev_bool(ctx, key, value, &predicate_bool, if_exists, set_operator)?
             }
-            OperatorType::IpAddress => ev_ip(ctx, key, value, &predicate_ip, if_exists)?,
+            OperatorType::IpAddress => {
+                ev_ip(ctx, key, value, &predicate_ip, if_exists, is_negated)?
+            }
             OperatorType::Null => {
                 // Null check
                 match value {
@@ -217,6 +230,7 @@ fn ev_str(
     value: &serde_json::Value,
     predicate: &Predicate<String>,
     if_exists: bool,
+    is_negated: bool,
     set_operator: SetOperatorType,
 ) -> Result<bool, EvaluationError> {
     let value = value.as_str().ok_or_else(|| {
@@ -238,8 +252,9 @@ fn ev_str(
                 "Multivalued context keys require a condition set operator.".to_string(),
             )),
         },
-        Some(_) => Ok(false),  // Type mismatch
-        None => Ok(if_exists), // Missing context (return true if operator is IfExists)
+        Some(_) => Ok(false), // Type mismatch
+        // Missing context: true for IfExists and negated operators
+        None => Ok(if_exists || is_negated),
     }
 }
 
@@ -252,6 +267,7 @@ fn ev_numeric(
     value: &serde_json::Value,
     predicate: &Predicate<f64>,
     if_exists: bool,
+    is_negated: bool,
 ) -> Result<bool, EvaluationError> {
     let value = value
         .to_string()
@@ -268,8 +284,9 @@ fn ev_numeric(
         Some(ContextValue::String(s)) => s.parse::<f64>().map_err(|_| {
             EvaluationError::ConditionError("Invalid numeric context value".to_string())
         })?,
-        Some(_) => return Ok(false),  // Type mismatch
-        None => return Ok(if_exists), // Missing context (return true if operator is IfExists)
+        Some(_) => return Ok(false), // Type mismatch
+        // Missing context: true for IfExists and negated operators
+        None => return Ok(if_exists || is_negated),
     };
     Ok(predicate(context_value, value))
 }
@@ -301,6 +318,7 @@ fn ev_date(
     value: &serde_json::Value,
     predicate: &DatePredicate<DateTime<Utc>>,
     if_exists: bool,
+    is_negated: bool,
 ) -> Result<bool, EvaluationError> {
     let value = value.as_str().ok_or_else(|| {
         EvaluationError::ConditionError(format!(
@@ -318,8 +336,9 @@ fn ev_date(
         Some(ContextValue::String(s)) => parse_date(s).map_err(|_| {
             EvaluationError::ConditionError("Invalid date context value".to_string())
         })?,
-        Some(_) => return Ok(false),  // Type mismatch
-        None => return Ok(if_exists), // Missing context (return true if operator is IfExists)
+        Some(_) => return Ok(false), // Type mismatch
+        // Missing context: true for IfExists and negated operators
+        None => return Ok(if_exists || is_negated),
     };
     Ok(predicate(&context_value, &value))
 }
@@ -376,6 +395,7 @@ fn ev_ip(
     value: &serde_json::Value,
     predicate: &Predicate<IpNet>,
     if_exists: bool,
+    is_negated: bool,
 ) -> Result<bool, EvaluationError> {
     /// Add default /32 prefix for IPv4 or /128 for IPv6 if none is specified
     fn ip_subnet(ip: &str) -> String {
@@ -397,8 +417,9 @@ fn ev_ip(
         Some(ContextValue::String(ip_addr)) => ip_subnet(ip_addr)
             .parse::<IpNet>()
             .map_err(|_| EvaluationError::ConditionError("Invalid IP context value".to_string()))?,
-        Some(_) => return Ok(false),  // Type mismatch
-        None => return Ok(if_exists), // Missing context (return true if operator is IfExists)
+        Some(_) => return Ok(false), // Type mismatch
+        // Missing context: true for IfExists and negated operators
+        None => return Ok(if_exists || is_negated),
     };
 
     Ok(predicate(context_value, value))
@@ -496,6 +517,106 @@ mod tests {
         )
         .unwrap();
         assert!(!result);
+    }
+
+    #[test]
+    fn test_missing_key_negated_operators() {
+        // AWS: if the key is absent, non-negated conditions are false but
+        // negated ones (StringNotEquals, StringNotLike, ...) are true.
+        let ctx = Context::new();
+
+        // Non-negated operators are false when the key is missing.
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::StringEquals,
+            "missing_key",
+            &serde_json::Value::String("x".to_string()),
+        )
+        .unwrap();
+        assert!(!result);
+
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::StringLike,
+            "missing_key",
+            &serde_json::Value::String("x*".to_string()),
+        )
+        .unwrap();
+        assert!(!result);
+
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::NumericEquals,
+            "missing_key",
+            &serde_json::json!(42),
+        )
+        .unwrap();
+        assert!(!result);
+
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::IpAddress,
+            "missing_key",
+            &serde_json::Value::String("10.0.0.0/8".to_string()),
+        )
+        .unwrap();
+        assert!(!result);
+
+        // Negated operators are true when the key is missing.
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::StringNotEquals,
+            "missing_key",
+            &serde_json::Value::String("x".to_string()),
+        )
+        .unwrap();
+        assert!(result);
+
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::StringNotLike,
+            "missing_key",
+            &serde_json::Value::String("x*".to_string()),
+        )
+        .unwrap();
+        assert!(result);
+
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::NumericNotEquals,
+            "missing_key",
+            &serde_json::json!(42),
+        )
+        .unwrap();
+        assert!(result);
+
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::NotIpAddress,
+            "missing_key",
+            &serde_json::Value::String("10.0.0.0/8".to_string()),
+        )
+        .unwrap();
+        assert!(result);
+
+        // IfExists operators are true when the key is missing.
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::StringEqualsIfExists,
+            "missing_key",
+            &serde_json::Value::String("x".to_string()),
+        )
+        .unwrap();
+        assert!(result);
+
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::StringNotEqualsIfExists,
+            "missing_key",
+            &serde_json::Value::String("x".to_string()),
+        )
+        .unwrap();
+        assert!(result);
     }
 
     #[test]

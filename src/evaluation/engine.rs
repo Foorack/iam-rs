@@ -760,6 +760,34 @@ mod tests {
     }
 
     #[test]
+    fn test_deny_with_negated_condition_on_missing_key() {
+        // AWS: a negated condition (StringNotEquals) with an absent context key
+        // is true, so this Deny statement applies and denies access.
+        let policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Deny)
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                .with_resource(IAMResource::Single("*".to_string()))
+                .with_condition(
+                    IAMOperator::StringNotEquals,
+                    "aws:SecureTransport".to_string(),
+                    ConditionValue::String("true".to_string()),
+                ),
+        );
+
+        // No context provided: aws:SecureTransport is absent.
+        let request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
+            "s3:GetObject",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        );
+
+        let result = evaluate_policy(&policy, &request).unwrap();
+        assert_eq!(result, Decision::Deny);
+    }
+
+    #[test]
     fn test_explicit_deny_overrides_allow() {
         let policies = vec![
             IAMPolicy::new().add_statement(
