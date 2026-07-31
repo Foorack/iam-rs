@@ -177,24 +177,25 @@ pub(super) fn evaluate_condition(
         _ => std::slice::from_ref(value),
     };
 
+    // Set operators (ForAllValues / ForAnyValue) need the whole policy value
+    // set to evaluate correctly, so handle them before the per-value loop.
+    if set_operator != SetOperatorType::None {
+        return evaluate_set_operator(ctx, operator, key, values, &predicate_str, &predicate_bool);
+    }
+
+    // Non-set operators aggregate across the policy values. AWS evaluates
+    // multiple values with a logical OR, but negated operators with a logical
+    // NOR (every value must satisfy the negated comparison).
     for value in values {
         let result = match operator.category() {
-            OperatorType::String | OperatorType::Arn | OperatorType::Binary => ev_str(
-                ctx,
-                key,
-                value,
-                &predicate_str,
-                if_exists,
-                is_negated,
-                set_operator,
-            )?,
+            OperatorType::String | OperatorType::Arn | OperatorType::Binary => {
+                ev_str(ctx, key, value, &predicate_str, if_exists, is_negated)?
+            }
             OperatorType::Numeric => {
                 ev_numeric(ctx, key, value, &predicate_num, if_exists, is_negated)?
             }
             OperatorType::Date => ev_date(ctx, key, value, &predicate_date, if_exists, is_negated)?,
-            OperatorType::Boolean => {
-                ev_bool(ctx, key, value, &predicate_bool, if_exists, set_operator)?
-            }
+            OperatorType::Boolean => ev_bool(ctx, key, value, &predicate_bool, if_exists)?,
             OperatorType::IpAddress => {
                 ev_ip(ctx, key, value, &predicate_ip, if_exists, is_negated)?
             }
@@ -213,12 +214,123 @@ pub(super) fn evaluate_condition(
                 }
             }
         };
-        if result {
+        if is_negated {
+            // NOR: every policy value must satisfy the negated comparison.
+            if !result {
+                return Ok(false);
+            }
+        } else if result {
             return Ok(true);
         }
     }
+    // Negated: every value matched -> true. Non-negated: none matched -> false.
+    Ok(is_negated)
+}
 
-    Ok(false)
+/// Evaluate a set-operator condition (`ForAllValues` / `ForAnyValue`) against
+/// the full set of policy values.
+///
+/// AWS semantics (see "Conditions with multiple context keys or values"):
+/// * `ForAllValues` is true iff EVERY request value satisfies the comparison.
+/// * `ForAnyValue`  is true iff AT LEAST ONE request value satisfies it.
+/// * For negated operators the pairwise predicate is already the negated
+///   comparison, and AWS applies a logical NOR across the policy values
+///   (every policy value must hold).
+/// * `ForAllValues` with a missing or empty context resolves to true;
+///   `ForAnyValue` with a missing or empty context resolves to false.
+fn evaluate_set_operator(
+    ctx: &Context,
+    operator: &IAMOperator,
+    key: &str,
+    values: &[serde_json::Value],
+    predicate_str: &Predicate<String>,
+    predicate_bool: &Predicate<bool>,
+) -> Result<bool, EvaluationError> {
+    let all_policy_values = operator.is_negated_operator();
+    let for_all_values = matches!(
+        SetOperatorType::from_operator(operator),
+        SetOperatorType::ForAllValues
+    );
+
+    match operator.category() {
+        OperatorType::String | OperatorType::Arn | OperatorType::Binary => {
+            let policy_values: Vec<&str> = values
+                .iter()
+                .map(|v| {
+                    v.as_str().ok_or_else(|| {
+                        EvaluationError::ConditionError(
+                            "String condition value must be a string".to_string(),
+                        )
+                    })
+                })
+                .collect::<Result<_, _>>()?;
+
+            let satisfies = |context_value: &String| {
+                if all_policy_values {
+                    policy_values
+                        .iter()
+                        .all(|&pv| predicate_str(context_value.clone(), pv.to_string()))
+                } else {
+                    policy_values
+                        .iter()
+                        .any(|&pv| predicate_str(context_value.clone(), pv.to_string()))
+                }
+            };
+
+            match ctx.get(key) {
+                Some(ContextValue::StringList(list)) => {
+                    if for_all_values {
+                        Ok(list.iter().all(satisfies))
+                    } else {
+                        Ok(list.iter().any(satisfies))
+                    }
+                }
+                // A scalar context behaves like a single-element set.
+                Some(ContextValue::String(s)) => Ok(satisfies(s)),
+                Some(_) => Ok(false),       // Type mismatch
+                None => Ok(for_all_values), // ForAllValues: true, ForAnyValue: false
+            }
+        }
+        OperatorType::Boolean => {
+            let policy_values: Vec<bool> = values
+                .iter()
+                .map(|v| {
+                    v.as_bool().ok_or_else(|| {
+                        EvaluationError::ConditionError(format!(
+                            "Boolean condition value must be a boolean, got {v}"
+                        ))
+                    })
+                })
+                .collect::<Result<_, _>>()?;
+
+            let satisfies = |&context_value: &bool| {
+                if all_policy_values {
+                    policy_values
+                        .iter()
+                        .all(|&pv| predicate_bool(context_value, pv))
+                } else {
+                    policy_values
+                        .iter()
+                        .any(|&pv| predicate_bool(context_value, pv))
+                }
+            };
+
+            match ctx.get(key) {
+                Some(ContextValue::BooleanList(list)) => {
+                    if for_all_values {
+                        Ok(list.iter().all(satisfies))
+                    } else {
+                        Ok(list.iter().any(satisfies))
+                    }
+                }
+                Some(ContextValue::Boolean(b)) => Ok(satisfies(b)),
+                Some(_) => Ok(false),       // Type mismatch
+                None => Ok(for_all_values), // ForAllValues: true, ForAnyValue: false
+            }
+        }
+        // Set operators are only defined for string/ARN/boolean operators.
+        _ => Ok(false),
+    }
 }
 
 /// Helper for single string condition evaluation
@@ -231,7 +343,6 @@ fn ev_str(
     predicate: &Predicate<String>,
     if_exists: bool,
     is_negated: bool,
-    set_operator: SetOperatorType,
 ) -> Result<bool, EvaluationError> {
     let value = value.as_str().ok_or_else(|| {
         EvaluationError::ConditionError("String condition value must be a string".to_string())
@@ -239,19 +350,11 @@ fn ev_str(
 
     match ctx.get(key) {
         Some(ContextValue::String(s)) => Ok(predicate(s.clone(), value.to_string())),
-        Some(ContextValue::StringList(list)) => match set_operator {
-            // ForAnyValue: return true if any value matches
-            SetOperatorType::ForAnyValue => Ok(list
-                .iter()
-                .any(|val| predicate(val.clone(), value.to_string()))),
-            // ForAllValues: return true only if all values match
-            SetOperatorType::ForAllValues => Ok(list
-                .iter()
-                .all(|val| predicate(val.clone(), value.to_string()))),
-            SetOperatorType::None => Err(EvaluationError::ConditionError(
-                "Multivalued context keys require a condition set operator.".to_string(),
-            )),
-        },
+        // Set operators (ForAllValues/ForAnyValue) are handled before reaching
+        // this helper, so a multivalued context here is an invalid combination.
+        Some(ContextValue::StringList(_)) => Err(EvaluationError::ConditionError(
+            "Multivalued context keys require a condition set operator.".to_string(),
+        )),
         Some(_) => Ok(false), // Type mismatch
         // Missing context: true for IfExists and negated operators
         None => Ok(if_exists || is_negated),
@@ -353,7 +456,6 @@ fn ev_bool(
     value: &serde_json::Value,
     predicate: &Predicate<bool>,
     if_exists: bool,
-    set_operator: SetOperatorType,
 ) -> Result<bool, EvaluationError> {
     let value = value
         .to_string()
@@ -367,15 +469,11 @@ fn ev_bool(
 
     match ctx.get(key) {
         Some(ContextValue::Boolean(b)) => Ok(predicate(*b, value)),
-        Some(ContextValue::BooleanList(list)) => match set_operator {
-            // ForAnyValue: return true if any value matches
-            SetOperatorType::ForAnyValue => Ok(list.iter().any(|&val| predicate(val, value))),
-            // ForAllValues: return true only if all values match
-            SetOperatorType::ForAllValues => Ok(list.iter().all(|&val| predicate(val, value))),
-            SetOperatorType::None => Err(EvaluationError::ConditionError(
-                "Multivalued context keys require a condition set operator.".to_string(),
-            )),
-        },
+        // Set operators (ForAllValues/ForAnyValue) are handled before reaching
+        // this helper, so a multivalued context here is an invalid combination.
+        Some(ContextValue::BooleanList(_)) => Err(EvaluationError::ConditionError(
+            "Multivalued context keys require a condition set operator.".to_string(),
+        )),
         Some(_) => Ok(false),  // Type mismatch
         None => Ok(if_exists), // Missing context (return true if operator is IfExists)
     }
@@ -617,6 +715,293 @@ mod tests {
         )
         .unwrap();
         assert!(result);
+    }
+
+    #[test]
+    fn test_for_all_values_multiple_policy_values() {
+        let mut ctx = Context::new();
+        ctx.insert(
+            "key".to_string(),
+            ContextValue::StringList(vec!["a".to_string(), "b".to_string()]),
+        );
+
+        // Every context value matches at least one policy value -> true.
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::ForAllValuesStringEquals,
+            "key",
+            &serde_json::json!(["a", "b"]),
+        )
+        .unwrap();
+        assert!(result);
+
+        // A policy value that matches nothing extra doesn't change the result.
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::ForAllValuesStringEquals,
+            "key",
+            &serde_json::json!(["a", "b", "c"]),
+        )
+        .unwrap();
+        assert!(result);
+
+        // A context value ("b") that matches no policy value -> false.
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::ForAllValuesStringEquals,
+            "key",
+            &serde_json::json!(["a"]),
+        )
+        .unwrap();
+        assert!(!result);
+
+        // Single policy value behaves the same as before: all context values
+        // must match that one value.
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::ForAllValuesStringEquals,
+            "key",
+            &serde_json::json!(["a", "b"]),
+        )
+        .unwrap();
+        assert!(result);
+
+        let mut scalar_ctx = Context::new();
+        scalar_ctx.insert("key".to_string(), ContextValue::String("a".to_string()));
+        let result = evaluate_condition(
+            &scalar_ctx,
+            &IAMOperator::ForAllValuesStringEquals,
+            "key",
+            &serde_json::json!(["a", "b"]),
+        )
+        .unwrap();
+        assert!(result);
+    }
+
+    #[test]
+    fn test_set_operator_negated_semantics() {
+        // AWS: ForAllValues:StringNotEquals - "none of the request values can
+        // match any of the policy values".
+        let mut ctx = Context::new();
+        ctx.insert(
+            "region".to_string(),
+            ContextValue::String("eu-central-1".to_string()),
+        );
+
+        // A request value inside the allowed set -> false (not denied).
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::ForAllValuesStringNotEquals,
+            "region",
+            &serde_json::json!(["eu-central-1", "eu-west-1"]),
+        )
+        .unwrap();
+        assert!(!result);
+
+        // A request value outside the allowed set -> true (denied).
+        let mut ctx_outside = Context::new();
+        ctx_outside.insert(
+            "region".to_string(),
+            ContextValue::String("us-east-1".to_string()),
+        );
+        let result = evaluate_condition(
+            &ctx_outside,
+            &IAMOperator::ForAllValuesStringNotEquals,
+            "region",
+            &serde_json::json!(["eu-central-1", "eu-west-1"]),
+        )
+        .unwrap();
+        assert!(result);
+    }
+
+    #[test]
+    fn test_set_operator_missing_context() {
+        let ctx = Context::new();
+
+        // AWS: ForAllValues with no context key resolves to true.
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::ForAllValuesStringEquals,
+            "missing_key",
+            &serde_json::json!(["a", "b"]),
+        )
+        .unwrap();
+        assert!(result);
+
+        // ForAnyValue with no context key resolves to false.
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::ForAnyValueStringEquals,
+            "missing_key",
+            &serde_json::json!(["a", "b"]),
+        )
+        .unwrap();
+        assert!(!result);
+    }
+
+    #[test]
+    fn test_negated_operator_multiple_values_nor() {
+        // AWS: negated operators with multiple values use a logical NOR.
+        let ctx = Context::new().with_string("key", "a");
+
+        // "a" equals the first policy value, so NOR is false.
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::StringNotEquals,
+            "key",
+            &serde_json::json!(["a", "b"]),
+        )
+        .unwrap();
+        assert!(!result);
+
+        // "c" differs from every policy value, so NOR is true.
+        let ctx_c = Context::new().with_string("key", "c");
+        let result = evaluate_condition(
+            &ctx_c,
+            &IAMOperator::StringNotEquals,
+            "key",
+            &serde_json::json!(["a", "b"]),
+        )
+        .unwrap();
+        assert!(result);
+    }
+
+    #[test]
+    fn test_for_any_value_negated() {
+        // AWS: ForAnyValue:StringNotEquals - at least one request value must
+        // not match any policy value.
+        let mut ctx = Context::new();
+        ctx.insert(
+            "key".to_string(),
+            ContextValue::StringList(vec!["a".to_string(), "b".to_string()]),
+        );
+
+        // "b" matches no policy value -> true.
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::ForAnyValueStringNotEquals,
+            "key",
+            &serde_json::json!(["a"]),
+        )
+        .unwrap();
+        assert!(result);
+
+        // Both request values match a policy value -> false.
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::ForAnyValueStringNotEquals,
+            "key",
+            &serde_json::json!(["a", "b"]),
+        )
+        .unwrap();
+        assert!(!result);
+    }
+
+    #[test]
+    fn test_aws_doc_examples() {
+        // Locks in behavior against AWS's own documented examples.
+
+        // ForAnyValue:StringEquals with aws:TagKeys = "environment".
+        let mut ctx = Context::new();
+        ctx.insert(
+            "aws:TagKeys".to_string(),
+            ContextValue::StringList(vec!["environment".to_string(), "costcenter".to_string()]),
+        );
+        // At least one tag key matches -> true.
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::ForAnyValueStringEquals,
+            "aws:TagKeys",
+            &serde_json::json!("environment"),
+        )
+        .unwrap();
+        assert!(result);
+
+        // Case-sensitive: "Environment" does not match "environment" -> false.
+        let mut ctx_case = Context::new();
+        ctx_case.insert(
+            "aws:TagKeys".to_string(),
+            ContextValue::StringList(vec!["Environment".to_string()]),
+        );
+        let result = evaluate_condition(
+            &ctx_case,
+            &IAMOperator::ForAnyValueStringEquals,
+            "aws:TagKeys",
+            &serde_json::json!("environment"),
+        )
+        .unwrap();
+        assert!(!result);
+
+        // ForAllValues:ArnLike with logs:LogGeneratingResourceArns.
+        let mut ctx_arns = Context::new();
+        ctx_arns.insert(
+            "logs:LogGeneratingResourceArns".to_string(),
+            ContextValue::StringList(vec![
+                "arn:aws:cloudfront::123456789012:distribution/costcenter".to_string(),
+                "arn:aws:cloudfront::123456789012:distribution/support2025".to_string(),
+            ]),
+        );
+        // Every ARN matches at least one policy pattern -> true.
+        let result = evaluate_condition(
+            &ctx_arns,
+            &IAMOperator::ForAllValuesArnLike,
+            "logs:LogGeneratingResourceArns",
+            &serde_json::json!([
+                "arn:aws:cloudfront::123456789012:distribution/*",
+                "arn:aws:cloudfront::123456789012:distribution/support*"
+            ]),
+        )
+        .unwrap();
+        assert!(result);
+
+        // An ARN from a different account matches no pattern -> false.
+        let mut ctx_arns_out = Context::new();
+        ctx_arns_out.insert(
+            "logs:LogGeneratingResourceArns".to_string(),
+            ContextValue::StringList(vec![
+                "arn:aws:cloudfront::777788889999:distribution/costcenter".to_string(),
+            ]),
+        );
+        let result = evaluate_condition(
+            &ctx_arns_out,
+            &IAMOperator::ForAllValuesArnLike,
+            "logs:LogGeneratingResourceArns",
+            &serde_json::json!([
+                "arn:aws:cloudfront::123456789012:distribution/*",
+                "arn:aws:cloudfront::123456789012:distribution/support*"
+            ]),
+        )
+        .unwrap();
+        assert!(!result);
+
+        // ArnNotLike with multiple values is a logical NOR (aws:PrincipalArn).
+        let ctx_principal =
+            Context::new().with_string("aws:PrincipalArn", "arn:aws:iam::222222222222:user/Nikki");
+        let result = evaluate_condition(
+            &ctx_principal,
+            &IAMOperator::ArnNotLike,
+            "aws:PrincipalArn",
+            &serde_json::json!([
+                "arn:aws:iam::222222222222:user/Ana",
+                "arn:aws:iam::222222222222:user/Mary"
+            ]),
+        )
+        .unwrap();
+        assert!(result);
+
+        let ctx_principal_mary =
+            Context::new().with_string("aws:PrincipalArn", "arn:aws:iam::222222222222:user/Mary");
+        let result = evaluate_condition(
+            &ctx_principal_mary,
+            &IAMOperator::ArnNotLike,
+            "aws:PrincipalArn",
+            &serde_json::json!([
+                "arn:aws:iam::222222222222:user/Ana",
+                "arn:aws:iam::222222222222:user/Mary"
+            ]),
+        )
+        .unwrap();
+        assert!(!result);
     }
 
     #[test]

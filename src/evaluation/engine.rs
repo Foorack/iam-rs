@@ -788,6 +788,90 @@ mod tests {
     }
 
     #[test]
+    fn test_for_all_values_allow() {
+        // AWS: ForAllValues is true when every request value matches at least
+        // one policy value. Here each of the two TagKeys has a matching entry.
+        let mut ctx = Context::new();
+        ctx.insert(
+            "aws:TagKeys".to_string(),
+            ContextValue::StringList(vec!["environment".to_string(), "cost-center".to_string()]),
+        );
+
+        let policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                .with_resource(IAMResource::Single("*".to_string()))
+                .with_condition(
+                    IAMOperator::ForAllValuesStringEquals,
+                    "aws:TagKeys".to_string(),
+                    ConditionValue::StringList(vec!["environment".into(), "cost-center".into()]),
+                ),
+        );
+
+        let mut request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
+            "s3:GetObject",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        );
+        request.context = ctx;
+
+        let result = evaluate_policy(&policy, &request).unwrap();
+        assert_eq!(result, Decision::Allow);
+    }
+
+    #[test]
+    fn test_for_all_values_negated_deny_region() {
+        // Classic AWS pattern: deny if the requested region is not in the
+        // allowed set. A request to an allowed region must NOT be denied.
+        let policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Deny)
+                .with_action(IAMAction::Single("*".to_string()))
+                .with_resource(IAMResource::Single("*".to_string()))
+                .with_condition(
+                    IAMOperator::ForAllValuesStringNotEquals,
+                    "aws:RequestedRegion".to_string(),
+                    ConditionValue::StringList(vec!["eu-central-1".into(), "eu-west-1".into()]),
+                ),
+        );
+
+        // Inside the allowed set -> not denied.
+        let mut ctx = Context::new();
+        ctx.insert(
+            "aws:RequestedRegion".to_string(),
+            ContextValue::String("eu-central-1".to_string()),
+        );
+        let mut request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
+            "s3:GetObject",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        );
+        request.context = ctx;
+        let result = evaluate_policy(&policy, &request).unwrap();
+        assert_eq!(result, Decision::NotApplicable);
+
+        // Outside the allowed set -> denied.
+        let mut ctx = Context::new();
+        ctx.insert(
+            "aws:RequestedRegion".to_string(),
+            ContextValue::String("us-east-1".to_string()),
+        );
+        let mut request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
+            "s3:GetObject",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        );
+        request.context = ctx;
+        let result = evaluate_policy(&policy, &request).unwrap();
+        assert_eq!(result, Decision::Deny);
+    }
+
+    #[test]
     fn test_explicit_deny_overrides_allow() {
         let policies = vec![
             IAMPolicy::new().add_statement(
