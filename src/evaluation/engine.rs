@@ -872,6 +872,49 @@ mod tests {
     }
 
     #[test]
+    fn test_null_condition_string_form() {
+        // AWS IAM policies commonly use the string form "true"/"false".
+        let policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                .with_resource(IAMResource::Single("*".to_string()))
+                .with_condition(
+                    IAMOperator::Null,
+                    "aws:TokenIssueTime".to_string(),
+                    ConditionValue::String("false".to_string()), // key must exist
+                ),
+        );
+
+        // Key present -> condition true -> allowed.
+        let mut ctx = Context::new();
+        ctx.insert(
+            "aws:TokenIssueTime".to_string(),
+            ContextValue::String("2024-01-01T00:00:00Z".to_string()),
+        );
+        let mut request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
+            "s3:GetObject",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        );
+        request.context = ctx;
+        let result = evaluate_policy(&policy, &request).unwrap();
+        assert_eq!(result, Decision::Allow);
+
+        // Key absent -> condition false -> not applicable.
+        let request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
+            "s3:GetObject",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        );
+        let result = evaluate_policy(&policy, &request).unwrap();
+        assert_eq!(result, Decision::NotApplicable);
+    }
+
+    #[test]
     fn test_explicit_deny_overrides_allow() {
         let policies = vec![
             IAMPolicy::new().add_statement(

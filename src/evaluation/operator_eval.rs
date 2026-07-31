@@ -200,18 +200,24 @@ pub(super) fn evaluate_condition(
                 ev_ip(ctx, key, value, &predicate_ip, if_exists, is_negated)?
             }
             OperatorType::Null => {
-                // Null check
-                match value {
-                    serde_json::Value::Bool(should_be_null) => {
-                        let is_null = ctx.get(key).is_none();
-                        return Ok(is_null == *should_be_null);
-                    }
+                // Null check. AWS accepts both a JSON boolean and the string
+                // forms "true"/"false" for the expected presence of the key.
+                let should_be_null = match value {
+                    serde_json::Value::Bool(b) => *b,
+                    serde_json::Value::String(s) => s.parse::<bool>().map_err(|_| {
+                        EvaluationError::ConditionError(
+                            "Null operator value must be 'true' or 'false'".to_string(),
+                        )
+                    })?,
                     _ => {
                         return Err(EvaluationError::ConditionError(
-                            "Null operator requires boolean value".to_string(),
+                            "Null operator value must be a boolean or the string 'true'/'false'"
+                                .to_string(),
                         ));
                     }
-                }
+                };
+                let is_null = ctx.get(key).is_none();
+                return Ok(is_null == should_be_null);
             }
         };
         if is_negated {
@@ -1218,6 +1224,61 @@ mod tests {
         )
         .unwrap();
         assert!(result);
+    }
+
+    #[test]
+    fn test_evaluate_condition_null_string_form() {
+        let ctx = create_test_context();
+
+        // AWS IAM policies commonly use the string form "true"/"false".
+        // Key exists, checking "false" (key is not null) -> true.
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::Null,
+            "string_key",
+            &serde_json::Value::String("false".to_string()),
+        )
+        .unwrap();
+        assert!(result);
+
+        // Key exists, checking "true" (is null) -> false.
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::Null,
+            "string_key",
+            &serde_json::Value::String("true".to_string()),
+        )
+        .unwrap();
+        assert!(!result);
+
+        // Missing key, checking "true" (is null) -> true.
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::Null,
+            "nonexistent_key",
+            &serde_json::Value::String("true".to_string()),
+        )
+        .unwrap();
+        assert!(result);
+
+        // Missing key, checking "false" (is null) -> false.
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::Null,
+            "nonexistent_key",
+            &serde_json::Value::String("false".to_string()),
+        )
+        .unwrap();
+        assert!(!result);
+
+        // A non-boolean string is still an error.
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::Null,
+            "string_key",
+            &serde_json::Value::String("not_a_bool".to_string()),
+        );
+        assert!(result.is_err());
     }
 
     #[test]
