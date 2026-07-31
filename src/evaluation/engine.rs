@@ -963,6 +963,56 @@ mod tests {
     }
 
     #[test]
+    fn test_plain_operator_multivalued_context() {
+        // A plain operator against a multivalued context key matches if any
+        // value matches (implicit ForAnyValue semantics).
+        let policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("ec2:DeleteTags".to_string()))
+                .with_resource(IAMResource::Single("*".to_string()))
+                .with_condition(
+                    IAMOperator::StringEquals,
+                    "aws:TagKeys".to_string(),
+                    ConditionValue::String("environment".to_string()),
+                ),
+        );
+
+        // "environment" is among the request's tag keys -> allowed.
+        let mut ctx = Context::new();
+        ctx.insert(
+            "aws:TagKeys".to_string(),
+            ContextValue::StringList(vec!["environment".to_string(), "dept".to_string()]),
+        );
+        let mut request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
+            "ec2:DeleteTags",
+            Arn::parse("arn:aws:ec2:us-east-1:123456789012:instance/i-123").unwrap(),
+        );
+        request.context = ctx;
+        let result = evaluate_policy(&policy, &request).unwrap();
+        assert_eq!(result, Decision::Allow);
+
+        // No tag key matches -> not applicable.
+        let mut ctx = Context::new();
+        ctx.insert(
+            "aws:TagKeys".to_string(),
+            ContextValue::StringList(vec!["dept".to_string()]),
+        );
+        let mut request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
+            "ec2:DeleteTags",
+            Arn::parse("arn:aws:ec2:us-east-1:123456789012:instance/i-123").unwrap(),
+        );
+        request.context = ctx;
+        let result = evaluate_policy(&policy, &request).unwrap();
+        assert_eq!(result, Decision::NotApplicable);
+    }
+
+    #[test]
     fn test_explicit_deny_overrides_allow() {
         let policies = vec![
             IAMPolicy::new().add_statement(

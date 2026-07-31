@@ -356,11 +356,11 @@ fn ev_str(
 
     match ctx.get(key) {
         Some(ContextValue::String(s)) => Ok(predicate(s.clone(), value.to_string())),
-        // Set operators (ForAllValues/ForAnyValue) are handled before reaching
-        // this helper, so a multivalued context here is an invalid combination.
-        Some(ContextValue::StringList(_)) => Err(EvaluationError::ConditionError(
-            "Multivalued context keys require a condition set operator.".to_string(),
-        )),
+        // A multivalued context key with a plain operator matches if any value
+        // matches (implicit ForAnyValue semantics).
+        Some(ContextValue::StringList(list)) => Ok(list
+            .iter()
+            .any(|val| predicate(val.clone(), value.to_string()))),
         Some(_) => Ok(false), // Type mismatch
         // Missing context: true for IfExists and negated operators
         None => Ok(if_exists || is_negated),
@@ -475,11 +475,9 @@ fn ev_bool(
 
     match ctx.get(key) {
         Some(ContextValue::Boolean(b)) => Ok(predicate(*b, value)),
-        // Set operators (ForAllValues/ForAnyValue) are handled before reaching
-        // this helper, so a multivalued context here is an invalid combination.
-        Some(ContextValue::BooleanList(_)) => Err(EvaluationError::ConditionError(
-            "Multivalued context keys require a condition set operator.".to_string(),
-        )),
+        // A multivalued context key with a plain operator matches if any value
+        // matches (implicit ForAnyValue semantics).
+        Some(ContextValue::BooleanList(list)) => Ok(list.iter().any(|&val| predicate(val, value))),
         Some(_) => Ok(false),  // Type mismatch
         None => Ok(if_exists), // Missing context (return true if operator is IfExists)
     }
@@ -1404,6 +1402,52 @@ mod tests {
     }
 
     #[test]
+    fn test_plain_operator_multivalued_context() {
+        let ctx = create_test_context(); // string_list = [value1, value2, value3]
+
+        // A plain operator against a multivalued context key matches if any
+        // value matches (implicit ForAnyValue semantics).
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::StringEquals,
+            "string_list",
+            &serde_json::Value::String("value2".to_string()),
+        )
+        .unwrap();
+        assert!(result);
+
+        // No value matches -> false.
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::StringEquals,
+            "string_list",
+            &serde_json::Value::String("nonexistent".to_string()),
+        )
+        .unwrap();
+        assert!(!result);
+
+        // Negated plain operator: any value not equal -> true.
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::StringNotEquals,
+            "string_list",
+            &serde_json::Value::String("value1".to_string()),
+        )
+        .unwrap();
+        assert!(result);
+
+        // Boolean multivalued context.
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::Bool,
+            "bool_list",
+            &serde_json::Value::Bool(true),
+        )
+        .unwrap();
+        assert!(result);
+    }
+
+    #[test]
     fn test_evaluate_condition_type_mismatches() {
         let ctx = create_test_context();
 
@@ -1497,14 +1541,15 @@ mod tests {
         );
         assert!(result.is_err());
 
-        // Multivalued context without set operator
+        // Multivalued context without set operator matches if any value matches.
         let result = evaluate_condition(
             &ctx,
             &IAMOperator::StringEquals,
             "string_list",
             &serde_json::Value::String("value1".to_string()),
-        );
-        assert!(result.is_err());
+        )
+        .unwrap();
+        assert!(result);
     }
 
     #[test]
