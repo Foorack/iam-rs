@@ -349,10 +349,10 @@ let evaluator = PolicyEvaluator::with_policies(vec![policy1, policy2, policy3])
 let result = evaluator.evaluate(&request)?;
 
 println!("Decision: {:?}", result.decision);
-println!("Evaluated {} statements", result.matched_statements.len());
+println!("Evaluated {} statements", result.statement_details.len());
 
 // Examine detailed results
-for statement_match in result.matched_statements {
+for statement_match in result.statement_details {
     println!("Statement '{}': {} - {}",
         statement_match.sid.unwrap_or_default(),
         if statement_match.conditions_satisfied { "MATCHED" } else { "NO MATCH" },

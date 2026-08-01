@@ -70,13 +70,15 @@ impl std::error::Error for EvaluationError {}
 pub struct EvaluationResult {
     /// The final decision
     pub decision: Decision,
-    /// Statements that matched (for debugging/auditing)
-    pub matched_statements: Vec<StatementMatch>,
+    /// Per-statement evaluation details, whether or not each statement matched.
+    /// Populated only when [`EvaluationOptions::collect_match_details`] is
+    /// enabled; otherwise empty.
+    pub statement_details: Vec<StatementMatch>,
     /// Evaluation context used
     pub context: IAMRequest,
 }
 
-/// Information about a statement that matched during evaluation
+/// Information about a statement's evaluation result (whether or not it matched)
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct StatementMatch {
@@ -188,7 +190,7 @@ impl PolicyEvaluator {
             ));
         }
 
-        let mut matched_statements = Vec::new();
+        let mut statement_details = Vec::new();
         let mut has_explicit_allow = false;
         let mut has_explicit_deny = false;
         let mut statement_count = 0;
@@ -206,7 +208,7 @@ impl PolicyEvaluator {
                 let statement_result = Self::evaluate_statement(statement, request, &self.options)?;
 
                 if self.options.collect_match_details {
-                    matched_statements.push(statement_result.clone());
+                    statement_details.push(statement_result.clone());
                 }
 
                 // Check if this statement applies to the request
@@ -220,7 +222,7 @@ impl PolicyEvaluator {
                             if self.options.stop_on_explicit_deny {
                                 return Ok(EvaluationResult {
                                     decision: Decision::Deny,
-                                    matched_statements,
+                                    statement_details,
                                     context: request.clone(),
                                 });
                             }
@@ -242,7 +244,7 @@ impl PolicyEvaluator {
 
         Ok(EvaluationResult {
             decision,
-            matched_statements,
+            statement_details,
             context: request.clone(),
         })
     }
@@ -1214,9 +1216,9 @@ mod tests {
 
         let result = evaluator.evaluate(&request).unwrap();
         assert_eq!(result.decision, Decision::Allow);
-        assert!(!result.matched_statements.is_empty());
+        assert!(!result.statement_details.is_empty());
         assert_eq!(
-            result.matched_statements[0].sid,
+            result.statement_details[0].sid,
             Some("AllowS3Read".to_string())
         );
     }

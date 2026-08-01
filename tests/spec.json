@@ -378,7 +378,7 @@
         "description": "Evaluation result with decision and metadata",
         "required": [
           "decision",
-          "matched_statements",
+          "statement_details",
           "context"
         ],
         "properties": {
@@ -390,12 +390,12 @@
             "$ref": "#/components/schemas/Decision",
             "description": "The final decision"
           },
-          "matched_statements": {
+          "statement_details": {
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/StatementMatch"
             },
-            "description": "Statements that matched (for debugging/auditing)"
+            "description": "Per-statement evaluation details, whether or not each statement matched.\nPopulated only when [`EvaluationOptions::collect_match_details`] is\nenabled; otherwise empty."
           }
         }
       },
@@ -833,7 +833,7 @@
       },
       "StatementMatch": {
         "type": "object",
-        "description": "Information about a statement that matched during evaluation",
+        "description": "Information about a statement's evaluation result (whether or not it matched)",
         "required": [
           "effect",
           "conditions_satisfied",

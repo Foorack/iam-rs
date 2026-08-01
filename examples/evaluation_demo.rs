@@ -241,8 +241,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let detailed_result = detailed_evaluator.evaluate(&request)?;
     println!("Decision: {:?}", detailed_result.decision);
-    println!("Matched Statements:");
-    for (i, statement_match) in detailed_result.matched_statements.iter().enumerate() {
+    println!("Statement Details:");
+    for (i, statement_match) in detailed_result.statement_details.iter().enumerate() {
         println!(
             "  {}. SID: {:?}, Effect: {:?}, Satisfied: {}, Reason: {}",
             i + 1,
