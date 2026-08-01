@@ -489,19 +489,18 @@ impl PolicyEvaluator {
     }
 
     /// Check if an action matches the request action
+    ///
+    /// AWS treats action names as case-insensitive (e.g. `iam:ListAccessKeys`
+    /// is the same as `IAM:listaccesskeys`), so both the request action and the
+    /// policy pattern are compared lowercased.
     fn action_matches(action: &IAMAction, request_action: &str) -> bool {
+        let request_action = request_action.to_ascii_lowercase();
+        let pattern_matches = |a: &str| {
+            a == "*" || wildcard_match(&request_action, &a.to_ascii_lowercase())
+        };
         match action {
-            IAMAction::Single(a) => {
-                a == "*" || a == request_action || wildcard_match(request_action, a)
-            }
-            IAMAction::Multiple(actions) => {
-                for a in actions {
-                    if a == "*" || a == request_action || wildcard_match(request_action, a) {
-                        return true;
-                    }
-                }
-                false
-            }
+            IAMAction::Single(a) => pattern_matches(a),
+            IAMAction::Multiple(actions) => actions.iter().any(|a| pattern_matches(a)),
         }
     }
 
@@ -684,6 +683,70 @@ mod tests {
                 "arn:aws:iam::123456789012:user/test".into(),
             )),
             "s3:GetObject",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        );
+
+        let result = evaluate_policy(&policy, &request).unwrap();
+        assert_eq!(result, Decision::Allow);
+    }
+
+    #[test]
+    fn test_action_case_insensitive() {
+        // AWS: action names are case-insensitive (iam:ListAccessKeys == IAM:listaccesskeys).
+        let policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
+        );
+
+        let request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
+            "S3:getobject", // different case
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        );
+
+        let result = evaluate_policy(&policy, &request).unwrap();
+        assert_eq!(result, Decision::Allow);
+    }
+
+    #[test]
+    fn test_action_multiple_case_insensitive() {
+        let policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Multiple(vec![
+                    "s3:GetObject".to_string(),
+                    "s3:PutObject".to_string(),
+                ]))
+                .with_resource(IAMResource::Single("*".to_string())),
+        );
+
+        let request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
+            "S3:PUTOBJECT",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        );
+
+        let result = evaluate_policy(&policy, &request).unwrap();
+        assert_eq!(result, Decision::Allow);
+    }
+
+    #[test]
+    fn test_action_wildcard_case_insensitive() {
+        let policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("iam:*AccessKey*".to_string()))
+                .with_resource(IAMResource::Single("*".to_string())),
+        );
+
+        let request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
+            "IAM:listaccesskeys",
             Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
         );
 
