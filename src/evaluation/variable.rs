@@ -12,6 +12,12 @@ pub struct PolicyVariable {
 
 impl PolicyVariable {
     /// Parse a policy variable from a string like "${aws:PrincipalTag/team, 'company-wide'}"
+    ///
+    /// AWS default values are wrapped in single quotes and separated from the
+    /// key by a comma, e.g. `${aws:username, 'default'}`. Whitespace after the
+    /// comma is optional. Any other use of a comma (unquoted or double-quoted
+    /// defaults) is rejected so malformed variables fail loudly instead of
+    /// silently resolving to an empty string.
     pub fn parse(input: &str) -> Result<Self, EvaluationError> {
         if !input.starts_with("${") || !input.ends_with('}') {
             return Err(EvaluationError::InvalidVariable(
@@ -21,19 +27,22 @@ impl PolicyVariable {
 
         let content = &input[2..input.len() - 1]; // Remove ${ and }
 
-        if let Some(comma_pos) = content.find(", '") {
-            // Has default value
+        // A comma separates the key from an optional default value.
+        if let Some(comma_pos) = content.find(',') {
             let key = content[..comma_pos].trim().to_string();
-            let default_part = &content[comma_pos + 3..]; // Skip ", '"
+            let default_part = content[comma_pos + 1..].trim();
 
-            if !default_part.ends_with('\'') {
+            if !default_part.starts_with('\'')
+                || !default_part.ends_with('\'')
+                || default_part.len() < 2
+            {
                 return Err(EvaluationError::InvalidVariable(
-                    "Default value must be wrapped in single quotes".to_string(),
+                    "Default value must be wrapped in single quotes, e.g. ${key, 'default'}"
+                        .to_string(),
                 ));
             }
 
-            let default_value = default_part[..default_part.len() - 1].to_string(); // Remove trailing '
-
+            let default_value = default_part[1..default_part.len() - 1].to_string();
             Ok(PolicyVariable {
                 key,
                 default_value: Some(default_value),
@@ -112,6 +121,34 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_variable_with_default_no_space() {
+        // AWS separates key and default with a comma; whitespace is optional.
+        let var = PolicyVariable::parse("${aws:PrincipalTag/team,'company-wide'}").unwrap();
+        assert_eq!(var.key, "aws:PrincipalTag/team");
+        assert_eq!(var.default_value, Some("company-wide".to_string()));
+    }
+
+    #[test]
+    fn test_parse_variable_default_contains_comma() {
+        // The first comma separates the key from the default, so a default
+        // value may itself contain commas.
+        let var = PolicyVariable::parse("${aws:username, 'Smith, John'}").unwrap();
+        assert_eq!(var.key, "aws:username");
+        assert_eq!(var.default_value, Some("Smith, John".to_string()));
+    }
+
+    #[test]
+    fn test_parse_variable_malformed_default() {
+        // Malformed defaults must error instead of being silently treated as a
+        // plain key (which would resolve to an empty string and corrupt the
+        // interpolated string).
+        assert!(PolicyVariable::parse("${aws:username, \"john\"}").is_err());
+        assert!(PolicyVariable::parse("${aws:username, john}").is_err());
+        assert!(PolicyVariable::parse("${aws:username, 'john}").is_err());
+        assert!(PolicyVariable::parse("${aws:username,}").is_err());
+    }
+
+    #[test]
     fn test_resolve_with_context() {
         let mut context = Context::new();
         context.insert(
@@ -149,6 +186,17 @@ mod tests {
         let context = Context::new(); // Empty context
 
         let input = "arn:aws:s3:::amzn-s3-demo-bucket-${aws:PrincipalTag/team, 'company-wide'}";
+        let result = interpolate_variables(input, &context).unwrap();
+        assert_eq!(result, "arn:aws:s3:::amzn-s3-demo-bucket-company-wide");
+    }
+
+    #[test]
+    fn test_interpolate_with_default_no_space() {
+        // Regression: the no-space form used to be treated as a plain key and
+        // resolve to "", silently corrupting the interpolated string.
+        let context = Context::new(); // Empty context
+
+        let input = "arn:aws:s3:::amzn-s3-demo-bucket-${aws:PrincipalTag/team,'company-wide'}";
         let result = interpolate_variables(input, &context).unwrap();
         assert_eq!(result, "arn:aws:s3:::amzn-s3-demo-bucket-company-wide");
     }
