@@ -393,10 +393,15 @@ fn ev_numeric(
 
     let context_value = match ctx.get_ci(key) {
         Some(ContextValue::Number(n)) => *n,
-        Some(ContextValue::String(s)) => s.parse::<f64>().map_err(|_| {
-            EvaluationError::ConditionError("Invalid numeric context value".to_string())
-        })?,
-        Some(_) => return Ok(false), // Type mismatch
+        Some(ContextValue::String(s)) => match s.parse::<f64>() {
+            Ok(n) => n,
+            // Present but not a parseable number: the value can't match under
+            // the operator, so the condition is false (true for a negated
+            // operator, which is the negation of "no match").
+            Err(_) => return Ok(is_negated),
+        },
+        // Present but a non-numeric type: same as unparseable.
+        Some(_) => return Ok(is_negated),
         // Missing context: true for IfExists and negated operators
         None => return Ok(if_exists || is_negated),
     };
@@ -455,13 +460,18 @@ fn ev_date(
 
     let context_value: DateTime<Utc> = match ctx.get_ci(key) {
         Some(ContextValue::DateTime(dt)) => *dt,
-        Some(ContextValue::Number(epoch)) => parse_date(&epoch.to_string()).map_err(|_| {
-            EvaluationError::ConditionError("Invalid epoch context value".to_string())
-        })?,
-        Some(ContextValue::String(s)) => parse_date(s).map_err(|_| {
-            EvaluationError::ConditionError("Invalid date context value".to_string())
-        })?,
-        Some(_) => return Ok(false), // Type mismatch
+        Some(ContextValue::Number(epoch)) => match parse_date(&epoch.to_string()) {
+            Ok(dt) => dt,
+            // Present but not a parseable epoch: non-comparable value.
+            Err(_) => return Ok(is_negated),
+        },
+        Some(ContextValue::String(s)) => match parse_date(s) {
+            Ok(dt) => dt,
+            // Present but not a parseable date: non-comparable value.
+            Err(_) => return Ok(is_negated),
+        },
+        // Present but a non-date type: same as unparseable.
+        Some(_) => return Ok(is_negated),
         // Missing context: true for IfExists and negated operators
         None => return Ok(if_exists || is_negated),
     };
@@ -532,10 +542,13 @@ fn ev_ip(
         .map_err(|_| EvaluationError::ConditionError("Invalid IP condition value".to_string()))?;
 
     let context_value = match ctx.get_ci(key) {
-        Some(ContextValue::String(ip_addr)) => ip_subnet(ip_addr)
-            .parse::<IpNet>()
-            .map_err(|_| EvaluationError::ConditionError("Invalid IP context value".to_string()))?,
-        Some(_) => return Ok(false), // Type mismatch
+        Some(ContextValue::String(ip_addr)) => match ip_subnet(ip_addr).parse::<IpNet>() {
+            Ok(net) => net,
+            // Present but not a parseable IP: non-comparable value.
+            Err(_) => return Ok(is_negated),
+        },
+        // Present but a non-string type: same as unparseable.
+        Some(_) => return Ok(is_negated),
         // Missing context: true for IfExists and negated operators
         None => return Ok(if_exists || is_negated),
     };
@@ -1152,6 +1165,76 @@ mod tests {
     }
 
     #[test]
+    fn test_unparseable_context_value_is_no_match() {
+        // A present context value that can't be parsed for the operator's type
+        // is non-comparable: the condition is false for non-negated operators
+        // and true for negated operators (the negation of "no match"). AWS
+        // treats such values as effectively null. Previously these errored.
+        let ctx = Context::new().with_string("num_key", "not-a-number");
+
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::NumericEquals,
+            "num_key",
+            &serde_json::json!(42),
+        )
+        .unwrap();
+        assert!(!result);
+
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::NumericNotEquals,
+            "num_key",
+            &serde_json::json!(42),
+        )
+        .unwrap();
+        assert!(result);
+
+        // A wrong-typed context value (Boolean for a numeric operator) behaves
+        // the same way.
+        let ctx = Context::new().with_boolean("num_key", true);
+
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::NumericEquals,
+            "num_key",
+            &serde_json::json!(42),
+        )
+        .unwrap();
+        assert!(!result);
+
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::NumericNotEquals,
+            "num_key",
+            &serde_json::json!(42),
+        )
+        .unwrap();
+        assert!(result);
+
+        // Date operators: unparseable string context.
+        let ctx = Context::new().with_string("date_key", "not-a-date");
+
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::DateEquals,
+            "date_key",
+            &serde_json::Value::String("2024-01-01T00:00:00Z".to_string()),
+        )
+        .unwrap();
+        assert!(!result);
+
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::DateNotEquals,
+            "date_key",
+            &serde_json::Value::String("2024-01-01T00:00:00Z".to_string()),
+        )
+        .unwrap();
+        assert!(result);
+    }
+
+    #[test]
     fn test_evaluate_condition_boolean() {
         let ctx = create_test_context();
         let result = evaluate_condition(
@@ -1530,7 +1613,8 @@ mod tests {
         .unwrap();
         assert!(!result);
 
-        // Numeric operator with string context value that can't be parsed as number
+        // Numeric operator with string context value that can't be parsed as a
+        // number: non-comparable, so the condition is false (no error).
         let ctx_with_unparseable = Context::new().with_string("unparseable_string", "not_a_number");
 
         let result = evaluate_condition(
@@ -1538,8 +1622,9 @@ mod tests {
             &IAMOperator::NumericEquals,
             "unparseable_string",
             &serde_json::Value::Number(serde_json::Number::from(42)),
-        );
-        assert!(result.is_err()); // Should error on invalid numeric string
+        )
+        .unwrap();
+        assert!(!result);
 
         // Boolean operator with non-boolean context value
         let result = evaluate_condition(
@@ -1809,32 +1894,35 @@ mod tests {
             .with_string("invalid_ip", "not_an_ip")
             .with_string("invalid_date", "not_a_date");
 
-        // Test invalid numeric string
+        // Unparseable numeric string context: non-comparable -> no match.
         let result = evaluate_condition(
             &ctx,
             &IAMOperator::NumericEquals,
             "invalid_numeric",
             &serde_json::Value::Number(serde_json::Number::from(42)),
-        );
-        assert!(result.is_err());
+        )
+        .unwrap();
+        assert!(!result);
 
-        // Test invalid IP string
+        // Unparseable IP string context: non-comparable -> no match.
         let result = evaluate_condition(
             &ctx,
             &IAMOperator::IpAddress,
             "invalid_ip",
             &serde_json::Value::String("192.168.1.0/24".to_string()),
-        );
-        assert!(result.is_err());
+        )
+        .unwrap();
+        assert!(!result);
 
-        // Test invalid date string
+        // Unparseable date string context: non-comparable -> no match.
         let result = evaluate_condition(
             &ctx,
             &IAMOperator::DateEquals,
             "invalid_date",
             &serde_json::Value::String("2024-01-01T00:00:00Z".to_string()),
-        );
-        assert!(result.is_err());
+        )
+        .unwrap();
+        assert!(!result);
     }
 
     #[test]
