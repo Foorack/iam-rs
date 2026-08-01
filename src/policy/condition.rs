@@ -433,11 +433,22 @@ impl Validate for Condition {
                                     }));
                                 }
                             },
+                            // AWS also accepts Unix epoch as a JSON number, e.g.
+                            // "DateLessThan": {"aws:EpochTime": 1704067200}.
+                            ConditionValue::Number(n) => {
+                                if parse_date(&n.to_string()).is_err() {
+                                    results.push(Err(ValidationError::InvalidCondition {
+                                        operator: self.operator.as_str().to_string(),
+                                        key: self.key.clone(),
+                                        reason: format!("Date operator requires an ISO 8601 date/time or Unix epoch value, found: {n}"),
+                                    }));
+                                }
+                            },
                             _ => {
                                 results.push(Err(ValidationError::InvalidCondition {
                                     operator: self.operator.as_str().to_string(),
                                     key: self.key.clone(),
-                                    reason: "Date operator requires string date value".to_string(),
+                                    reason: "Date operator requires a string or number date value".to_string(),
                                 }));
                             }
                         }
@@ -654,6 +665,17 @@ mod tests {
         assert!(
             fractional_epoch.is_valid(),
             "fractional epoch should validate"
+        );
+
+        // AWS accepts Unix epoch as a JSON number for date operators.
+        let numeric_epoch = Condition::new(
+            IAMOperator::DateGreaterThan,
+            "aws:CurrentTime",
+            ConditionValue::Number(serde_json::Number::from(1_704_067_200u64)),
+        );
+        assert!(
+            numeric_epoch.is_valid(),
+            "numeric Unix epoch should validate"
         );
 
         // A string that looks date-ish but is not a valid date must fail.

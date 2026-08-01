@@ -442,13 +442,16 @@ fn ev_date(
     if_exists: bool,
     is_negated: bool,
 ) -> Result<bool, EvaluationError> {
-    let value = value.as_str().ok_or_else(|| {
-        EvaluationError::ConditionError(format!(
-            "Date condition value must be a string, got {value}"
-        ))
-    })?;
-    let value: DateTime<Utc> = parse_date(value)
-        .map_err(|_| EvaluationError::ConditionError("Invalid date condition value".to_string()))?;
+    // AWS accepts ISO 8601 date/time strings and Unix epoch time. Epoch may be
+    // given as a string ("1704067200") or as a JSON number (1704067200).
+    let value: DateTime<Utc> = match value {
+        serde_json::Value::String(s) => parse_date(s),
+        serde_json::Value::Number(n) => parse_date(&n.to_string()),
+        other => Err(EvaluationError::ConditionError(format!(
+            "Date condition value must be a string or number, got {other}"
+        ))),
+    }
+    .map_err(|_| EvaluationError::ConditionError("Invalid date condition value".to_string()))?;
 
     let context_value: DateTime<Utc> = match ctx.get_ci(key) {
         Some(ContextValue::DateTime(dt)) => *dt,
@@ -1680,6 +1683,32 @@ mod tests {
         )
         .unwrap();
         assert!(result);
+    }
+
+    #[test]
+    fn test_date_condition_numeric_epoch_policy_value() {
+        // AWS accepts Unix epoch as a JSON number for date condition values,
+        // e.g. "DateLessThan": {"aws:EpochTime": 1704067200}.
+        let ctx = Context::new().with_number("epoch_key", 1_704_067_200.5);
+
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::DateEquals,
+            "epoch_key",
+            &serde_json::json!(1_704_067_200.5),
+        )
+        .unwrap();
+        assert!(result);
+
+        // A different numeric epoch must not match.
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::DateEquals,
+            "epoch_key",
+            &serde_json::json!(1_704_067_200),
+        )
+        .unwrap();
+        assert!(!result);
     }
 
     #[test]
