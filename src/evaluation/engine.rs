@@ -487,6 +487,30 @@ impl PolicyEvaluator {
             // ARN-based principal matching
             let matcher = ArnMatcher::from_pattern(principal_str)
                 .map_err(|e| EvaluationError::InvalidArn(e.to_string()))?;
+
+            // A raw 12-digit account ID is the account's root principal. Build
+            // the root ARN using the pattern's partition so the matcher can
+            // compare the service/account/resource components (the raw ID
+            // carries no partition, and account IDs are unique across
+            // partitions).
+            if request_principal.len() == 12
+                && request_principal.chars().all(|c| c.is_ascii_digit())
+            {
+                let Ok(pattern_arn) = Arn::parse(principal_str) else {
+                    return Ok(false);
+                };
+                let root_arn = Arn {
+                    partition: pattern_arn.partition.clone(),
+                    service: "iam".to_string(),
+                    region: String::new(),
+                    account_id: request_principal.to_string(),
+                    resource: "root".to_string(),
+                };
+                return matcher
+                    .matches(&root_arn)
+                    .map_err(|e| EvaluationError::InvalidArn(e.to_string()));
+            }
+
             // A request principal that isn't a valid ARN can't match an ARN pattern
             let Ok(request_arn) = Arn::parse(request_principal) else {
                 return Ok(false);
@@ -1211,6 +1235,54 @@ mod tests {
             Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
         );
         let result = evaluate_policy(&policy, &request).unwrap();
+        assert_eq!(result, Decision::NotApplicable);
+    }
+
+    #[test]
+    fn test_raw_account_id_request_principal_matches_root_arn() {
+        // A request principal given as a raw 12-digit account ID is the
+        // account's root principal, so ARN patterns that match the root must
+        // match it.
+        let root_policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_principal(Principal::Aws(PrincipalId::String(
+                    "arn:aws:iam::123456789012:root".to_string(),
+                )))
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
+        );
+
+        let request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String("123456789012".to_string())),
+            "s3:GetObject",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        );
+        let result = evaluate_policy(&root_policy, &request).unwrap();
+        assert_eq!(result, Decision::Allow);
+
+        // A wildcard ARN that matches the root also matches the raw account ID.
+        let wildcard_policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_principal(Principal::Aws(PrincipalId::String(
+                    "arn:aws:iam::123456789012:*".to_string(),
+                )))
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
+        );
+        let result = evaluate_policy(&wildcard_policy, &request).unwrap();
+        assert_eq!(result, Decision::Allow);
+
+        // An ARN pattern that targets IAM users (not the account root) must NOT
+        // match the raw account ID.
+        let user_policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_principal(Principal::Aws(PrincipalId::String(
+                    "arn:aws:iam::123456789012:user/jo*".to_string(),
+                )))
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
+        );
+        let result = evaluate_policy(&user_policy, &request).unwrap();
         assert_eq!(result, Decision::NotApplicable);
     }
 
