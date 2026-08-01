@@ -423,29 +423,103 @@ impl IAMOperator {
     /// Returns the operator category as a string
     /// Determine the category of this operator
     ///
-    /// # Panics
-    ///
-    /// Panics if the operator is not recognized (this should never happen)
+    /// This is a total function: the `match` is exhaustive over the closed
+    /// `IAMOperator` enum, so every operator maps to exactly one `OperatorType`.
+    /// A panic is impossible; the compiler enforces completeness when new
+    /// operators are added.
+    #[allow(clippy::too_many_lines)]
     #[must_use]
     pub fn category(&self) -> OperatorType {
-        if self.is_string_operator() {
-            OperatorType::String
-        } else if self.is_numeric_operator() {
-            OperatorType::Numeric
-        } else if self.is_date_operator() {
-            OperatorType::Date
-        } else if self.is_boolean_operator() {
-            OperatorType::Boolean
-        } else if self.is_binary_operator() {
-            OperatorType::Binary
-        } else if self.is_ip_operator() {
-            OperatorType::IpAddress
-        } else if self.is_arn_operator() {
-            OperatorType::Arn
-        } else if matches!(self, IAMOperator::Null) {
-            OperatorType::Null
-        } else {
-            panic!("Unknown operator category for operator: {}", self.as_str())
+        match self {
+            // String operators
+            IAMOperator::StringEquals
+            | IAMOperator::StringNotEquals
+            | IAMOperator::StringEqualsIgnoreCase
+            | IAMOperator::StringNotEqualsIgnoreCase
+            | IAMOperator::StringLike
+            | IAMOperator::StringNotLike
+            | IAMOperator::ForAllValuesStringEquals
+            | IAMOperator::ForAllValuesStringEqualsIgnoreCase
+            | IAMOperator::ForAnyValueStringEquals
+            | IAMOperator::ForAnyValueStringEqualsIgnoreCase
+            | IAMOperator::ForAllValuesStringNotEquals
+            | IAMOperator::ForAllValuesStringNotEqualsIgnoreCase
+            | IAMOperator::ForAnyValueStringNotEquals
+            | IAMOperator::ForAnyValueStringNotEqualsIgnoreCase
+            | IAMOperator::ForAllValuesStringLike
+            | IAMOperator::ForAnyValueStringLike
+            | IAMOperator::ForAllValuesStringNotLike
+            | IAMOperator::ForAnyValueStringNotLike
+            | IAMOperator::StringEqualsIfExists
+            | IAMOperator::StringNotEqualsIfExists
+            | IAMOperator::StringEqualsIgnoreCaseIfExists
+            | IAMOperator::StringNotEqualsIgnoreCaseIfExists
+            | IAMOperator::StringLikeIfExists
+            | IAMOperator::StringNotLikeIfExists => OperatorType::String,
+
+            // Numeric operators
+            IAMOperator::NumericEquals
+            | IAMOperator::NumericNotEquals
+            | IAMOperator::NumericLessThan
+            | IAMOperator::NumericLessThanEquals
+            | IAMOperator::NumericGreaterThan
+            | IAMOperator::NumericGreaterThanEquals
+            | IAMOperator::NumericEqualsIfExists
+            | IAMOperator::NumericNotEqualsIfExists
+            | IAMOperator::NumericLessThanIfExists
+            | IAMOperator::NumericLessThanEqualsIfExists
+            | IAMOperator::NumericGreaterThanIfExists
+            | IAMOperator::NumericGreaterThanEqualsIfExists => OperatorType::Numeric,
+
+            // Date operators
+            IAMOperator::DateEquals
+            | IAMOperator::DateNotEquals
+            | IAMOperator::DateLessThan
+            | IAMOperator::DateLessThanEquals
+            | IAMOperator::DateGreaterThan
+            | IAMOperator::DateGreaterThanEquals
+            | IAMOperator::DateEqualsIfExists
+            | IAMOperator::DateNotEqualsIfExists
+            | IAMOperator::DateLessThanIfExists
+            | IAMOperator::DateLessThanEqualsIfExists
+            | IAMOperator::DateGreaterThanIfExists
+            | IAMOperator::DateGreaterThanEqualsIfExists => OperatorType::Date,
+
+            // Boolean operators
+            IAMOperator::Bool
+            | IAMOperator::ForAllValuesBool
+            | IAMOperator::ForAnyValueBool
+            | IAMOperator::BoolIfExists => OperatorType::Boolean,
+
+            // Binary operators
+            IAMOperator::BinaryEquals | IAMOperator::BinaryEqualsIfExists => OperatorType::Binary,
+
+            // IP address operators
+            IAMOperator::IpAddress
+            | IAMOperator::NotIpAddress
+            | IAMOperator::IpAddressIfExists
+            | IAMOperator::NotIpAddressIfExists => OperatorType::IpAddress,
+
+            // ARN operators
+            IAMOperator::ArnEquals
+            | IAMOperator::ArnLike
+            | IAMOperator::ArnNotEquals
+            | IAMOperator::ArnNotLike
+            | IAMOperator::ForAllValuesArnEquals
+            | IAMOperator::ForAllValuesArnLike
+            | IAMOperator::ForAnyValueArnEquals
+            | IAMOperator::ForAnyValueArnLike
+            | IAMOperator::ForAllValuesArnNotEquals
+            | IAMOperator::ForAllValuesArnNotLike
+            | IAMOperator::ForAnyValueArnNotEquals
+            | IAMOperator::ForAnyValueArnNotLike
+            | IAMOperator::ArnEqualsIfExists
+            | IAMOperator::ArnLikeIfExists
+            | IAMOperator::ArnNotEqualsIfExists
+            | IAMOperator::ArnNotLikeIfExists => OperatorType::Arn,
+
+            // Null operator
+            IAMOperator::Null => OperatorType::Null,
         }
     }
 
@@ -727,6 +801,135 @@ mod tests {
         assert_eq!(IAMOperator::IpAddress.category(), OperatorType::IpAddress);
         assert_eq!(IAMOperator::ArnEquals.category(), OperatorType::Arn);
         assert_eq!(IAMOperator::Null.category(), OperatorType::Null);
+    }
+
+    #[test]
+    #[allow(clippy::too_many_lines)]
+    fn test_operator_category_exhaustive() {
+        // Every `IAMOperator` variant must map to exactly one category. The
+        // exhaustive match in `category()` guarantees there is no unknown
+        // operator, so `category()` can never panic; this test documents and
+        // locks in the full mapping.
+        fn assert_category(ops: &[IAMOperator], expected: &OperatorType) {
+            for op in ops {
+                assert_eq!(&op.category(), expected, "operator {}", op.as_str());
+            }
+        }
+
+        assert_category(
+            &[
+                IAMOperator::StringEquals,
+                IAMOperator::StringNotEquals,
+                IAMOperator::StringEqualsIgnoreCase,
+                IAMOperator::StringNotEqualsIgnoreCase,
+                IAMOperator::StringLike,
+                IAMOperator::StringNotLike,
+                IAMOperator::ForAllValuesStringEquals,
+                IAMOperator::ForAllValuesStringEqualsIgnoreCase,
+                IAMOperator::ForAnyValueStringEquals,
+                IAMOperator::ForAnyValueStringEqualsIgnoreCase,
+                IAMOperator::ForAllValuesStringNotEquals,
+                IAMOperator::ForAllValuesStringNotEqualsIgnoreCase,
+                IAMOperator::ForAnyValueStringNotEquals,
+                IAMOperator::ForAnyValueStringNotEqualsIgnoreCase,
+                IAMOperator::ForAllValuesStringLike,
+                IAMOperator::ForAnyValueStringLike,
+                IAMOperator::ForAllValuesStringNotLike,
+                IAMOperator::ForAnyValueStringNotLike,
+                IAMOperator::StringEqualsIfExists,
+                IAMOperator::StringNotEqualsIfExists,
+                IAMOperator::StringEqualsIgnoreCaseIfExists,
+                IAMOperator::StringNotEqualsIgnoreCaseIfExists,
+                IAMOperator::StringLikeIfExists,
+                IAMOperator::StringNotLikeIfExists,
+            ],
+            &OperatorType::String,
+        );
+
+        assert_category(
+            &[
+                IAMOperator::NumericEquals,
+                IAMOperator::NumericNotEquals,
+                IAMOperator::NumericLessThan,
+                IAMOperator::NumericLessThanEquals,
+                IAMOperator::NumericGreaterThan,
+                IAMOperator::NumericGreaterThanEquals,
+                IAMOperator::NumericEqualsIfExists,
+                IAMOperator::NumericNotEqualsIfExists,
+                IAMOperator::NumericLessThanIfExists,
+                IAMOperator::NumericLessThanEqualsIfExists,
+                IAMOperator::NumericGreaterThanIfExists,
+                IAMOperator::NumericGreaterThanEqualsIfExists,
+            ],
+            &OperatorType::Numeric,
+        );
+
+        assert_category(
+            &[
+                IAMOperator::DateEquals,
+                IAMOperator::DateNotEquals,
+                IAMOperator::DateLessThan,
+                IAMOperator::DateLessThanEquals,
+                IAMOperator::DateGreaterThan,
+                IAMOperator::DateGreaterThanEquals,
+                IAMOperator::DateEqualsIfExists,
+                IAMOperator::DateNotEqualsIfExists,
+                IAMOperator::DateLessThanIfExists,
+                IAMOperator::DateLessThanEqualsIfExists,
+                IAMOperator::DateGreaterThanIfExists,
+                IAMOperator::DateGreaterThanEqualsIfExists,
+            ],
+            &OperatorType::Date,
+        );
+
+        assert_category(
+            &[
+                IAMOperator::Bool,
+                IAMOperator::ForAllValuesBool,
+                IAMOperator::ForAnyValueBool,
+                IAMOperator::BoolIfExists,
+            ],
+            &OperatorType::Boolean,
+        );
+
+        assert_category(
+            &[IAMOperator::BinaryEquals, IAMOperator::BinaryEqualsIfExists],
+            &OperatorType::Binary,
+        );
+
+        assert_category(
+            &[
+                IAMOperator::IpAddress,
+                IAMOperator::NotIpAddress,
+                IAMOperator::IpAddressIfExists,
+                IAMOperator::NotIpAddressIfExists,
+            ],
+            &OperatorType::IpAddress,
+        );
+
+        assert_category(
+            &[
+                IAMOperator::ArnEquals,
+                IAMOperator::ArnLike,
+                IAMOperator::ArnNotEquals,
+                IAMOperator::ArnNotLike,
+                IAMOperator::ForAllValuesArnEquals,
+                IAMOperator::ForAllValuesArnLike,
+                IAMOperator::ForAnyValueArnEquals,
+                IAMOperator::ForAnyValueArnLike,
+                IAMOperator::ForAllValuesArnNotEquals,
+                IAMOperator::ForAllValuesArnNotLike,
+                IAMOperator::ForAnyValueArnNotEquals,
+                IAMOperator::ForAnyValueArnNotLike,
+                IAMOperator::ArnEqualsIfExists,
+                IAMOperator::ArnLikeIfExists,
+                IAMOperator::ArnNotEqualsIfExists,
+                IAMOperator::ArnNotLikeIfExists,
+            ],
+            &OperatorType::Arn,
+        );
+
+        assert_category(&[IAMOperator::Null], &OperatorType::Null);
     }
 
     #[test]
