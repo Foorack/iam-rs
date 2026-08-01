@@ -1,6 +1,7 @@
 use crate::{
     OperatorType,
     core::IAMOperator,
+    evaluation::parse_date,
     validation::{Validate, ValidationContext, ValidationError, ValidationResult, helpers},
 };
 use serde::{Deserialize, Serialize, Serializer};
@@ -418,15 +419,17 @@ impl Validate for Condition {
                         }
                     },
                     OperatorType::Date => {
-                        // Date operators should have valid date strings
+                        // Date operators should have valid date values
                         match &self.value {
                             ConditionValue::String(s) => {
-                                // Basic ISO 8601 format check
-                                if !s.contains('T') && !s.contains('-') {
+                                // AWS accepts ISO 8601 date/time values and Unix
+                                // epoch time. Reuse the evaluator's parser so
+                                // validation and evaluation never disagree.
+                                if parse_date(s).is_err() {
                                     results.push(Err(ValidationError::InvalidCondition {
                                         operator: self.operator.as_str().to_string(),
                                         key: self.key.clone(),
-                                        reason: format!("Date operator requires ISO 8601 date format, found: {s}"),
+                                        reason: format!("Date operator requires an ISO 8601 date/time or Unix epoch value, found: {s}"),
                                     }));
                                 }
                             },
@@ -622,5 +625,43 @@ mod tests {
             1234.5,
         );
         assert!(condition.value.is_number());
+    }
+
+    #[test]
+    fn test_date_condition_validation() {
+        // AWS accepts ISO 8601 date/time values and Unix epoch time. The
+        // validator must accept both, matching the evaluator's parse_date.
+        // (Previously it rejected epoch values like "1704067200".)
+        let iso = Condition::string(
+            IAMOperator::DateGreaterThan,
+            "aws:CurrentTime",
+            "2024-01-01T00:00:00Z",
+        );
+        assert!(iso.is_valid(), "ISO 8601 date should validate");
+
+        let epoch = Condition::string(
+            IAMOperator::DateGreaterThan,
+            "aws:CurrentTime",
+            "1704067200",
+        );
+        assert!(epoch.is_valid(), "Unix epoch should validate");
+
+        let fractional_epoch = Condition::string(
+            IAMOperator::DateGreaterThan,
+            "aws:CurrentTime",
+            "1704067200.5",
+        );
+        assert!(
+            fractional_epoch.is_valid(),
+            "fractional epoch should validate"
+        );
+
+        // A string that looks date-ish but is not a valid date must fail.
+        let invalid = Condition::string(
+            IAMOperator::DateGreaterThan,
+            "aws:CurrentTime",
+            "not-a-date",
+        );
+        assert!(!invalid.is_valid(), "non-date string should not validate");
     }
 }

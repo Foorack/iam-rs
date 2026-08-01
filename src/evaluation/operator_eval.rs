@@ -407,7 +407,7 @@ fn ev_numeric(
 // The casts below are safe: epoch.floor() is far below i64::MAX for real
 // epochs, and the fractional part is in [0, 1), so nanos stays < 1e9.
 #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
-fn parse_date(value: &str) -> Result<DateTime<Utc>, EvaluationError> {
+pub(crate) fn parse_date(value: &str) -> Result<DateTime<Utc>, EvaluationError> {
     DateTime::parse_from_rfc3339(value)
         .map(|dt| dt.with_timezone(&Utc))
         .or_else(|_| {
