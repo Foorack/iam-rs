@@ -404,15 +404,25 @@ fn ev_numeric(
 }
 
 // Parse either ISO 8601 or epoch
+// The casts below are safe: epoch.floor() is far below i64::MAX for real
+// epochs, and the fractional part is in [0, 1), so nanos stays < 1e9.
+#[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
 fn parse_date(value: &str) -> Result<DateTime<Utc>, EvaluationError> {
     DateTime::parse_from_rfc3339(value)
         .map(|dt| dt.with_timezone(&Utc))
         .or_else(|_| {
             value
-                .parse::<i64>()
+                .parse::<f64>()
                 .map_err(|_| EvaluationError::ConditionError("Invalid date value".to_string()))
                 .and_then(|epoch| {
-                    DateTime::<Utc>::from_timestamp(epoch, 0).ok_or_else(|| {
+                    if !epoch.is_finite() {
+                        return Err(EvaluationError::ConditionError(
+                            "Invalid epoch time".to_string(),
+                        ));
+                    }
+                    let secs = epoch.floor() as i64;
+                    let nanos = ((epoch - epoch.floor()) * 1e9) as u32;
+                    DateTime::<Utc>::from_timestamp(secs, nanos).ok_or_else(|| {
                         EvaluationError::ConditionError("Invalid epoch time".to_string())
                     })
                 })
@@ -1645,6 +1655,31 @@ mod tests {
         // Test invalid date
         let result = parse_date("invalid_date");
         assert!(result.is_err());
+
+        // Fractional epoch seconds keep their sub-second precision.
+        let result = parse_date("1704067200.5").unwrap();
+        assert_eq!(result.timestamp_subsec_nanos(), 500_000_000);
+
+        // Non-finite epoch values are rejected.
+        let result = parse_date("NaN");
+        assert!(result.is_err());
+        let result = parse_date("inf");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_date_fractional_epoch() {
+        // A fractional epoch context value and condition value must match.
+        let ctx = Context::new().with_number("epoch_key", 1_704_067_200.5);
+
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::DateEquals,
+            "epoch_key",
+            &serde_json::Value::String("1704067200.5".to_string()),
+        )
+        .unwrap();
+        assert!(result);
     }
 
     #[test]
