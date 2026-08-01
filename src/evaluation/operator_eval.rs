@@ -1822,15 +1822,16 @@ mod tests {
         .unwrap();
         assert!(!result);
 
-        // Negative operators should return true for missing keys
-        let _result = evaluate_condition(
+        // Negated operators (e.g. StringNotEquals) return true for a missing
+        // key: "NOT (key == value)" holds when the key is absent. Non-negated
+        // operators return false instead (see test_missing_key_negated_operators).
+        let result = evaluate_condition(
             &ctx,
             &IAMOperator::StringNotEquals,
             "missing_key",
             &serde_json::Value::String("any_value".to_string()),
         )
         .unwrap();
-        // This should return true for missing context, but the actual implementation
-        // returns false when context is missing for non-IfExists operators
+        assert!(result);
     }
 }
