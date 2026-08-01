@@ -364,7 +364,10 @@ fn ev_str(
         Some(ContextValue::StringList(list)) => Ok(list
             .iter()
             .any(|val| predicate(val.clone(), value.to_string()))),
-        Some(_) => Ok(false), // Type mismatch
+        // Present but a non-string type: non-comparable value, so the condition
+        // is false (true for a negated operator, which is the negation of
+        // "no match"). Consistent with the numeric/date/IP helpers.
+        Some(_) => Ok(is_negated),
         // Missing context: true for IfExists and negated operators
         None => Ok(if_exists || is_negated),
     }
@@ -1229,6 +1232,27 @@ mod tests {
             &IAMOperator::DateNotEquals,
             "date_key",
             &serde_json::Value::String("2024-01-01T00:00:00Z".to_string()),
+        )
+        .unwrap();
+        assert!(result);
+
+        // String operators: a wrong-typed context value is non-comparable too.
+        let ctx = Context::new().with_number("str_key", 42.0);
+
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::StringEquals,
+            "str_key",
+            &serde_json::Value::String("42".to_string()),
+        )
+        .unwrap();
+        assert!(!result);
+
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::StringNotEquals,
+            "str_key",
+            &serde_json::Value::String("42".to_string()),
         )
         .unwrap();
         assert!(result);
