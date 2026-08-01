@@ -619,5 +619,15 @@ mod tests {
         invalid_sid.action = Some(IAMAction::Single("s3:GetObject".to_string()));
         invalid_sid.resource = Some(IAMResource::Single("*".to_string()));
         assert!(!invalid_sid.is_valid());
+
+        // An empty Sid is still valid. AWS's IAM Access Analyzer flags an empty
+        // Sid only as a suggestion (EMPTY_SID_VALUE), not an error, so AWS
+        // accepts policies with "Sid": "". We match AWS exactly and do not
+        // reject it here.
+        let empty_sid = IAMStatement::new(IAMEffect::Allow)
+            .with_sid("")
+            .with_action(IAMAction::Single("s3:GetObject".to_string()))
+            .with_resource(IAMResource::Single("*".to_string()));
+        assert!(empty_sid.is_valid());
     }
 }
