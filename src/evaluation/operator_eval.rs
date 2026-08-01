@@ -219,7 +219,7 @@ pub(super) fn evaluate_condition(
                         ));
                     }
                 };
-                let is_null = ctx.get_ci(key).is_none();
+                let is_null = ctx.get(key).is_none();
                 return Ok(is_null == should_be_null);
             }
         };
@@ -286,7 +286,7 @@ fn evaluate_set_operator(
                 }
             };
 
-            match ctx.get_ci(key) {
+            match ctx.get(key) {
                 Some(ContextValue::StringList(list)) => {
                     if for_all_values {
                         Ok(list.iter().all(satisfies))
@@ -324,7 +324,7 @@ fn evaluate_set_operator(
                 }
             };
 
-            match ctx.get_ci(key) {
+            match ctx.get(key) {
                 Some(ContextValue::BooleanList(list)) => {
                     if for_all_values {
                         Ok(list.iter().all(satisfies))
@@ -357,7 +357,7 @@ fn ev_str(
         EvaluationError::ConditionError("String condition value must be a string".to_string())
     })?;
 
-    match ctx.get_ci(key) {
+    match ctx.get(key) {
         Some(ContextValue::String(s)) => Ok(predicate(s.clone(), value.to_string())),
         // A multivalued context key with a plain operator matches if any value
         // matches (implicit ForAnyValue semantics).
@@ -394,7 +394,7 @@ fn ev_numeric(
             ))
         })?;
 
-    let context_value = match ctx.get_ci(key) {
+    let context_value = match ctx.get(key) {
         Some(ContextValue::Number(n)) => *n,
         Some(ContextValue::String(s)) => match s.parse::<f64>() {
             Ok(n) => n,
@@ -461,7 +461,7 @@ fn ev_date(
     }
     .map_err(|_| EvaluationError::ConditionError("Invalid date condition value".to_string()))?;
 
-    let context_value: DateTime<Utc> = match ctx.get_ci(key) {
+    let context_value: DateTime<Utc> = match ctx.get(key) {
         Some(ContextValue::DateTime(dt)) => *dt,
         Some(ContextValue::Number(epoch)) => match parse_date(&epoch.to_string()) {
             Ok(dt) => dt,
@@ -502,7 +502,7 @@ fn ev_bool(
             ))
         })?;
 
-    match ctx.get_ci(key) {
+    match ctx.get(key) {
         Some(ContextValue::Boolean(b)) => Ok(predicate(*b, value)),
         // A multivalued context key with a plain operator matches if any value
         // matches (implicit ForAnyValue semantics).
@@ -544,7 +544,7 @@ fn ev_ip(
         .parse()
         .map_err(|_| EvaluationError::ConditionError("Invalid IP condition value".to_string()))?;
 
-    let context_value = match ctx.get_ci(key) {
+    let context_value = match ctx.get(key) {
         Some(ContextValue::String(ip_addr)) => match ip_subnet(ip_addr).parse::<IpNet>() {
             Ok(net) => net,
             // Present but not a parseable IP: non-comparable value.

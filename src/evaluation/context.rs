@@ -127,18 +127,13 @@ impl Context {
         Self { data }
     }
 
-    /// Get a context value by key
-    #[must_use]
-    pub fn get(&self, key: &str) -> Option<&ContextValue> {
-        self.data.get(key)
-    }
-
-    /// Look up a context value case-insensitively.
+    /// Get a context value by key.
     ///
     /// AWS treats context key names as case-insensitive (e.g. `aws:SourceIP`
-    /// and `AWS:sourceip` are the same key), so policy evaluation uses this.
+    /// and `AWS:sourceip` are the same key), so lookup falls back to a
+    /// case-insensitive scan if the exact key is not present.
     #[must_use]
-    pub(crate) fn get_ci(&self, key: &str) -> Option<&ContextValue> {
+    pub fn get(&self, key: &str) -> Option<&ContextValue> {
         self.data.get(key).or_else(|| {
             self.data
                 .iter()
@@ -215,7 +210,7 @@ mod tests {
     }
 
     #[test]
-    fn test_get_ci_case_insensitive() {
+    fn test_get_case_insensitive() {
         let context = Context::new().with_string("AWS:SourceIp", "1.2.3.4");
 
         // Exact-case lookup works.
@@ -223,14 +218,12 @@ mod tests {
             context.get("AWS:SourceIp").unwrap().as_string().unwrap(),
             "1.2.3.4"
         );
-        // Case-insensitive lookup finds it regardless of case.
+        // Lookup is case-insensitive, matching AWS (key names ignore case).
         assert_eq!(
-            context.get_ci("aws:sourceip").unwrap().as_string().unwrap(),
+            context.get("aws:sourceip").unwrap().as_string().unwrap(),
             "1.2.3.4"
         );
-        // The public get() stays case-sensitive.
-        assert!(context.get("aws:sourceip").is_none());
         // Missing keys stay missing.
-        assert!(context.get_ci("aws:nonexistent").is_none());
+        assert!(context.get("aws:nonexistent").is_none());
     }
 }
