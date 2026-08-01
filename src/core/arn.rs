@@ -103,6 +103,11 @@ impl Arn {
     ///
     /// Returns `ArnError` if the pattern is not a valid ARN format
     pub fn matches(&self, pattern: &str) -> Result<bool, ArnError> {
+        // "*" matches any ARN.
+        if pattern == "*" {
+            return Ok(true);
+        }
+
         let pattern_arn = Arn::parse(pattern)?;
 
         // Service cannot contain wildcards
@@ -422,6 +427,14 @@ mod tests {
             !arn.matches("arn:aws:*:us-east-1:123456789012:bucket/my-bucket/file.txt")
                 .unwrap()
         );
+    }
+
+    #[test]
+    fn test_matches_wildcard_all() {
+        let arn = Arn::parse("arn:aws:s3:us-east-1:123456789012:bucket/my-bucket").unwrap();
+
+        // "*" matches any ARN (consistent with ArnMatcher).
+        assert!(arn.matches("*").unwrap());
     }
 
     #[test]
