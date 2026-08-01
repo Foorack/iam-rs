@@ -377,9 +377,18 @@ impl PolicyEvaluator {
                 }
                 // Account ID (e.g., "123456789012")
                 if id.len() == 12 && id.chars().all(|c| c.is_ascii_digit()) {
-                    // Accept either the raw account ID or the root ARN
-                    let root_arn = format!("arn:aws:iam::{id}:root");
-                    if request_principal_id == id || request_principal_id.as_str() == root_arn {
+                    // Accept either the raw account ID or the root ARN. The
+                    // root ARN's partition varies by region (aws, aws-cn,
+                    // aws-us-gov, ...), so parse the request principal instead
+                    // of hardcoding a single partition.
+                    if request_principal_id == id {
+                        return Ok(true);
+                    }
+                    if let Ok(request_arn) = Arn::parse(request_principal_id)
+                        && request_arn.service == "iam"
+                        && request_arn.account_id == id
+                        && request_arn.resource == "root"
+                    {
                         return Ok(true);
                     }
                 }
@@ -1158,6 +1167,49 @@ mod tests {
         );
 
         // Principal doesn't match the ARN pattern -> statement not applicable.
+        let result = evaluate_policy(&policy, &request).unwrap();
+        assert_eq!(result, Decision::NotApplicable);
+    }
+
+    #[test]
+    fn test_account_id_principal_matches_root_arn_any_partition() {
+        // A policy-side 12-digit account ID must match the account's root ARN
+        // in any partition (aws, aws-cn, aws-us-gov, ...), not just "aws".
+        let policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_principal(Principal::Aws(PrincipalId::String(
+                    "123456789012".to_string(),
+                )))
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
+        );
+
+        for root in [
+            "arn:aws:iam::123456789012:root",
+            "arn:aws-cn:iam::123456789012:root",
+            "arn:aws-us-gov:iam::123456789012:root",
+        ] {
+            let request = IAMRequest::new(
+                Principal::Aws(PrincipalId::String(root.to_string())),
+                "s3:GetObject",
+                Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+            );
+            let result = evaluate_policy(&policy, &request).unwrap();
+            assert_eq!(
+                result,
+                Decision::Allow,
+                "root principal {root} should match"
+            );
+        }
+
+        // A root ARN for a different account must NOT match.
+        let request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::999999999999:root".to_string(),
+            )),
+            "s3:GetObject",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        );
         let result = evaluate_policy(&policy, &request).unwrap();
         assert_eq!(result, Decision::NotApplicable);
     }
