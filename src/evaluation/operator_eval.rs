@@ -47,7 +47,9 @@ type O = IAMOperator;
 ///
 /// Result: Match
 ///
-#[allow(clippy::too_many_lines)]
+// The numeric predicates below compare f64 values exactly (AWS uses decimal
+// comparison), so clippy::float_cmp is allowed here intentionally.
+#[allow(clippy::too_many_lines, clippy::float_cmp)]
 pub(super) fn evaluate_condition(
     ctx: &Context,
     operator: &IAMOperator,
@@ -119,11 +121,12 @@ pub(super) fn evaluate_condition(
         | O::ArnNotLikeIfExists => predicate_str = Box::new(|a, b| !wildcard_match(&a, &b)),
 
         // Numeric conditions
+        // AWS compares numeric values exactly (decimal), so equality is exact.
         O::NumericEquals | O::NumericEqualsIfExists => {
-            predicate_num = Box::new(|a, b| (a - b).abs() < f64::EPSILON);
+            predicate_num = Box::new(|a, b| a == b);
         }
         O::NumericNotEquals | O::NumericNotEqualsIfExists => {
-            predicate_num = Box::new(|a, b| (a - b).abs() >= f64::EPSILON);
+            predicate_num = Box::new(|a, b| a != b);
         }
         O::NumericLessThan | O::NumericLessThanIfExists => predicate_num = Box::new(|a, b| a < b),
         O::NumericLessThanEquals | O::NumericLessThanEqualsIfExists => {
@@ -1092,6 +1095,44 @@ mod tests {
             &IAMOperator::NumericEquals,
             "numeric_string",
             &serde_json::Value::Number(serde_json::Number::from_f64(42.5).unwrap()),
+        )
+        .unwrap();
+        assert!(result);
+    }
+
+    #[test]
+    fn test_numeric_equals_exact() {
+        // AWS compares numeric values exactly (decimal), not with an epsilon
+        // tolerance, so tiny numbers that differ must NOT be considered equal.
+        let mut ctx = Context::new();
+        ctx.insert("key".to_string(), ContextValue::Number(1e-17));
+
+        // 1e-17 != 2e-17.
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::NumericEquals,
+            "key",
+            &serde_json::json!(2e-17),
+        )
+        .unwrap();
+        assert!(!result);
+
+        // Exact match still works.
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::NumericEquals,
+            "key",
+            &serde_json::json!(1e-17),
+        )
+        .unwrap();
+        assert!(result);
+
+        // NumericNotEquals for the differing values.
+        let result = evaluate_condition(
+            &ctx,
+            &IAMOperator::NumericNotEquals,
+            "key",
+            &serde_json::json!(2e-17),
         )
         .unwrap();
         assert!(result);
