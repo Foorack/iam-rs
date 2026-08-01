@@ -495,9 +495,8 @@ impl PolicyEvaluator {
     /// policy pattern are compared lowercased.
     fn action_matches(action: &IAMAction, request_action: &str) -> bool {
         let request_action = request_action.to_ascii_lowercase();
-        let pattern_matches = |a: &str| {
-            a == "*" || wildcard_match(&request_action, &a.to_ascii_lowercase())
-        };
+        let pattern_matches =
+            |a: &str| a == "*" || wildcard_match(&request_action, &a.to_ascii_lowercase());
         match action {
             IAMAction::Single(a) => pattern_matches(a),
             IAMAction::Multiple(actions) => actions.iter().any(|a| pattern_matches(a)),
