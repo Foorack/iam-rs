@@ -1693,6 +1693,20 @@ mod tests {
     }
 
     #[test]
+    fn test_wildcard_match_many_stars_terminates() {
+        // Adversarial patterns that were exponential (and stack-overflowing)
+        // under the old recursive matcher must complete quickly and correctly.
+        let text = "a".repeat(60);
+        let pattern = "*a".repeat(30);
+        assert!(wildcard_match(&text, &pattern));
+
+        // A very long all-star pattern must not overflow the stack.
+        let text = "x".repeat(100_000);
+        let pattern = "*".repeat(100_000);
+        assert!(wildcard_match(&text, &pattern));
+    }
+
+    #[test]
     fn test_set_operator_type_detection() {
         // This tests the internal set operator detection logic
         let ctx = create_test_context();

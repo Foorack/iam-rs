@@ -127,64 +127,50 @@ impl Arn {
     /// Check if a string matches a pattern with wildcards
     /// * matches any sequence of characters
     ///   ? matches any single character
+    ///
+    /// Uses an iterative greedy matcher with backtracking on the last `*`, so
+    /// it never recurses (no stack overflow) and avoids the exponential worst
+    /// case of a naive matcher; O(n·m) worst case, near-linear in practice.
     #[must_use]
     pub fn wildcard_match(text: &str, pattern: &str) -> bool {
-        Self::wildcard_match_recursive(text, pattern, 0, 0)
-    }
-
-    /// Recursive helper for wildcard matching
-    fn wildcard_match_recursive(
-        text: &str,
-        pattern: &str,
-        text_idx: usize,
-        pattern_idx: usize,
-    ) -> bool {
         let text_chars: Vec<char> = text.chars().collect();
         let pattern_chars: Vec<char> = pattern.chars().collect();
 
-        // If we've reached the end of both strings, it's a match
-        if pattern_idx >= pattern_chars.len() && text_idx >= text_chars.len() {
-            return true;
-        }
+        let mut t = 0; // current position in text
+        let mut p = 0; // current position in pattern
+        let mut star_t = 0; // text position after the last `*` match
+        let mut star_p = 0; // pattern position of the last `*`
+        let mut has_star = false;
 
-        // If we've reached the end of pattern but not text, it's not a match
-        // unless the remaining pattern is all '*'
-        if pattern_idx >= pattern_chars.len() {
-            return false;
-        }
-
-        match pattern_chars[pattern_idx] {
-            '*' => {
-                // Try matching zero characters
-                if Self::wildcard_match_recursive(text, pattern, text_idx, pattern_idx + 1) {
-                    return true;
-                }
-
-                // Try matching one or more characters
-                for i in text_idx..text_chars.len() {
-                    if Self::wildcard_match_recursive(text, pattern, i + 1, pattern_idx + 1) {
-                        return true;
-                    }
-                }
-                false
-            }
-            '?' => {
-                // ? matches exactly one character
-                if text_idx >= text_chars.len() {
-                    false
-                } else {
-                    Self::wildcard_match_recursive(text, pattern, text_idx + 1, pattern_idx + 1)
-                }
-            }
-            c => {
-                // Regular character must match exactly
-                if text_idx >= text_chars.len() || text_chars[text_idx] != c {
-                    false
-                } else {
-                    Self::wildcard_match_recursive(text, pattern, text_idx + 1, pattern_idx + 1)
-                }
+        while t < text_chars.len() {
+            if p < pattern_chars.len()
+                && (pattern_chars[p] == '?' || pattern_chars[p] == text_chars[t])
+            {
+                // '?' or an exact character matches.
+                t += 1;
+                p += 1;
+            } else if p < pattern_chars.len() && pattern_chars[p] == '*' {
+                // Remember where to resume after this `*`.
+                has_star = true;
+                star_t = t;
+                star_p = p;
+                p += 1;
+            } else if has_star {
+                // Backtrack: let the last `*` consume one more text character.
+                star_t += 1;
+                t = star_t;
+                p = star_p + 1;
+            } else {
+                return false;
             }
         }
+
+        // Any remaining `*`s in the pattern match the empty string.
+        while p < pattern_chars.len() && pattern_chars[p] == '*' {
+            p += 1;
+        }
+
+        p == pattern_chars.len()
     }
 
     /// Check if this ARN is valid according to AWS ARN rules
