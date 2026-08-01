@@ -354,12 +354,12 @@ impl IAMOperator {
     }
 
     /// Returns true if this operator supports policy variables
+    ///
+    /// AWS allows policy variables only with the string and ARN condition
+    /// operators (see "IAM policy elements: Variables and tags").
     #[must_use]
     pub fn supports_policy_variables(&self) -> bool {
-        !self.is_numeric_operator()
-            && !self.is_date_operator()
-            && !self.is_binary_operator()
-            && !self.is_ip_operator()
+        self.is_string_operator() || self.is_arn_operator()
     }
 
     /// Returns true if this operator is a multivalued operator (ForAllValues/ForAnyValue)
@@ -695,6 +695,26 @@ mod tests {
         assert!(!IAMOperator::Bool.supports_multiple_values());
         assert!(!IAMOperator::BoolIfExists.supports_multiple_values());
         assert!(!IAMOperator::Null.supports_multiple_values());
+    }
+
+    #[test]
+    fn test_supports_policy_variables() {
+        // AWS: variables work only with string and ARN condition operators.
+        assert!(IAMOperator::StringEquals.supports_policy_variables());
+        assert!(IAMOperator::StringLikeIfExists.supports_policy_variables());
+        assert!(IAMOperator::ArnLike.supports_policy_variables());
+        assert!(IAMOperator::ForAnyValueArnEquals.supports_policy_variables());
+
+        // Not supported for boolean, null, numeric, date, binary, or IP.
+        assert!(!IAMOperator::Bool.supports_policy_variables());
+        assert!(!IAMOperator::ForAllValuesBool.supports_policy_variables());
+        assert!(!IAMOperator::ForAnyValueBool.supports_policy_variables());
+        assert!(!IAMOperator::Null.supports_policy_variables());
+        assert!(!IAMOperator::NumericEquals.supports_policy_variables());
+        assert!(!IAMOperator::DateEquals.supports_policy_variables());
+        assert!(!IAMOperator::BinaryEquals.supports_policy_variables());
+        assert!(!IAMOperator::IpAddress.supports_policy_variables());
+        assert!(!IAMOperator::NotIpAddress.supports_policy_variables());
     }
 
     #[test]
