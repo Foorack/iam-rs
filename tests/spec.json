@@ -232,21 +232,13 @@
             "description": "`DateTime` value (e.g., request time)"
           },
           {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/StringList",
-                "description": "List of strings (e.g., list of ARNs)"
-              }
-            ],
+            "$ref": "#/components/schemas/StringList",
+            "description": "List of strings (e.g., list of ARNs)",
             "title": "StringList"
           },
           {
-            "oneOf": [
-              {
-                "$ref": "#/components/schemas/BooleanList",
-                "description": "List of booleans"
-              }
-            ],
+            "$ref": "#/components/schemas/BooleanList",
+            "description": "List of booleans",
             "title": "BooleanList"
           }
         ],
@@ -582,22 +574,22 @@
           "Action": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/IAMAction",
                 "description": "Optional action(s) - what actions are allowed/denied\n\nThe `Action` element describes the specific action or actions that will be allowed or denied.\nStatements must include either an `Action` or `NotAction` element.\nEach service has its own set of actions that describe tasks that you can perform with that service.\n\nFor example:\n* the list of actions for Amazon S3 can be found at Specifying Permissions in a Policy in the *Amazon Simple Storage Service User Guide*\n* the list of actions for Amazon EC2 can be found in the [Amazon EC2 API Reference](https://docs.aws.amazon.com/AWSEC2/latest/APIReference/query-apis.html)\n* the list of actions for AWS Identity and Access Management can be found in the [IAM API Reference](https://docs.aws.amazon.com/IAM/latest/APIReference/API_Operations.html)\n\nTo find the list of actions for other AWS services, consult the [API reference](http://aws.amazon.com/documentation) documentation for the service.\nFor non-AWS services, consult the service documentation for the actions that are supported by that service.\n\nYou specify a value using a service namespace as an action prefix (`iam`, `ec2`, `sqs`, `sns`, `s3`, etc.) followed by the name of the action to allow or deny.\nThe name must match an action that is supported by the service.\nThe prefix and the action name are case insensitive.\nFor example, `iam:ListAccessKeys` is the same as `IAM:listaccesskeys`.\n\nThe following examples show Action elements for different services:\n* `Action: \"sqs:SendMessage\"` - allows the `SendMessage` action on SQS.\n* `Action: \"ec2:StartInstances\"` - allows the `StartInstances` action on EC2.\n* `Action: \"iam:ChangePassword\"` - allows the `ChangePassword` action on IAM.\n* `Action: \"s3:GetObject\"` - allows the `GetObject` action on S3.\n\nYou can specify multiple values for the Action element:\n* `Action: [ \"sqs:SendMessage\", \"sqs:ReceiveMessage\", \"ec2:StartInstances\", \"iam:ChangePassword\", \"s3:GetObject\" ]`\n\nYou can use wildcards to match multiple actions:\n* `Action: \"s3:*\"` - allows all actions on S3.\n\nYou can also use wildcards (`*` or `?`) as part of the action name. For example, the following Action element applies to all IAM actions that include the string `AccessKey`, including `CreateAccessKey`, `DeleteAccessKey`, `ListAccessKeys`, and `UpdateAccessKey`:\n\n`\"Action\": \"iam:*AccessKey*\"`\n\nSome services let you limit the actions that are available.\nFor example, Amazon SQS lets you make available just a subset of all the possible Amazon SQS actions.\nIn that case, the `*` wildcard doesn't allow complete control of the queue; it allows only the subset of actions that you've shared.\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_action.html>"
+              },
+              {
+                "type": "null"
               }
             ]
           },
           "Condition": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/ConditionBlock",
                 "description": "Optional conditions for the statement\n\nThe `Condition` element (or Condition block) lets you specify conditions for when a policy is in effect. The Condition element is optional.\n\nIn the Condition element, you build expressions in which you use condition operators (equal, less than, and others) to match the context keys and values in the policy against keys and values in the request context.\nTo learn more about the request context, see [Components of a request](https://docs.aws.amazon.com/IAM/latest/UserGuide/intro-structure.html#intro-structure-request).\n\n```json\n\"Condition\" : { \"{condition-operator}\" : { \"{condition-key}\" : \"{condition-value}\" }}\n```\n\nThe context key that you specify in a policy condition can be a global condition context key or a service-specific context key.\n* Global condition context keys have the aws: prefix.\n* Service-specific context keys have the service's prefix.\n\n  For example, Amazon EC2 lets you write a condition using the ec2:InstanceType context key, which is unique to that service.\n\nContext key names are not case-sensitive.\nFor example, including the aws:SourceIP context key is equivalent to testing for `AWS:SourceIp`.\nCase-sensitivity of context key values depends on the condition operator that you use.\nFor example, the following condition includes the `StringEquals` operator to make sure that only requests made by john match.\nUsers named John are denied access.\n\n```json\n\"Condition\" : { \"StringEquals\" : { \"aws:username\" : \"john\" }}\n```\nThe following condition uses the `StringEqualsIgnoreCase` operator to match users named john or John.\n```json\n\"Condition\" : { \"StringEqualsIgnoreCase\" : { \"aws:username\" : \"john\" }}\n```\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition.html>"
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -608,55 +600,55 @@
           "NotAction": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/IAMAction",
                 "description": "Optional not action(s) - what actions are not covered\n\n`NotAction` is an advanced policy element that explicitly matches everything except the specified list of actions.\nUsing `NotAction` can result in a shorter policy by listing only a few actions that should not match, rather than including a long list of actions that will match.\n\nActions specified in `NotAction` are not impacted by the Allow or Deny effect in a policy statement.\nThis, in turn, means that all of the applicable actions or services that are not listed are allowed if you use the Allow effect.\nIn addition, such unlisted actions or services are denied if you use the Deny effect.\n\nWhen you use `NotAction` with the Resource element, you provide scope for the policy.\nThis is how AWS determines which actions or services are applicable.\n\nFor more information, see the following example policy.\n\n# `NotAction` with Allow\n\nYou can use the `NotAction` element in a statement with `\"Effect\": \"Allow\"` to provide access to all of the actions in an AWS service, except for the actions specified in `NotAction`.\nYou can use it with the Resource element to provide scope for the policy, limiting the allowed actions to the actions that can be performed on the specified resource.\n\nExample: Allow all S3 actions except deleting a bucket:\n```json\n\"Effect\": \"Allow\",\n\"NotAction\": \"s3:DeleteBucket\",\n\"Resource\": \"arn:aws:s3:::*\"\n```\n\nExample: Allow all actions except IAM:\n```json\n\"Effect\": \"Allow\",\n\"NotAction\": \"iam:*\",\n\"Resource\": \"*\"\n```\n\nBe careful using `NotAction` with `\"Effect\": \"Allow\"` as it could grant more permissions than intended.\n\n# `NotAction` with Deny\n\nYou can use the `NotAction` element in a statement with `\"Effect\": \"Deny\"` to deny access to all of the listed resources except for the actions specified in `NotAction`.\nThis combination does not allow the listed items, but instead explicitly denies the actions not listed.\n\nExample: Deny all actions except IAM actions if not using MFA:\n```json\n{\n    \"Sid\": \"DenyAllUsersNotUsingMFA\",\n    \"Effect\": \"Deny\",\n    \"NotAction\": \"iam:*\",\n    \"Resource\": \"*\",\n    \"Condition\": {\"BoolIfExists\": {\"aws:MultiFactorAuthPresent\": \"false\"}}\n}\n```\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_notaction.html>"
+              },
+              {
+                "type": "null"
               }
             ]
           },
           "NotPrincipal": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/Principal",
                 "description": "Optional not principal(s) - who the statement does not apply to\n\nThe `NotPrincipal` element uses \"Effect\":\"Deny\" to deny access to all principals except the principal specified in the `NotPrincipal` element.\nA principal can usually be a user, federated user, role, assumed role, account, service, or other principal type.\n\n`NotPrincipal` must be used with `\"Effect\":\"Deny\"`. Using it with `\"Effect\":\"Allow\"` is not supported.\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_notprincipal.html>"
+              },
+              {
+                "type": "null"
               }
             ]
           },
           "NotResource": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/IAMResource",
                 "description": "Optional not resource(s) - what resources are not covered\n\n`NotResource` is an advanced policy element that explicitly matches every resource except those specified.\nUsing `NotResource` can result in a shorter policy by listing only a few resources that should not match, rather than including a long list of resources that will match.\nThis is particularly useful for policies that apply within a single AWS service.\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_notresource.html>"
+              },
+              {
+                "type": "null"
               }
             ]
           },
           "Principal": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/Principal",
                 "description": "Optional principal(s) - who the statement applies to\n\nUse the `Principal` element in a resource-based JSON policy to specify the principal that is allowed or denied access to a resource.\n\nYou must use the `Principal` element in resource-based policies.\nYou cannot use the `Principal` element in an identity-based policy.\n\nIdentity-based policies are permissions policies that you attach to IAM identities (users, groups, or roles).\nIn those cases, the principal is implicitly the identity where the policy is attached.\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_principal.html>"
+              },
+              {
+                "type": "null"
               }
             ]
           },
           "Resource": {
             "oneOf": [
               {
-                "type": "null"
-              },
-              {
                 "$ref": "#/components/schemas/IAMResource",
                 "description": "Optional resource(s) - what resources the statement applies to\n\nThe `Resource` element specifies the object(s) that the statement applies to.\n\nYou must include either a `Resource` or a `NotResource` element in a statement.\n\nYou specify a resource using an Amazon Resource Name (ARN). The ARN format depends on the AWS service and the specific resource.\nFor more information about ARNs, see: <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_identifiers.html#identifiers-arns>\n\nSome AWS services do not support resource-level permissions. In those cases, use the wildcard character (`*`) in the Resource element.\n\nExamples:\n* Specific SQS queue:\n  `\"Resource\": \"arn:aws:sqs:us-east-2:account-ID-without-hyphens:queue1\"`\n* Specific IAM user (user name is case sensitive):\n  `\"Resource\": \"arn:aws:iam::account-ID-without-hyphens:user/Bob\"`\n\n# Using wildcards in resource ARNs\n\nYou can use wildcard characters (`*` and `?`) within the individual segments of an ARN (the parts separated by colons) to represent:\n- Any combination of characters (`*`)\n- Any single character (`?`)\n\nYou can use multiple `*` or `?` characters in each segment.\nIf the `*` wildcard is the last character of a resource ARN segment, it can expand to match beyond the colon boundaries.\nIt is recommended to use wildcards within ARN segments separated by a colon.\n\n**Note:** You can't use a wildcard in the service segment that identifies the AWS product.\n\n## Examples\n\nAll IAM users whose path is `/accounting`:\n```text\n\"Resource\": \"arn:aws:iam::account-ID-without-hyphens:user/accounting/*\"\n```\n\nAll items within a specific Amazon S3 bucket:\n```text\n\"Resource\": \"arn:aws:s3:::amzn-s3-demo-bucket/*\"\n```\n\nWildcards can match across slashes and other characters:\n```text\n\"Resource\": \"arn:aws:s3:::amzn-s3-demo-bucket/*/test/*\"\n```\nThis matches:\n- amzn-s3-demo-bucket/1/test/object.jpg\n- amzn-s3-demo-bucket/1/2/test/object.jpg\n- amzn-s3-demo-bucket/1/2/test/3/object.jpg\n- amzn-s3-demo-bucket/1/2/3/test/4/object.jpg\n- amzn-s3-demo-bucket/1///test///object.jpg\n- amzn-s3-demo-bucket/1/test/.jpg\n- amzn-s3-demo-bucket//test/object.jpg\n- amzn-s3-demo-bucket/1/test/\n\nBut does **not** match:\n- amzn-s3-demo-bucket/1-test/object.jpg\n- amzn-s3-demo-bucket/test/object.jpg\n- amzn-s3-demo-bucket/1/2/test.jpg\n\n## Specifying multiple resources\n\nYou can specify multiple resources in the `Resource` element by using an array of ARNs:\n```json\n\"Resource\": [\n    \"arn:aws:dynamodb:us-east-2:account-ID-without-hyphens:table/books_table\",\n    \"arn:aws:dynamodb:us-east-2:account-ID-without-hyphens:table/magazines_table\"\n]\n```\n\n## Using policy variables in resource ARNs\n\nYou can use JSON policy variables in the part of the ARN that identifies the specific resource. For example:\n```text\n\"Resource\": \"arn:aws:dynamodb:us-east-2:account-id:table/${aws:username}\"\n```\nThis allows access to a `DynamoDB` table that matches the current user's name.\n\nFor more information about JSON policy variables, see [IAM policy elements: Variables and tags](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_variables.html).\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_resource.html>"
+              },
+              {
+                "type": "null"
               }
             ]
           },
