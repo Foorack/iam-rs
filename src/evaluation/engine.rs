@@ -427,10 +427,7 @@ impl PolicyEvaluator {
             ) => Self::principal_id_matches(principal_id, request_principal_id, |id| {
                 // Service principal, e.g., "ec2.amazonaws.com"
                 // Can also be regionalized, e.g., "s3.ap-east-1.amazonaws.com"
-                if id == request_principal_id {
-                    return Ok(true);
-                }
-                Ok(false)
+                Ok(id == request_principal_id)
             }),
 
             //
@@ -441,10 +438,7 @@ impl PolicyEvaluator {
                 Principal::CanonicalUser(PrincipalId::String(request_principal_id)),
             ) => Self::principal_id_matches(principal_id, request_principal_id, |id| {
                 // Canonical user ID, e.g., "79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be"
-                if id == request_principal_id {
-                    return Ok(true);
-                }
-                Ok(false)
+                Ok(id == request_principal_id)
             }),
             _ => {
                 // If principal types don't match, they can't match
@@ -1340,7 +1334,7 @@ mod tests {
 
         let result = evaluator.evaluate(&request).unwrap();
         assert_eq!(result.decision, Decision::Allow);
-        assert!(!result.statement_details.is_empty());
+        assert_ne!(result.statement_details, Vec::new());
         assert_eq!(
             result.statement_details[0].sid,
             Some("AllowS3Read".to_string())
