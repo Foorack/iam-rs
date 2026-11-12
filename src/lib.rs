@@ -50,7 +50,7 @@ mod openapi_tests {
     #[test]
     fn test_generate_openapi_spec() {
         let spec = IamApiDoc::openapi().to_pretty_json().unwrap();
-        assert!(!spec.is_empty());
+        assert_ne!(spec, "");
         println!("{spec}");
     }
 
