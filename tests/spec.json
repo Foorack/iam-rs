@@ -191,20 +191,8 @@
       "Context": {
         "type": "object",
         "description": "Context for IAM evaluation containing key-value pairs",
-        "required": [
-          "data"
-        ],
-        "properties": {
-          "data": {
-            "type": "object",
-            "description": "Context keys and their values",
-            "additionalProperties": {
-              "$ref": "#/components/schemas/ContextValue"
-            },
-            "propertyNames": {
-              "type": "string"
-            }
-          }
+        "additionalProperties": {
+          "$ref": "#/components/schemas/ContextValue"
         }
       },
       "ContextValue": {

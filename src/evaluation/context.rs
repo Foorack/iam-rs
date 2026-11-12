@@ -86,10 +86,44 @@ impl ContextValue {
 
 /// Context for IAM evaluation containing key-value pairs
 #[derive(Debug, Clone, PartialEq)]
-#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct Context {
     /// Context keys and their values
     pub data: HashMap<String, ContextValue>,
+}
+
+// `Context` serializes as its inner map, so its published schema has to describe
+// that map rather than the struct. Deriving `ToSchema` would publish an object with
+// a required `data` property, which is not the JSON clients actually receive.
+#[cfg(feature = "utoipa")]
+impl utoipa::PartialSchema for Context {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        utoipa::openapi::schema::ObjectBuilder::new()
+            .description(Some(
+                "Context for IAM evaluation containing key-value pairs",
+            ))
+            .additional_properties(Some(utoipa::openapi::Ref::from_schema_name("ContextValue")))
+            .into()
+    }
+}
+
+#[cfg(feature = "utoipa")]
+impl utoipa::ToSchema for Context {
+    fn name() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed("Context")
+    }
+
+    fn schemas(
+        schemas: &mut Vec<(
+            String,
+            utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>,
+        )>,
+    ) {
+        schemas.push((
+            <ContextValue as utoipa::ToSchema>::name().into_owned(),
+            <ContextValue as utoipa::PartialSchema>::schema(),
+        ));
+        <ContextValue as utoipa::ToSchema>::schemas(schemas);
+    }
 }
 
 // Impl serialization and deserialization for Context (hide the data internal structure)
@@ -207,6 +241,34 @@ mod tests {
         assert_eq!(context.get("key1").unwrap().as_string().unwrap(), "value1");
         assert!(context.get("key2").unwrap().as_boolean().unwrap());
         assert_eq!(context.get("key3").unwrap().as_number().unwrap(), 42.0);
+    }
+
+    /// The serialized form is the flat map, not a struct with a `data` field.
+    #[test]
+    #[cfg(feature = "utoipa")]
+    fn test_context_serializes_as_flat_map() {
+        let context = Context::new().with_string("key", "value");
+
+        let json = serde_json::to_value(&context).unwrap();
+        assert_eq!(json, serde_json::json!({ "key": "value" }));
+        assert!(json.get("data").is_none());
+    }
+
+    /// The published schema describes the flat map the Serialize impl writes.
+    #[test]
+    #[cfg(feature = "utoipa")]
+    fn test_context_schema_is_flat_map() {
+        use utoipa::PartialSchema;
+
+        let json = serde_json::to_value(Context::schema()).unwrap();
+
+        assert_eq!(json["type"], "object");
+        assert_eq!(
+            json["additionalProperties"],
+            serde_json::json!({ "$ref": "#/components/schemas/ContextValue" })
+        );
+        assert!(json.get("properties").is_none());
+        assert!(json.get("data").is_none());
     }
 
     #[test]
