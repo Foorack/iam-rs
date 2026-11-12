@@ -193,6 +193,9 @@
         "description": "Context for IAM evaluation containing key-value pairs",
         "additionalProperties": {
           "$ref": "#/components/schemas/ContextValue"
+        },
+        "propertyNames": {
+          "type": "string"
         }
       },
       "ContextValue": {

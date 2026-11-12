@@ -97,10 +97,16 @@ pub struct Context {
 #[cfg(feature = "utoipa")]
 impl utoipa::PartialSchema for Context {
     fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        // The map `Context` serializes as. `propertyNames` is what utoipa's own
+        // `HashMap<String, _>` derive emitted, so keeping it leaves the published schema
+        // identical to the previous one apart from the removed `data` wrapper.
+        let key = utoipa::openapi::schema::ObjectBuilder::new()
+            .schema_type(utoipa::openapi::schema::Type::String);
         utoipa::openapi::schema::ObjectBuilder::new()
             .description(Some(
                 "Context for IAM evaluation containing key-value pairs",
             ))
+            .property_names(Some(key))
             .additional_properties(Some(utoipa::openapi::Ref::from_schema_name("ContextValue")))
             .into()
     }
@@ -245,7 +251,6 @@ mod tests {
 
     /// The serialized form is the flat map, not a struct with a `data` field.
     #[test]
-    #[cfg(feature = "utoipa")]
     fn test_context_serializes_as_flat_map() {
         let context = Context::new().with_string("key", "value");
 
@@ -267,8 +272,10 @@ mod tests {
             json["additionalProperties"],
             serde_json::json!({ "$ref": "#/components/schemas/ContextValue" })
         );
+        // The old derived schema required `data`, and a client generated from it reads
+        // `json['data']`. Neither a `properties` entry nor a `required` list may come back.
         assert!(json.get("properties").is_none());
-        assert!(json.get("data").is_none());
+        assert!(json.get("required").is_none());
     }
 
     #[test]
