@@ -12,7 +12,6 @@ use crate::{Validate, ValidationContext, ValidationError};
 /// - `arn:partition:service:region:account-id:resource-type:resource-id`
 /// - `arn:partition:service:region:account-id:resource-type/resource-id/sub-resource`
 #[derive(Debug, Clone, PartialEq, Eq)]
-#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct Arn {
     /// The partition (e.g., "aws", "aws-cn", "aws-us-gov")
     pub partition: String,
@@ -24,6 +23,39 @@ pub struct Arn {
     pub account_id: String,
     /// The resource specification (format varies by service)
     pub resource: String,
+}
+
+// `Arn` serializes as the single string written by its `Display` impl, so its
+// published schema has to describe that string, not the struct. Deriving `ToSchema`
+// published an object with five required properties, and a client generated from it
+// reads `json['partition']` off a string and gets `undefined`.
+#[cfg(feature = "utoipa")]
+impl utoipa::PartialSchema for Arn {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        utoipa::openapi::schema::ObjectBuilder::new()
+            .schema_type(utoipa::openapi::schema::Type::String)
+            .description(Some(
+                "Represents an Amazon Resource Name (ARN)\n\n\
+                 ARNs uniquely identify AWS resources. The general format is:\n\
+                 `arn:partition:service:region:account-id:resource-type/resource-id`\n\n\
+                 Some services use slightly different formats:\n\
+                 - `arn:partition:service:region:account-id:resource-type:resource-id`\n\
+                 - `arn:partition:service:region:account-id:resource-type/resource-id/sub-resource`",
+            ))
+            .examples([serde_json::json!("arn:aws:s3:::bucket/key")])
+            .into()
+    }
+}
+
+#[cfg(feature = "utoipa")]
+impl utoipa::ToSchema for Arn {
+    fn name() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed("Arn")
+    }
+
+    // An ARN's string form references no other schema, so there is nothing to
+    // collect here. The component itself is registered by the
+    // `components(schemas(...))` list in `lib.rs`, which uses `name()` above.
 }
 
 /// Error types for ARN parsing and validation
@@ -315,6 +347,22 @@ impl<'de> Deserialize<'de> for Arn {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The published schema describes the string the `Serialize` impl writes.
+    #[test]
+    #[cfg(feature = "utoipa")]
+    fn test_arn_schema_is_string() {
+        use utoipa::PartialSchema;
+
+        let json = serde_json::to_value(Arn::schema()).unwrap();
+
+        assert_eq!(json["type"], "string");
+        // The old derived schema was an object with five required properties, and a
+        // client generated from it reads `json['partition']` off a string. An object
+        // schema carries `properties` and `required`, so neither may come back.
+        assert!(json.get("properties").is_none());
+        assert!(json.get("required").is_none());
+    }
 
     #[test]
     fn test_valid_arn_parsing() {

@@ -17,37 +17,11 @@
   "components": {
     "schemas": {
       "Arn": {
-        "type": "object",
+        "type": "string",
         "description": "Represents an Amazon Resource Name (ARN)\n\nARNs uniquely identify AWS resources. The general format is:\n`arn:partition:service:region:account-id:resource-type/resource-id`\n\nSome services use slightly different formats:\n- `arn:partition:service:region:account-id:resource-type:resource-id`\n- `arn:partition:service:region:account-id:resource-type/resource-id/sub-resource`",
-        "required": [
-          "partition",
-          "service",
-          "region",
-          "account_id",
-          "resource"
-        ],
-        "properties": {
-          "account_id": {
-            "type": "string",
-            "description": "The account ID (12-digit number, can be empty for some services)"
-          },
-          "partition": {
-            "type": "string",
-            "description": "The partition (e.g., \"aws\", \"aws-cn\", \"aws-us-gov\")"
-          },
-          "region": {
-            "type": "string",
-            "description": "The region (e.g., \"us-east-1\", can be empty for global services)"
-          },
-          "resource": {
-            "type": "string",
-            "description": "The resource specification (format varies by service)"
-          },
-          "service": {
-            "type": "string",
-            "description": "The service namespace (e.g., \"s3\", \"ec2\", \"iam\")"
-          }
-        }
+        "examples": [
+          "arn:aws:s3:::bucket/key"
+        ]
       },
       "ArnError": {
         "oneOf": [
