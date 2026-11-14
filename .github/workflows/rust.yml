@@ -20,6 +20,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
-      - run: cargo build --verbose
+      - run: cargo build --verbose --all-features
+      # Both feature sets. The utoipa tests are the ones that pin the published schemas to what
+      # the serializers actually write, and without `--all-features` they never ran here: issue 25
+      # and issue 27 both shipped a schema disagreeing with the wire format with CI green.
+      - run: cargo test --verbose --all-features
       - run: cargo test --verbose
   
