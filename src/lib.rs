@@ -62,10 +62,26 @@ mod openapi_tests {
         let snapshot = std::fs::read_to_string(snapshot_path)
             .expect("could not read tests/spec.json — run `cargo test --features utoipa test_generate_openapi_spec -- --nocapture` and save the output to regenerate it");
 
-        let current_value: serde_json::Value =
+        let mut current_value: serde_json::Value =
             serde_json::from_str(&current).expect("current spec is not valid JSON");
-        let snapshot_value: serde_json::Value =
+        let mut snapshot_value: serde_json::Value =
             serde_json::from_str(&snapshot).expect("tests/spec.json is not valid JSON");
+
+        // `info.version` is filled from `CARGO_PKG_VERSION`, so it is true by construction and
+        // changes on every release. Comparing it here made every version bump fail this test,
+        // which is how 0.9.1 was tagged onto a tree whose own suite was red. It is checked on its
+        // own below, and the snapshot carries the rest of the document.
+        assert_eq!(
+            current_value["info"]["version"],
+            serde_json::json!(env!("CARGO_PKG_VERSION")),
+            "the spec's version should be the crate's version"
+        );
+        if let serde_json::Value::Object(info) = &mut current_value["info"] {
+            info.remove("version");
+        }
+        if let serde_json::Value::Object(info) = &mut snapshot_value["info"] {
+            info.remove("version");
+        }
 
         assert_eq!(
             current_value, snapshot_value,
