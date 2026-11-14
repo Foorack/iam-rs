@@ -1,0 +1,58 @@
+name: Publish to crates.io
+
+# Publishing is bound to a tag push and to nothing else. crates.io checks three facts against
+# GitHub's OIDC token before it hands out a credential that lives for thirty minutes:
+#
+#   repository owner   Foorack
+#   repository name    iam-rs
+#   workflow filename  release.yml
+#
+# Rename this file and the crate is silently unbound until that config is updated to match. There
+# is no CARGO_REGISTRY_TOKEN in this repository, and there must never be one.
+on:
+  push:
+    # Both spellings run. The two tags cut before this workflow existed were bare versions (0.1.1,
+    # 0.8.0), and a tag matching no pattern here publishes nothing while saying nothing: no run,
+    # no failure, no crate. Costing one extra line is cheaper than that silence.
+    tags:
+      - 'v*'
+      - '[0-9]*'
+
+jobs:
+  publish:
+    name: cargo publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # the OIDC token that is exchanged for the publishing credential
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # A tag that does not name the version in Cargo.toml publishes something nobody asked for,
+      # and crates.io has no undo. Stop before a credential is even requested. The tag may carry
+      # the `v` or not, which is the same freedom the trigger above gives it; the package is found
+      # by name rather than by position so this still holds if the crate ever joins a workspace.
+      - name: The tag names the crate version
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 \
+            | jq -r '.packages[] | select(.name == "iam-rs") | .version')
+          if [ "${GITHUB_REF_NAME#v}" != "$version" ]; then
+            echo "tag is $GITHUB_REF_NAME, but Cargo.toml says $version" >&2
+            exit 1
+          fi
+
+      # The tag can land before the tests on the same push have answered, so this job asks for
+      # itself rather than trusting that they did.
+      - run: cargo test --all-features
+
+      # Packaging is checked while no credential exists yet, so a crate that would not build for a
+      # consumer fails here rather than inside the thirty minutes the token lives for.
+      - run: cargo publish --dry-run
+
+      - uses: rust-lang/crates-io-auth-action@v1
+        id: auth
+
+      - run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
