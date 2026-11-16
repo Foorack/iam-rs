@@ -240,6 +240,18 @@ impl Arn {
             return false;
         }
 
+        // Validate region: empty for global services, otherwise lowercase letters,
+        // digits and dashes. Wildcards are allowed in patterns.
+        if !self.region.is_empty()
+            && !self.region.contains(['*', '?'])
+            && !self
+                .region
+                .chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+        {
+            return false;
+        }
+
         // Validate account ID if present
         if !Self::is_valid_account_id(&self.account_id) {
             return false;
@@ -509,6 +521,19 @@ mod tests {
         assert!(!invalid_service.is_valid());
         let invalid_account_id = Arn::parse("arn:aws:s3:abc:12345:*").unwrap();
         assert!(!invalid_account_id.is_valid());
+    }
+
+    #[test]
+    fn test_arn_region_validation() {
+        // Global services have an empty region, and patterns may use wildcards.
+        assert!(Arn::parse("arn:aws:iam::123456789012:user/alice").unwrap().is_valid());
+        assert!(Arn::parse("arn:aws:s3:*:*:bucket/*").unwrap().is_valid());
+
+        let invalid_region = Arn::parse("arn:aws:s3:!!!:123456789012:bucket/my-bucket").unwrap();
+        assert!(!invalid_region.is_valid());
+
+        let spaced_region = Arn::parse("arn:aws:s3:us east 1:123456789012:bucket/my-bucket").unwrap();
+        assert!(!spaced_region.is_valid());
     }
 
     #[test]
