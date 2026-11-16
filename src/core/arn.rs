@@ -264,6 +264,15 @@ impl Arn {
             return false;
         }
 
+        // Validate region: empty for global services, otherwise lowercase letters,
+        // digits, dashes and wildcards. The wildcard test is per character: a
+        // `contains("*")` shortcut would accept a region such as `*junk`.
+        if !self.region.chars().all(|c| {
+            c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '*' || c == '?'
+        }) {
+            return false;
+        }
+
         // Validate account ID if present
         if !Self::is_valid_account_id(&self.account_id) {
             return false;
@@ -554,6 +563,30 @@ mod tests {
         assert!(!invalid_service.is_valid());
         let invalid_account_id = Arn::parse("arn:aws:s3:abc:12345:*").unwrap();
         assert!(!invalid_account_id.is_valid());
+    }
+
+    #[test]
+    fn test_arn_region_validation() {
+        // Global services have an empty region, and patterns may use wildcards.
+        assert!(Arn::parse("arn:aws:iam::123456789012:user/alice").unwrap().is_valid());
+        assert!(Arn::parse("arn:aws:s3:*:*:bucket/*").unwrap().is_valid());
+
+        let invalid_region = Arn::parse("arn:aws:s3:!!!:123456789012:bucket/my-bucket").unwrap();
+        assert!(!invalid_region.is_valid());
+
+        let spaced_region = Arn::parse("arn:aws:s3:us east 1:123456789012:bucket/my-bucket").unwrap();
+        assert!(!spaced_region.is_valid());
+
+        // A wildcard does not excuse the rest of the component.
+        let wildcard_junk = Arn::parse("arn:aws:s3:*!!!:123456789012:bucket/my-bucket").unwrap();
+        assert!(!wildcard_junk.is_valid());
+
+        // A wildcard followed by ordinary region characters is a legitimate pattern.
+        let wildcard_pattern = Arn::parse("arn:aws:s3:us-*:123456789012:bucket/my-bucket").unwrap();
+        assert!(wildcard_pattern.is_valid());
+
+        let uppercase_region = Arn::parse("arn:aws:s3:US-EAST-1:123456789012:bucket/my-bucket").unwrap();
+        assert!(!uppercase_region.is_valid());
     }
 
     #[test]
