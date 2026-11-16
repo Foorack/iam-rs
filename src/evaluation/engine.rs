@@ -360,8 +360,8 @@ impl PolicyEvaluator {
 
         match (principal, request_principal) {
             // A policy wildcard matches any single request principal. The request
-            // side can never be a wildcard here: `evaluate` rejects non-single
-            // principals before any statement is evaluated.
+            // side can never be a wildcard here: both `evaluate` and this function
+            // reject non-single principals before matching.
             (Principal::Wildcard, _) => Ok(true),
 
             //
@@ -1341,6 +1341,28 @@ mod tests {
             result.statement_details[0].sid,
             Some("AllowS3Read".to_string())
         );
+    }
+
+    // A wildcard is not a valid request principal. `evaluate` rejects it before
+    // any statement is matched, which is what makes the missing request-side
+    // wildcard arm in `principal_matches` safe.
+    #[test]
+    fn test_wildcard_request_principal_is_rejected() {
+        let evaluator = PolicyEvaluator::with_policies(vec![IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                .with_resource(IAMResource::Single("*".to_string())),
+        )]);
+        let request = IAMRequest::new(
+            Principal::Wildcard,
+            "s3:GetObject",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        );
+
+        assert!(matches!(
+            evaluator.evaluate(&request),
+            Err(EvaluationError::InvalidRequest(_))
+        ));
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
