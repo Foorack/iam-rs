@@ -7,8 +7,9 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
 mod one_or_many {
-    use serde::de::DeserializeOwned;
+    use serde::de::{DeserializeOwned, MapAccess, SeqAccess, Visitor};
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::marker::PhantomData;
 
     pub fn serialize<T, S>(value: &Vec<T>, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -27,17 +28,37 @@ mod one_or_many {
         T: DeserializeOwned,
         D: Deserializer<'de>,
     {
-        #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum OneOrMany<T> {
-            One(T),
-            Many(Vec<T>),
+        struct OneOrMany<T>(PhantomData<T>);
+
+        impl<'de, T: DeserializeOwned> Visitor<'de> for OneOrMany<T> {
+            type Value = Vec<T>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a statement object or an array of statement objects")
+            }
+
+            // A lone statement is deserialised in place rather than through an
+            // untagged enum. serde buffers the input for untagged enums and
+            // replaces any inner error with "data did not match any variant",
+            // which throws away exactly the diagnostics a policy author needs —
+            // a duplicate condition key, for instance.
+            fn visit_map<A>(self, map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let statement = T::deserialize(serde::de::value::MapAccessDeserializer::new(map))?;
+                Ok(vec![statement])
+            }
+
+            fn visit_seq<A>(self, seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                Deserialize::deserialize(serde::de::value::SeqAccessDeserializer::new(seq))
+            }
         }
 
-        match OneOrMany::deserialize(deserializer)? {
-            OneOrMany::One(val) => Ok(vec![val]),
-            OneOrMany::Many(vals) => Ok(vals),
-        }
+        deserializer.deserialize_any(OneOrMany(PhantomData))
     }
 }
 
@@ -324,6 +345,28 @@ mod tests {
         let parsed_policy = IAMPolicy::from_json(&json).unwrap();
 
         assert_eq!(policy, parsed_policy);
+    }
+
+    #[test]
+    fn test_policy_with_duplicate_condition_key_is_rejected() {
+        // Duplicate detection lives in `ConditionBlock`'s deserialiser. This proves
+        // it holds through the public entry point, and that the reason reaches the
+        // caller instead of an opaque untagged-enum error.
+        let json = r#"{
+            "Version": "2012-10-17",
+            "Statement": [{
+                "Effect": "Allow",
+                "Action": "s3:GetObject",
+                "Resource": "*",
+                "Condition": {"StringEquals": {"aws:a": "x", "aws:a": "y"}}
+            }]
+        }"#;
+
+        let error = IAMPolicy::from_json(json).expect_err("duplicate keys must not parse");
+        assert!(
+            error.to_string().contains("duplicate condition key"),
+            "unexpected error: {error}"
+        );
     }
 
     #[test]
