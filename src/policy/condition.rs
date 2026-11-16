@@ -128,7 +128,11 @@ pub struct Condition {
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct ConditionBlock {
     /// Map of operators to their key-value pairs
-    #[serde(flatten)]
+    //
+    // The `flatten` hint is only there for the generated OpenAPI schema: the
+    // `serde` helper attributes are registered by the `ToSchema` derive, so with
+    // the feature off this attribute would not even parse.
+    #[cfg_attr(feature = "utoipa", serde(flatten))]
     pub conditions: HashMap<IAMOperator, HashMap<String, ConditionValue>>,
 }
 
