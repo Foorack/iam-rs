@@ -166,30 +166,49 @@ impl Arn {
     /// case of a naive matcher; O(n·m) worst case, near-linear in practice.
     #[must_use]
     pub fn wildcard_match(text: &str, pattern: &str) -> bool {
+        // ASCII input is matched over bytes, which skips the two `Vec<char>`
+        // allocations this otherwise pays on every action and condition
+        // comparison. Non-ASCII input keeps the char path, because `?` has to
+        // match one character rather than one byte.
+        if text.is_ascii() && pattern.is_ascii() {
+            return Self::wildcard_match_slice(text.as_bytes(), pattern.as_bytes(), b'*', b'?');
+        }
+
         let text_chars: Vec<char> = text.chars().collect();
         let pattern_chars: Vec<char> = pattern.chars().collect();
+        Self::wildcard_match_slice(&text_chars, &pattern_chars, '*', '?')
+    }
 
+    /// Greedy wildcard match over a slice of comparable items
+    ///
+    /// Iterative, with backtracking to the last `*`: it never recurses (so no
+    /// stack overflow) and avoids the exponential worst case of a naive matcher;
+    /// O(n·m) worst case, near-linear in practice.
+    fn wildcard_match_slice<T: Copy + PartialEq>(
+        text: &[T],
+        pattern: &[T],
+        star: T,
+        single: T,
+    ) -> bool {
         let mut t = 0; // current position in text
         let mut p = 0; // current position in pattern
         let mut star_t = 0; // text position after the last `*` match
         let mut star_p = 0; // pattern position of the last `*`
         let mut has_star = false;
 
-        while t < text_chars.len() {
-            if p < pattern_chars.len()
-                && (pattern_chars[p] == '?' || pattern_chars[p] == text_chars[t])
-            {
-                // '?' or an exact character matches.
+        while t < text.len() {
+            if p < pattern.len() && (pattern[p] == single || pattern[p] == text[t]) {
+                // `?` or an exact element matches.
                 t += 1;
                 p += 1;
-            } else if p < pattern_chars.len() && pattern_chars[p] == '*' {
+            } else if p < pattern.len() && pattern[p] == star {
                 // Remember where to resume after this `*`.
                 has_star = true;
                 star_t = t;
                 star_p = p;
                 p += 1;
             } else if has_star {
-                // Backtrack: let the last `*` consume one more text character.
+                // Backtrack: let the last `*` consume one more text element.
                 star_t += 1;
                 t = star_t;
                 p = star_p + 1;
@@ -199,11 +218,11 @@ impl Arn {
         }
 
         // Any remaining `*`s in the pattern match the empty string.
-        while p < pattern_chars.len() && pattern_chars[p] == '*' {
+        while p < pattern.len() && pattern[p] == star {
             p += 1;
         }
 
-        p == pattern_chars.len()
+        p == pattern.len()
     }
 
     /// Check if this ARN is valid according to AWS ARN rules
@@ -416,6 +435,15 @@ mod tests {
             .unwrap()
             .is_valid();
         assert!(!result);
+    }
+
+    #[test]
+    fn test_wildcard_match_non_ascii() {
+        // `?` matches one character, not one byte.
+        assert!(Arn::wildcard_match("héllo", "h?llo"));
+        assert!(!Arn::wildcard_match("héllo", "h??llo"));
+        assert!(Arn::wildcard_match("héllo", "h*llo"));
+        assert!(Arn::wildcard_match("hello", "h?llo"));
     }
 
     #[test]
