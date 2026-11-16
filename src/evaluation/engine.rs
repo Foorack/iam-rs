@@ -77,7 +77,8 @@ pub struct EvaluationResult {
     /// The list is truncated when [`EvaluationOptions::stop_on_explicit_deny`]
     /// is enabled and a statement with `Effect: Deny` matches: evaluation stops
     /// there, so statements after the denying one are never recorded. Disable
-    /// `stop_on_explicit_deny` if you need the full picture.
+    /// `stop_on_explicit_deny` (and keep `collect_match_details` enabled) if you
+    /// need the full list.
     pub statement_details: Vec<StatementMatch>,
     /// Evaluation context used
     pub context: IAMRequest,
