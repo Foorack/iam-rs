@@ -1355,18 +1355,18 @@ mod tests {
         .unwrap();
 
         let trusted = IAMRequest::new(
-            Principal::Federated(PrincipalId::String(
-                "cognito-identity.amazonaws.com".into(),
-            )),
+            Principal::Federated(PrincipalId::String("cognito-identity.amazonaws.com".into())),
             "s3:GetObject",
             Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
         );
         assert_eq!(evaluate_policy(&policy, &trusted).unwrap(), Decision::Allow);
 
-        // Merely starting with the trusted provider name must not be enough.
+        // Merely starting with the trusted provider name must not be enough, and
+        // neither must containing it.
         for lookalike in [
             "cognito-identity.amazonaws.com.attacker.net",
             "cognito-identity.amazonaws.com.evil",
+            "evil.cognito-identity.amazonaws.com",
         ] {
             let request = IAMRequest::new(
                 Principal::Federated(PrincipalId::String(lookalike.into())),
