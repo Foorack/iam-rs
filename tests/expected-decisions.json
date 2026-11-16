@@ -1,0 +1,128 @@
+[
+  {
+    "policy_file": "4.json",
+    "cases": [
+      {
+        "reason": "an action in the allow list is allowed",
+        "request": {
+          "Principal": { "AWS": "arn:aws:iam::123456789012:user/martha" },
+          "Action": "iam:GetAccountPasswordPolicy",
+          "Resource": "arn:aws:iam::123456789012:user/martha",
+          "Context": {}
+        },
+        "result": "Allow"
+      },
+      {
+        "reason": "an action outside the allow list is not matched",
+        "request": {
+          "Principal": { "AWS": "arn:aws:iam::123456789012:user/martha" },
+          "Action": "iam:CreateUser",
+          "Resource": "arn:aws:iam::123456789012:user/martha",
+          "Context": {}
+        },
+        "result": "NotApplicable"
+      }
+    ]
+  },
+  {
+    "policy_file": "15.json",
+    "cases": [
+      {
+        "reason": "a request outside the allowed regions is denied",
+        "request": {
+          "Principal": { "AWS": "arn:aws:iam::123456789012:user/martha" },
+          "Action": "s3:GetObject",
+          "Resource": "arn:aws:s3:::amzn-s3-demo-bucket1/object",
+          "Context": { "aws:RequestedRegion": "us-east-1" }
+        },
+        "result": "Deny"
+      },
+      {
+        "reason": "a request in an allowed region is not denied",
+        "request": {
+          "Principal": { "AWS": "arn:aws:iam::123456789012:user/martha" },
+          "Action": "s3:GetObject",
+          "Resource": "arn:aws:s3:::amzn-s3-demo-bucket1/object",
+          "Context": { "aws:RequestedRegion": "eu-west-1" }
+        },
+        "result": "NotApplicable"
+      },
+      {
+        "reason": "NotAction exempts the IAM actions the statement names",
+        "request": {
+          "Principal": { "AWS": "arn:aws:iam::123456789012:user/martha" },
+          "Action": "iam:CreateUser",
+          "Resource": "arn:aws:s3:::amzn-s3-demo-bucket1/object",
+          "Context": { "aws:RequestedRegion": "us-east-1" }
+        },
+        "result": "NotApplicable"
+      }
+    ]
+  },
+  {
+    "policy_file": "26.json",
+    "cases": [
+      {
+        "reason": "both principal and resource tags satisfy the condition",
+        "request": {
+          "Principal": { "AWS": "arn:aws:iam::123456789012:user/martha" },
+          "Action": "ec2:StartInstances",
+          "Resource": "arn:aws:ec2:region:123456789012:instance/i-1234567890abcdef0",
+          "Context": {
+            "aws:PrincipalTag/Department": "Data",
+            "aws:ResourceTag/Project": "DataAnalytics"
+          }
+        },
+        "result": "Allow"
+      },
+      {
+        "reason": "a mismatched principal tag fails the condition",
+        "request": {
+          "Principal": { "AWS": "arn:aws:iam::123456789012:user/martha" },
+          "Action": "ec2:StartInstances",
+          "Resource": "arn:aws:ec2:region:123456789012:instance/i-1234567890abcdef0",
+          "Context": {
+            "aws:PrincipalTag/Department": "Finance",
+            "aws:ResourceTag/Project": "DataAnalytics"
+          }
+        },
+        "result": "NotApplicable"
+      }
+    ]
+  },
+  {
+    "policy_file": "53.json",
+    "cases": [
+      {
+        "reason": "a resource in another account is denied",
+        "request": {
+          "Principal": { "AWS": "arn:aws:iam::123456789012:user/martha" },
+          "Action": "s3:GetObject",
+          "Resource": "arn:aws:s3:::amzn-s3-demo-bucket1/object",
+          "Context": { "aws:ResourceAccount": "999988887777" }
+        },
+        "result": "Deny"
+      },
+      {
+        "reason": "a resource in the trusted account is not denied",
+        "request": {
+          "Principal": { "AWS": "arn:aws:iam::123456789012:user/martha" },
+          "Action": "s3:GetObject",
+          "Resource": "arn:aws:s3:::amzn-s3-demo-bucket1/object",
+          "Context": { "aws:ResourceAccount": "111122223333" }
+        },
+        "result": "NotApplicable"
+      },
+      {
+        "reason": "NotAction exempts the listed IAM policy actions",
+        "request": {
+          "Principal": { "AWS": "arn:aws:iam::123456789012:user/martha" },
+          "Action": "iam:GetPolicy",
+          "Resource": "arn:aws:s3:::amzn-s3-demo-bucket1/object",
+          "Context": { "aws:ResourceAccount": "999988887777" }
+        },
+        "result": "NotApplicable"
+      }
+    ]
+  }
+]
