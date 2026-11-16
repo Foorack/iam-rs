@@ -408,14 +408,12 @@ impl PolicyEvaluator {
             ) => Self::principal_id_matches(principal_id, request_principal_id, |id| {
                 // Federated principal can be a provider name or ARN
                 // e.g., "cognito-identity.amazonaws.com", "arn:aws:iam::account-id:oidc-provider/..."
-                if id == request_principal_id {
-                    return Ok(true);
-                }
-                // For OIDC/SAML, match by prefix
-                if request_principal_id.starts_with(id) {
-                    return Ok(true);
-                }
-                Ok(false)
+                //
+                // The comparison is exact. A prefix test would let a principal named
+                // "cognito-identity.amazonaws.com.attacker.net" pass as
+                // "cognito-identity.amazonaws.com", which is the classic
+                // lookalike-domain escalation.
+                Ok(id == request_principal_id)
             }),
 
             //
@@ -1339,6 +1337,48 @@ mod tests {
             result.statement_details[0].sid,
             Some("AllowS3Read".to_string())
         );
+    }
+
+    #[test]
+    fn test_federated_principal_requires_exact_match() {
+        let policy = IAMPolicy::from_json(
+            r#"{
+                "Version": "2012-10-17",
+                "Statement": [{
+                    "Effect": "Allow",
+                    "Principal": {"Federated": "cognito-identity.amazonaws.com"},
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::my-bucket/*"
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        let trusted = IAMRequest::new(
+            Principal::Federated(PrincipalId::String(
+                "cognito-identity.amazonaws.com".into(),
+            )),
+            "s3:GetObject",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        );
+        assert_eq!(evaluate_policy(&policy, &trusted).unwrap(), Decision::Allow);
+
+        // Merely starting with the trusted provider name must not be enough.
+        for lookalike in [
+            "cognito-identity.amazonaws.com.attacker.net",
+            "cognito-identity.amazonaws.com.evil",
+        ] {
+            let request = IAMRequest::new(
+                Principal::Federated(PrincipalId::String(lookalike.into())),
+                "s3:GetObject",
+                Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+            );
+            assert_eq!(
+                evaluate_policy(&policy, &request).unwrap(),
+                Decision::NotApplicable,
+                "{lookalike} must not match the trusted federated principal"
+            );
+        }
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
