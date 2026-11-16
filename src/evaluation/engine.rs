@@ -147,8 +147,38 @@ impl PolicyEvaluator {
     }
 
     /// Add a policy to the evaluator
+    ///
+    /// The policy is stored as given, without validation. A malformed statement
+    /// inside it makes every later [`evaluate`](Self::evaluate) call return `Err`,
+    /// so use [`try_add_policy`](Self::try_add_policy) for policies that come from
+    /// a user or a file.
     pub fn add_policy(&mut self, policy: IAMPolicy) {
         self.policies.push(policy);
+    }
+
+    /// Validate a policy and add it only if it passes
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`ValidationError`](crate::ValidationError) in the policy,
+    /// leaving the evaluator unchanged.
+    pub fn try_add_policy(&mut self, policy: IAMPolicy) -> Result<(), crate::ValidationError> {
+        policy.validate_result()?;
+        self.policies.push(policy);
+        Ok(())
+    }
+
+    /// Build an evaluator from policies that must all validate
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`ValidationError`](crate::ValidationError) found across
+    /// the policies.
+    pub fn try_with_policies(policies: Vec<IAMPolicy>) -> Result<Self, crate::ValidationError> {
+        for policy in &policies {
+            policy.validate_result()?;
+        }
+        Ok(Self::with_policies(policies))
     }
 
     /// Set evaluation options
@@ -1339,6 +1369,35 @@ mod tests {
             result.statement_details[0].sid,
             Some("AllowS3Read".to_string())
         );
+    }
+
+    #[test]
+    fn test_try_add_policy_rejects_invalid_policies() {
+        // An Allow statement carrying NotPrincipal is invalid IAM.
+        let mut invalid = IAMStatement::new(IAMEffect::Allow);
+        invalid.action = Some(IAMAction::Single("s3:GetObject".to_string()));
+        invalid.resource = Some(IAMResource::Single("*".to_string()));
+        invalid.not_principal = Some(Principal::Aws(PrincipalId::String(
+            "123456789012".to_string(),
+        )));
+
+        let mut evaluator = PolicyEvaluator::new();
+        let error = evaluator
+            .try_add_policy(IAMPolicy::new().add_statement(invalid))
+            .expect_err("invalid policy must be rejected");
+        assert!(
+            error.to_string().contains("NotPrincipal"),
+            "unexpected error: {error}"
+        );
+
+        let valid = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                .with_resource(IAMResource::Single("*".to_string())),
+        );
+        evaluator
+            .try_add_policy(valid)
+            .expect("valid policy must be accepted");
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
