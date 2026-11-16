@@ -109,7 +109,11 @@ pub struct PolicyEvaluator {
 }
 
 /// Options for policy evaluation
+///
+/// Deserialising accepts a partial document: any field left out keeps its
+/// [`Default`] value, so `{"max_statements": 50}` is a valid configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct EvaluationOptions {
     /// Whether to continue evaluation after finding an explicit deny
@@ -1635,6 +1639,26 @@ mod tests {
             result.statement_details.len(),
             3,
             "without the short circuit every statement is recorded"
+        );
+    }
+
+    #[test]
+    fn test_evaluation_options_accept_partial_json() {
+        let options: EvaluationOptions =
+            serde_json::from_str(r#"{"max_statements": 50}"#).expect("partial options must parse");
+
+        assert_eq!(options.max_statements, 50);
+        assert_eq!(
+            options.stop_on_explicit_deny,
+            EvaluationOptions::default().stop_on_explicit_deny
+        );
+        assert_eq!(
+            options.collect_match_details,
+            EvaluationOptions::default().collect_match_details
+        );
+        assert_eq!(
+            options.ignore_resource_constraints,
+            EvaluationOptions::default().ignore_resource_constraints
         );
     }
 
