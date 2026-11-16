@@ -169,6 +169,37 @@ impl PolicyEvaluator {
     /// - Condition evaluation fails
     /// - Maximum statement evaluation limit is exceeded
     pub fn evaluate(&self, request: &IAMRequest) -> Result<EvaluationResult, EvaluationError> {
+        let (decision, statement_details) = self.decide(request)?;
+        Ok(EvaluationResult {
+            decision,
+            statement_details,
+            context: request.clone(),
+        })
+    }
+
+    /// Evaluate an authorization request, taking ownership of it
+    ///
+    /// Same decision as [`evaluate`](Self::evaluate), but the request is moved
+    /// into the result instead of being deep-cloned. Use this on the hot path
+    /// when the caller does not need the request afterwards.
+    ///
+    /// # Errors
+    ///
+    /// See [`evaluate`](Self::evaluate).
+    pub fn evaluate_owned(&self, request: IAMRequest) -> Result<EvaluationResult, EvaluationError> {
+        let (decision, statement_details) = self.decide(&request)?;
+        Ok(EvaluationResult {
+            decision,
+            statement_details,
+            context: request,
+        })
+    }
+
+    /// Run the evaluation and return everything except the echoed request
+    fn decide(
+        &self,
+        request: &IAMRequest,
+    ) -> Result<(Decision, Vec<StatementMatch>), EvaluationError> {
         if !request.principal.is_single() {
             return Err(EvaluationError::InvalidRequest(
                 "Request principal must be a single entity".to_string(),
@@ -220,11 +251,7 @@ impl PolicyEvaluator {
                         IAMEffect::Deny => {
                             has_explicit_deny = true;
                             if self.options.stop_on_explicit_deny {
-                                return Ok(EvaluationResult {
-                                    decision: Decision::Deny,
-                                    statement_details,
-                                    context: request.clone(),
-                                });
+                                return Ok((Decision::Deny, statement_details));
                             }
                         }
                     }
@@ -242,11 +269,7 @@ impl PolicyEvaluator {
             Decision::NotApplicable
         };
 
-        Ok(EvaluationResult {
-            decision,
-            statement_details,
-            context: request.clone(),
-        })
+        Ok((decision, statement_details))
     }
 
     /// Evaluate a single statement against a request
@@ -1339,6 +1362,27 @@ mod tests {
             result.statement_details[0].sid,
             Some("AllowS3Read".to_string())
         );
+    }
+
+    #[test]
+    fn test_evaluate_owned_matches_evaluate() {
+        let policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
+        );
+        let evaluator = PolicyEvaluator::with_policies(vec![policy]);
+        let request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
+            "s3:GetObject",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        );
+
+        let borrowed = evaluator.evaluate(&request).unwrap();
+        let owned = evaluator.evaluate_owned(request).unwrap();
+        assert_eq!(owned, borrowed);
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize)]
