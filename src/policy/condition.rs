@@ -124,6 +124,15 @@ pub struct Condition {
 
 /// Represents a condition block in an IAM policy
 /// This is a collection of conditions grouped by operator
+///
+/// Deserialising rejects a duplicate operator block and a duplicate condition key
+/// inside one block: a map cannot hold both, AWS ANDs every entry, and keeping the
+/// last one silently changes what the statement means.
+///
+/// That check needs the raw JSON text. Going through a `serde_json::Value` first —
+/// `serde_json::from_value`, or any conversion via `Value` — has already dropped
+/// duplicates before this type sees them, so prefer [`crate::IAMPolicy::from_json`]
+/// for untrusted input.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct ConditionBlock {

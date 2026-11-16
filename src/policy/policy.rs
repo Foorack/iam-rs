@@ -144,6 +144,11 @@ impl IAMPolicy {
 
     /// Parses an IAM policy from a JSON string
     ///
+    /// Prefer this over `serde_json::from_value` for untrusted input: only the text
+    /// path lets [`ConditionBlock`](crate::ConditionBlock) reject a policy that
+    /// repeats a condition operator or a condition key, because a
+    /// `serde_json::Value` has already collapsed the duplicate.
+    ///
     /// # Errors
     ///
     /// Returns a JSON parsing error if the input string is not valid JSON

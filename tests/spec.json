@@ -125,7 +125,7 @@
       },
       "ConditionBlock": {
         "type": "object",
-        "description": "Represents a condition block in an IAM policy\nThis is a collection of conditions grouped by operator",
+        "description": "Represents a condition block in an IAM policy\nThis is a collection of conditions grouped by operator\n\nDeserialising rejects a duplicate operator block and a duplicate condition key\ninside one block: a map cannot hold both, AWS ANDs every entry, and keeping the\nlast one silently changes what the statement means.\n\nThat check needs the raw JSON text. Going through a `serde_json::Value` first —\n`serde_json::from_value`, or any conversion via `Value` — has already dropped\nduplicates before this type sees them, so prefer [`crate::IAMPolicy::from_json`]\nfor untrusted input.",
         "additionalProperties": {
           "type": "object",
           "description": "Map of operators to their key-value pairs",
