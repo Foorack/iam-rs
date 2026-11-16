@@ -5,3 +5,4 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 21bb9f1ceb34f7a656873237d1153a04ee89cf659fe2c462188ad2045ef30237 # shrinks to text = "*a"
+cc 496e5a9c5363e28f58cfdcf7f6380f947ca2c0c344b0f2b41b33b14e702ab735 # shrinks to text = "*a", pattern = "*"
