@@ -365,14 +365,14 @@ impl IAMOperator {
     /// Returns true if this operator is a multivalued operator (ForAllValues/ForAnyValue)
     #[must_use]
     pub fn is_multivalued_operator(&self) -> bool {
-        self.to_string().starts_with("ForAllValues:")
-            || self.to_string().starts_with("ForAnyValue:")
+        let name = self.as_str();
+        name.starts_with("ForAllValues:") || name.starts_with("ForAnyValue:")
     }
 
     /// Returns true if this operator is an "`IfExists`" variant
     #[must_use]
     pub fn is_if_exists_operator(&self) -> bool {
-        self.to_string().ends_with("IfExists")
+        self.as_str().ends_with("IfExists")
     }
 
     /// Returns true if this operator is a negated operator (Not*)
