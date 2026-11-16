@@ -1404,6 +1404,65 @@ mod tests {
         );
     }
 
+    /// One expected decision for a policy from `tests/policies/`.
+    #[derive(Debug, Deserialize)]
+    struct ExpectedCase {
+        /// Why this decision is the right one, for whoever hits the failure.
+        reason: String,
+        request: IAMRequest,
+        result: Decision,
+    }
+
+    #[derive(Debug, Deserialize)]
+    struct ExpectedPolicy {
+        policy_file: String,
+        cases: Vec<ExpectedCase>,
+    }
+
+    #[test]
+    fn test_policy_corpus_decisions() {
+        // `test_policy_roundtrip_from_files` parses and re-serialises the corpus
+        // without ever evaluating it, so nothing pinned what those documented AWS
+        // example policies actually decide. This does.
+        let path = "tests/expected-decisions.json";
+        let json = std::fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("Failed to read '{path}': {e}"));
+        let expectations: Vec<ExpectedPolicy> =
+            serde_json::from_str(&json).unwrap_or_else(|e| panic!("Failed to parse '{path}': {e}"));
+        assert!(
+            !expectations.is_empty(),
+            "expected at least one policy in {path}"
+        );
+
+        let mut case_count = 0;
+        for expectation in &expectations {
+            let policy_path = format!("tests/policies/{}", expectation.policy_file);
+            let policy_json = std::fs::read_to_string(&policy_path)
+                .unwrap_or_else(|e| panic!("Failed to read '{policy_path}': {e}"));
+            let policy = IAMPolicy::from_json(&policy_json)
+                .unwrap_or_else(|e| panic!("Failed to parse '{policy_path}': {e}"));
+            assert!(policy.is_valid(), "'{policy_path}' should be valid IAM");
+            assert!(
+                !expectation.cases.is_empty(),
+                "'{}' has no expected cases in {path}",
+                expectation.policy_file
+            );
+
+            for case in &expectation.cases {
+                case_count += 1;
+                let decision = evaluate_policy(&policy, &case.request).unwrap_or_else(|e| {
+                    panic!("Failed to evaluate '{policy_path}' ({}): {e}", case.reason)
+                });
+                assert_eq!(
+                    decision, case.result,
+                    "'{policy_path}': {} decided {decision:?}, expected {:?}",
+                    case.reason, case.result
+                );
+            }
+        }
+        assert!(case_count > 0, "expected at least one case in {path}");
+    }
+
     #[test]
     fn test_evaluate_owned_matches_evaluate() {
         let policy = IAMPolicy::new().add_statement(
