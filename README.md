@@ -185,6 +185,20 @@ let resolved = interpolate_variables(team_pattern, &context)?;
 // Result: "arn:aws:s3:::team-bucket-red/*"
 ```
 
+### Wildcards and Untrusted Values
+
+A resolved value is inserted verbatim, so a context value of `*` would turn
+`arn:aws:s3:::home/${aws:username}/*` into `arn:aws:s3:::home/*/*` and match every user's
+prefix. Interpolation therefore refuses a context value containing `*` or `?` and
+returns `EvaluationError::InvalidVariable`. That aborts the whole request, so treat an
+error as "do not allow".
+
+Defaults written by the policy author are exempt — `${aws:PrincipalTag/team, '*'}` is
+allowed, because that is the author's intent rather than caller input.
+
+Variables are resolved in `Resource` patterns only. `Action` and condition values are
+compared literally.
+
 ### Variables with Default Values
 
 ```rust
@@ -225,7 +239,7 @@ let policy = IAMPolicy::new()
             .with_condition(
                 IAMOperator::StringLike,
                 "s3:prefix".to_string(),
-                json!("${aws:username}/*")
+                json!("home/*")
             )
     );
 ```
