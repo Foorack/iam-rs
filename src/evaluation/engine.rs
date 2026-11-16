@@ -1376,7 +1376,14 @@ mod tests {
         request_files.sort_by_key(|p| {
             p.file_name()
                 .and_then(|n| n.to_str())
-                .map(|s| s.split('.').next().unwrap().parse::<u32>().unwrap())
+                .map(|s| {
+                    s.split('.')
+                        .next()
+                        .and_then(|stem| stem.parse::<u32>().ok())
+                        .unwrap_or_else(|| {
+                            panic!("unexpected file '{s}' in {request_dir}/: expected <number>.json")
+                        })
+                })
                 .map(|n| format!("{n:010}"))
         });
 
