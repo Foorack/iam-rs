@@ -65,7 +65,7 @@ impl std::fmt::Display for EvaluationError {
 impl std::error::Error for EvaluationError {}
 
 /// Evaluation result with decision and metadata
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct EvaluationResult {
     /// The final decision
@@ -73,13 +73,19 @@ pub struct EvaluationResult {
     /// Per-statement evaluation details, whether or not each statement matched.
     /// Populated only when [`EvaluationOptions::collect_match_details`] is
     /// enabled; otherwise empty.
+    ///
+    /// The list is truncated when [`EvaluationOptions::stop_on_explicit_deny`]
+    /// is enabled and a statement with `Effect: Deny` matches: evaluation stops
+    /// there, so statements after the denying one are never recorded. Disable
+    /// `stop_on_explicit_deny` (and keep `collect_match_details` enabled) if you
+    /// need the full list.
     pub statement_details: Vec<StatementMatch>,
     /// Evaluation context used
     pub context: IAMRequest,
 }
 
 /// Information about a statement's evaluation result (whether or not it matched)
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct StatementMatch {
     /// Statement ID if available
@@ -103,7 +109,7 @@ pub struct PolicyEvaluator {
 }
 
 /// Options for policy evaluation
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct EvaluationOptions {
     /// Whether to continue evaluation after finding an explicit deny
@@ -1392,7 +1398,7 @@ mod tests {
     fn test_requests_testset() {
         // List filenames in the tests/requests directory
         let request_dir = "tests/requests";
-        let mut request_files = std::fs::read_dir(request_dir)
+        let request_files = std::fs::read_dir(request_dir)
             .unwrap_or_else(|e| panic!("Failed to read requests directory '{request_dir}': {e}"))
             .filter_map(|entry| {
                 let entry = entry.ok()?;
@@ -1411,14 +1417,35 @@ mod tests {
             "No request JSON files found in {request_dir}/"
         );
 
-        // Sort files by name for consistent test order
-        // All files are called 1.json, 2.json, ..., 10.json, etc.
-        request_files.sort_by_key(|p| {
-            p.file_name()
-                .and_then(|n| n.to_str())
-                .map(|s| s.split('.').next().unwrap().parse::<u32>().unwrap())
-                .map(|n| format!("{n:010}"))
-        });
+        // Resolve the numeric prefix up front rather than inside the comparator:
+        // `sort_by_key` is not obliged to call the key function for a directory
+        // holding a single file, so a stray filename would otherwise go
+        // unchecked, and a non-UTF-8 name would sort silently as `None`.
+        let mut keyed: Vec<(u32, std::path::PathBuf)> = request_files
+            .into_iter()
+            .map(|path| {
+                let name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "unexpected non-UTF-8 filename '{}' in {request_dir}/",
+                            path.display()
+                        )
+                    });
+                let number = name
+                    .split('.')
+                    .next()
+                    .and_then(|stem| stem.parse::<u32>().ok())
+                    .unwrap_or_else(|| {
+                        panic!("unexpected file '{name}' in {request_dir}/: expected <number>.json")
+                    });
+                (number, path)
+            })
+            .collect();
+        keyed.sort_by_key(|(number, _)| *number);
+        let request_files: Vec<std::path::PathBuf> =
+            keyed.into_iter().map(|(_, path)| path).collect();
 
         println!(
             "Testing {} request files from {}/",

@@ -4,7 +4,8 @@ use crate::{
     evaluation::parse_date,
     validation::{Validate, ValidationContext, ValidationError, ValidationResult, helpers},
 };
-use serde::{Deserialize, Serialize, Serializer};
+use serde::de::{MapAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};
 
 /// Represents a condition value that can be a boolean, number, string, or list of strings
@@ -123,12 +124,97 @@ pub struct Condition {
 
 /// Represents a condition block in an IAM policy
 /// This is a collection of conditions grouped by operator
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct ConditionBlock {
     /// Map of operators to their key-value pairs
-    #[serde(flatten)]
+    //
+    // The `flatten` hint is only there for the generated OpenAPI schema: the
+    // `serde` helper attributes are registered by the `ToSchema` derive, so with
+    // the feature off this attribute would not even parse.
+    #[cfg_attr(feature = "utoipa", serde(flatten))]
     pub conditions: HashMap<IAMOperator, HashMap<String, ConditionValue>>,
+}
+
+/// A condition-key map that refuses to lose entries.
+///
+/// Deserialising straight into a `HashMap` keeps the last of two identical keys,
+/// silently dropping half of a policy the author wrote out in full. AWS ANDs every
+/// entry, so losing one changes what the statement means. Rejecting the document
+/// makes the policy fail loudly at load time instead.
+struct UniqueConditions(HashMap<String, ConditionValue>);
+
+impl<'de> Deserialize<'de> for UniqueConditions {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct UniqueConditionsVisitor;
+
+        impl<'de> Visitor<'de> for UniqueConditionsVisitor {
+            type Value = UniqueConditions;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a map of condition keys to condition values")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut entries: HashMap<String, ConditionValue> = HashMap::new();
+                while let Some(key) = map.next_key::<String>()? {
+                    if entries.contains_key(&key) {
+                        return Err(serde::de::Error::custom(format!(
+                            "duplicate condition key `{key}`: AWS ANDs repeated entries, so the policy cannot be represented as a map"
+                        )));
+                    }
+                    entries.insert(key, map.next_value()?);
+                }
+                Ok(UniqueConditions(entries))
+            }
+        }
+
+        deserializer.deserialize_map(UniqueConditionsVisitor)
+    }
+}
+
+impl<'de> Deserialize<'de> for ConditionBlock {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct ConditionBlockVisitor;
+
+        impl<'de> Visitor<'de> for ConditionBlockVisitor {
+            type Value = ConditionBlock;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a map of condition operators to condition keys")
+            }
+
+            fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+            where
+                A: MapAccess<'de>,
+            {
+                let mut conditions: HashMap<IAMOperator, HashMap<String, ConditionValue>> =
+                    HashMap::new();
+                while let Some(operator) = map.next_key::<IAMOperator>()? {
+                    if conditions.contains_key(&operator) {
+                        return Err(serde::de::Error::custom(format!(
+                            "duplicate condition operator `{}`: AWS ANDs repeated blocks, so the policy cannot be represented as a map",
+                            operator.as_str()
+                        )));
+                    }
+                    let block = map.next_value::<UniqueConditions>()?;
+                    conditions.insert(operator, block.0);
+                }
+                Ok(ConditionBlock { conditions })
+            }
+        }
+
+        deserializer.deserialize_map(ConditionBlockVisitor)
+    }
 }
 
 impl Serialize for ConditionBlock {
@@ -537,6 +623,30 @@ mod tests {
         assert_eq!(condition.operator, IAMOperator::StringEquals);
         assert_eq!(condition.key, "aws:username");
         assert_eq!(condition.value, ConditionValue::String("john".to_string()));
+    }
+
+    #[test]
+    fn test_duplicate_operator_block_is_rejected() {
+        let json = r#"{"StringEquals": {"aws:a": "x"}, "StringEquals": {"aws:b": "y"}}"#;
+        let error = serde_json::from_str::<ConditionBlock>(json).unwrap_err();
+        assert!(
+            error.to_string().contains("duplicate condition operator"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn test_duplicate_condition_key_is_rejected() {
+        // The same key under two different operators is fine.
+        let json = r#"{"StringEquals": {"aws:a": "x"}, "StringLike": {"aws:a": "y"}}"#;
+        serde_json::from_str::<ConditionBlock>(json).expect("distinct operators must be accepted");
+
+        let json = r#"{"StringEquals": {"aws:a": "x", "aws:a": "y"}}"#;
+        let error = serde_json::from_str::<ConditionBlock>(json).unwrap_err();
+        assert!(
+            error.to_string().contains("duplicate condition key"),
+            "unexpected error: {error}"
+        );
     }
 
     #[test]
