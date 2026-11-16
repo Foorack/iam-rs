@@ -11,10 +11,15 @@ enum SetOperatorType {
 
 impl SetOperatorType {
     fn from_operator(operator: &IAMOperator) -> Self {
-        match operator.to_string().as_str() {
-            s if s.starts_with("ForAnyValue:") => SetOperatorType::ForAnyValue,
-            s if s.starts_with("ForAllValues:") => SetOperatorType::ForAllValues,
-            _ => SetOperatorType::None,
+        // Goes through `as_str` rather than `to_string`: this runs for every
+        // condition key of every statement, so an allocation per call is waste.
+        let name = operator.as_str();
+        if name.starts_with("ForAnyValue:") {
+            SetOperatorType::ForAnyValue
+        } else if name.starts_with("ForAllValues:") {
+            SetOperatorType::ForAllValues
+        } else {
+            SetOperatorType::None
         }
     }
 }
