@@ -1379,6 +1379,11 @@ mod tests {
             let policy = IAMPolicy::from_json(&policy_json)
                 .unwrap_or_else(|e| panic!("Failed to parse '{policy_path}': {e}"));
             assert!(policy.is_valid(), "'{policy_path}' should be valid IAM");
+            assert!(
+                !expectation.cases.is_empty(),
+                "'{}' has no expected cases in {path}",
+                expectation.policy_file
+            );
 
             for case in &expectation.cases {
                 case_count += 1;
