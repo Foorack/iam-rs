@@ -65,7 +65,7 @@ impl std::fmt::Display for EvaluationError {
 impl std::error::Error for EvaluationError {}
 
 /// Evaluation result with decision and metadata
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct EvaluationResult {
     /// The final decision
@@ -73,13 +73,19 @@ pub struct EvaluationResult {
     /// Per-statement evaluation details, whether or not each statement matched.
     /// Populated only when [`EvaluationOptions::collect_match_details`] is
     /// enabled; otherwise empty.
+    ///
+    /// The list is truncated when [`EvaluationOptions::stop_on_explicit_deny`]
+    /// is enabled and a statement with `Effect: Deny` matches: evaluation stops
+    /// there, so statements after the denying one are never recorded. Disable
+    /// `stop_on_explicit_deny` (and keep `collect_match_details` enabled) if you
+    /// need the full list.
     pub statement_details: Vec<StatementMatch>,
     /// Evaluation context used
     pub context: IAMRequest,
 }
 
 /// Information about a statement's evaluation result (whether or not it matched)
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct StatementMatch {
     /// Statement ID if available
@@ -103,7 +109,7 @@ pub struct PolicyEvaluator {
 }
 
 /// Options for policy evaluation
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct EvaluationOptions {
     /// Whether to continue evaluation after finding an explicit deny
