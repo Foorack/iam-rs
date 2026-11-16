@@ -73,6 +73,12 @@ pub struct EvaluationResult {
     /// Per-statement evaluation details, whether or not each statement matched.
     /// Populated only when [`EvaluationOptions::collect_match_details`] is
     /// enabled; otherwise empty.
+    ///
+    /// The list is truncated when [`EvaluationOptions::stop_on_explicit_deny`]
+    /// is enabled and a statement with `Effect: Deny` matches: evaluation stops
+    /// there, so statements after the denying one are never recorded. Disable
+    /// `stop_on_explicit_deny` (and keep `collect_match_details` enabled) if you
+    /// need the full list.
     pub statement_details: Vec<StatementMatch>,
     /// Evaluation context used
     pub context: IAMRequest,
