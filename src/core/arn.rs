@@ -241,14 +241,11 @@ impl Arn {
         }
 
         // Validate region: empty for global services, otherwise lowercase letters,
-        // digits and dashes. Wildcards are allowed in patterns.
-        if !self.region.is_empty()
-            && !self.region.contains(['*', '?'])
-            && !self
-                .region
-                .chars()
-                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
-        {
+        // digits, dashes and wildcards. The wildcard test is per character: a
+        // `contains("*")` shortcut would accept a region such as `*junk`.
+        if !self.region.chars().all(|c| {
+            c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '*' || c == '?'
+        }) {
             return false;
         }
 
@@ -534,6 +531,17 @@ mod tests {
 
         let spaced_region = Arn::parse("arn:aws:s3:us east 1:123456789012:bucket/my-bucket").unwrap();
         assert!(!spaced_region.is_valid());
+
+        // A wildcard does not excuse the rest of the component.
+        let wildcard_junk = Arn::parse("arn:aws:s3:*!!!:123456789012:bucket/my-bucket").unwrap();
+        assert!(!wildcard_junk.is_valid());
+
+        // A wildcard followed by ordinary region characters is a legitimate pattern.
+        let wildcard_pattern = Arn::parse("arn:aws:s3:us-*:123456789012:bucket/my-bucket").unwrap();
+        assert!(wildcard_pattern.is_valid());
+
+        let uppercase_region = Arn::parse("arn:aws:s3:US-EAST-1:123456789012:bucket/my-bucket").unwrap();
+        assert!(!uppercase_region.is_valid());
     }
 
     #[test]
