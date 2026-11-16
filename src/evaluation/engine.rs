@@ -65,7 +65,7 @@ impl std::fmt::Display for EvaluationError {
 impl std::error::Error for EvaluationError {}
 
 /// Evaluation result with decision and metadata
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct EvaluationResult {
     /// The final decision
@@ -73,13 +73,19 @@ pub struct EvaluationResult {
     /// Per-statement evaluation details, whether or not each statement matched.
     /// Populated only when [`EvaluationOptions::collect_match_details`] is
     /// enabled; otherwise empty.
+    ///
+    /// The list is truncated when [`EvaluationOptions::stop_on_explicit_deny`]
+    /// is enabled and a statement with `Effect: Deny` matches: evaluation stops
+    /// there, so statements after the denying one are never recorded. Disable
+    /// `stop_on_explicit_deny` (and keep `collect_match_details` enabled) if you
+    /// need the full list.
     pub statement_details: Vec<StatementMatch>,
     /// Evaluation context used
     pub context: IAMRequest,
 }
 
 /// Information about a statement's evaluation result (whether or not it matched)
-#[derive(Debug, Clone, PartialEq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct StatementMatch {
     /// Statement ID if available
@@ -103,7 +109,7 @@ pub struct PolicyEvaluator {
 }
 
 /// Options for policy evaluation
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct EvaluationOptions {
     /// Whether to continue evaluation after finding an explicit deny
@@ -147,8 +153,42 @@ impl PolicyEvaluator {
     }
 
     /// Add a policy to the evaluator
+    ///
+    /// The policy is stored as given, without validation. A statement that cannot
+    /// be evaluated — a resource pattern that is not a valid ARN, for instance —
+    /// makes [`evaluate`](Self::evaluate) return `Err` for every request that
+    /// reaches it, so use [`try_add_policy`](Self::try_add_policy) for policies
+    /// that come from a user or a file.
     pub fn add_policy(&mut self, policy: IAMPolicy) {
         self.policies.push(policy);
+    }
+
+    /// Validate a policy and add it only if it passes
+    ///
+    /// Validation is structural: it catches malformed documents, but a policy that
+    /// passes can still fail to evaluate (an interpolated resource that is not an
+    /// ARN, say), so `evaluate` can still return `Err`.
+    ///
+    /// # Errors
+    ///
+    /// Returns the validation errors in the policy, leaving the evaluator
+    /// unchanged.
+    pub fn try_add_policy(&mut self, policy: IAMPolicy) -> Result<(), crate::ValidationError> {
+        policy.validate_result()?;
+        self.policies.push(policy);
+        Ok(())
+    }
+
+    /// Build an evaluator from policies that must all validate
+    ///
+    /// # Errors
+    ///
+    /// Returns the validation errors found across the policies.
+    pub fn try_with_policies(policies: Vec<IAMPolicy>) -> Result<Self, crate::ValidationError> {
+        for policy in &policies {
+            policy.validate_result()?;
+        }
+        Ok(Self::with_policies(policies))
     }
 
     /// Set evaluation options
@@ -169,6 +209,37 @@ impl PolicyEvaluator {
     /// - Condition evaluation fails
     /// - Maximum statement evaluation limit is exceeded
     pub fn evaluate(&self, request: &IAMRequest) -> Result<EvaluationResult, EvaluationError> {
+        let (decision, statement_details) = self.decide(request)?;
+        Ok(EvaluationResult {
+            decision,
+            statement_details,
+            context: request.clone(),
+        })
+    }
+
+    /// Evaluate an authorization request, taking ownership of it
+    ///
+    /// Same decision as [`evaluate`](Self::evaluate), but the request is moved
+    /// into the result instead of being deep-cloned. Use this on the hot path
+    /// when the caller does not need the request afterwards.
+    ///
+    /// # Errors
+    ///
+    /// See [`evaluate`](Self::evaluate).
+    pub fn evaluate_owned(&self, request: IAMRequest) -> Result<EvaluationResult, EvaluationError> {
+        let (decision, statement_details) = self.decide(&request)?;
+        Ok(EvaluationResult {
+            decision,
+            statement_details,
+            context: request,
+        })
+    }
+
+    /// Run the evaluation and return everything except the echoed request
+    fn decide(
+        &self,
+        request: &IAMRequest,
+    ) -> Result<(Decision, Vec<StatementMatch>), EvaluationError> {
         if !request.principal.is_single() {
             return Err(EvaluationError::InvalidRequest(
                 "Request principal must be a single entity".to_string(),
@@ -220,11 +291,7 @@ impl PolicyEvaluator {
                         IAMEffect::Deny => {
                             has_explicit_deny = true;
                             if self.options.stop_on_explicit_deny {
-                                return Ok(EvaluationResult {
-                                    decision: Decision::Deny,
-                                    statement_details,
-                                    context: request.clone(),
-                                });
+                                return Ok((Decision::Deny, statement_details));
                             }
                         }
                     }
@@ -242,11 +309,7 @@ impl PolicyEvaluator {
             Decision::NotApplicable
         };
 
-        Ok(EvaluationResult {
-            decision,
-            statement_details,
-            context: request.clone(),
-        })
+        Ok((decision, statement_details))
     }
 
     /// Evaluate a single statement against a request
@@ -359,8 +422,10 @@ impl PolicyEvaluator {
         }
 
         match (principal, request_principal) {
-            // If either is Wildcard, it matches
-            (Principal::Wildcard, _) | (_, Principal::Wildcard) => Ok(true),
+            // A policy wildcard matches any single request principal. The request
+            // side can never be a wildcard here: both `evaluate` and this function
+            // reject non-single principals before matching.
+            (Principal::Wildcard, _) => Ok(true),
 
             //
             // Check: AWS
@@ -408,14 +473,12 @@ impl PolicyEvaluator {
             ) => Self::principal_id_matches(principal_id, request_principal_id, |id| {
                 // Federated principal can be a provider name or ARN
                 // e.g., "cognito-identity.amazonaws.com", "arn:aws:iam::account-id:oidc-provider/..."
-                if id == request_principal_id {
-                    return Ok(true);
-                }
-                // For OIDC/SAML, match by prefix
-                if request_principal_id.starts_with(id) {
-                    return Ok(true);
-                }
-                Ok(false)
+                //
+                // The comparison is exact. A prefix test would let a principal named
+                // "cognito-identity.amazonaws.com.attacker.net" pass as
+                // "cognito-identity.amazonaws.com", which is the classic
+                // lookalike-domain escalation.
+                Ok(id == request_principal_id)
             }),
 
             //
@@ -1400,6 +1463,120 @@ mod tests {
         assert!(case_count > 0, "expected at least one case in {path}");
     }
 
+    #[test]
+    fn test_evaluate_owned_matches_evaluate() {
+        let policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
+        );
+        let evaluator = PolicyEvaluator::with_policies(vec![policy]);
+        let request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
+            "s3:GetObject",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        );
+
+        let borrowed = evaluator.evaluate(&request).unwrap();
+        let owned = evaluator.evaluate_owned(request).unwrap();
+        assert_eq!(owned, borrowed);
+    }
+
+    #[test]
+    fn test_try_add_policy_rejects_invalid_policies() {
+        // An Allow statement carrying NotPrincipal is invalid IAM.
+        let mut invalid = IAMStatement::new(IAMEffect::Allow);
+        invalid.action = Some(IAMAction::Single("s3:GetObject".to_string()));
+        invalid.resource = Some(IAMResource::Single("*".to_string()));
+        invalid.not_principal = Some(Principal::Aws(PrincipalId::String(
+            "123456789012".to_string(),
+        )));
+
+        let mut evaluator = PolicyEvaluator::new();
+        let error = evaluator
+            .try_add_policy(IAMPolicy::new().add_statement(invalid))
+            .expect_err("invalid policy must be rejected");
+        assert!(
+            error.to_string().contains("NotPrincipal"),
+            "unexpected error: {error}"
+        );
+
+        let valid = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                .with_resource(IAMResource::Single("*".to_string())),
+        );
+        evaluator
+            .try_add_policy(valid)
+            .expect("valid policy must be accepted");
+    }
+
+    // A wildcard is not a valid request principal. `evaluate` rejects it before
+    // any statement is matched, which is what makes the missing request-side
+    // wildcard arm in `principal_matches` safe.
+    #[test]
+    fn test_wildcard_request_principal_is_rejected() {
+        let evaluator = PolicyEvaluator::with_policies(vec![IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                .with_resource(IAMResource::Single("*".to_string())),
+        )]);
+        let request = IAMRequest::new(
+            Principal::Wildcard,
+            "s3:GetObject",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        );
+
+        assert!(matches!(
+            evaluator.evaluate(&request),
+            Err(EvaluationError::InvalidRequest(_))
+        ));
+    }
+
+    #[test]
+    fn test_federated_principal_requires_exact_match() {
+        let policy = IAMPolicy::from_json(
+            r#"{
+                "Version": "2012-10-17",
+                "Statement": [{
+                    "Effect": "Allow",
+                    "Principal": {"Federated": "cognito-identity.amazonaws.com"},
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::my-bucket/*"
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        let trusted = IAMRequest::new(
+            Principal::Federated(PrincipalId::String("cognito-identity.amazonaws.com".into())),
+            "s3:GetObject",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        );
+        assert_eq!(evaluate_policy(&policy, &trusted).unwrap(), Decision::Allow);
+
+        // Merely starting with the trusted provider name must not be enough, and
+        // neither must containing it.
+        for lookalike in [
+            "cognito-identity.amazonaws.com.attacker.net",
+            "cognito-identity.amazonaws.com.evil",
+            "evil.cognito-identity.amazonaws.com",
+        ] {
+            let request = IAMRequest::new(
+                Principal::Federated(PrincipalId::String(lookalike.into())),
+                "s3:GetObject",
+                Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+            );
+            assert_eq!(
+                evaluate_policy(&policy, &request).unwrap(),
+                Decision::NotApplicable,
+                "{lookalike} must not match the trusted federated principal"
+            );
+        }
+    }
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
     struct TestCase {
         result: Decision,
@@ -1411,7 +1588,7 @@ mod tests {
     fn test_requests_testset() {
         // List filenames in the tests/requests directory
         let request_dir = "tests/requests";
-        let mut request_files = std::fs::read_dir(request_dir)
+        let request_files = std::fs::read_dir(request_dir)
             .unwrap_or_else(|e| panic!("Failed to read requests directory '{request_dir}': {e}"))
             .filter_map(|entry| {
                 let entry = entry.ok()?;
@@ -1430,14 +1607,35 @@ mod tests {
             "No request JSON files found in {request_dir}/"
         );
 
-        // Sort files by name for consistent test order
-        // All files are called 1.json, 2.json, ..., 10.json, etc.
-        request_files.sort_by_key(|p| {
-            p.file_name()
-                .and_then(|n| n.to_str())
-                .map(|s| s.split('.').next().unwrap().parse::<u32>().unwrap())
-                .map(|n| format!("{n:010}"))
-        });
+        // Resolve the numeric prefix up front rather than inside the comparator:
+        // `sort_by_key` is not obliged to call the key function for a directory
+        // holding a single file, so a stray filename would otherwise go
+        // unchecked, and a non-UTF-8 name would sort silently as `None`.
+        let mut keyed: Vec<(u32, std::path::PathBuf)> = request_files
+            .into_iter()
+            .map(|path| {
+                let name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "unexpected non-UTF-8 filename '{}' in {request_dir}/",
+                            path.display()
+                        )
+                    });
+                let number = name
+                    .split('.')
+                    .next()
+                    .and_then(|stem| stem.parse::<u32>().ok())
+                    .unwrap_or_else(|| {
+                        panic!("unexpected file '{name}' in {request_dir}/: expected <number>.json")
+                    });
+                (number, path)
+            })
+            .collect();
+        keyed.sort_by_key(|(number, _)| *number);
+        let request_files: Vec<std::path::PathBuf> =
+            keyed.into_iter().map(|(_, path)| path).collect();
 
         println!(
             "Testing {} request files from {}/",
