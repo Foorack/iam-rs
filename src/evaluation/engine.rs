@@ -359,8 +359,10 @@ impl PolicyEvaluator {
         }
 
         match (principal, request_principal) {
-            // If either is Wildcard, it matches
-            (Principal::Wildcard, _) | (_, Principal::Wildcard) => Ok(true),
+            // A policy wildcard matches any single request principal. The request
+            // side can never be a wildcard here: `evaluate` rejects non-single
+            // principals before any statement is evaluated.
+            (Principal::Wildcard, _) => Ok(true),
 
             //
             // Check: AWS
