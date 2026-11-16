@@ -90,6 +90,20 @@ pub fn interpolate_variables(input: &str, context: &Context) -> Result<String, E
             let variable = PolicyVariable::parse(variable_str)?;
             let resolved_value = variable.resolve(context);
 
+            // Context values are attacker-controlled in most deployments. Splicing
+            // one into a pattern verbatim lets a value of "*" turn
+            // `home/${aws:username}/*` into `home/*/*`, granting every user's home
+            // directory. AWS restricts the characters it substitutes for the same
+            // reason; here the policy refuses to resolve.
+            //
+            // A default written by the policy author is not attacker-controlled, so
+            // `${aws:PrincipalTag/team, '*'}` keeps working.
+            if context.get(&variable.key).is_some() && resolved_value.contains(['*', '?']) {
+                return Err(EvaluationError::InvalidVariable(format!(
+                    "policy variable `{variable_str}` resolved to a value containing a wildcard"
+                )));
+            }
+
             result.replace_range(absolute_start..absolute_end, &resolved_value);
             start = absolute_start + resolved_value.len();
         } else {
@@ -105,6 +119,38 @@ pub fn interpolate_variables(input: &str, context: &Context) -> Result<String, E
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_interpolate_rejects_wildcards_in_resolved_values() {
+        let context = Context::new().with_string("aws:username", "*");
+        let error =
+            interpolate_variables("arn:aws:s3:::home/${aws:username}/*", &context).unwrap_err();
+        assert!(
+            matches!(error, EvaluationError::InvalidVariable(_)),
+            "expected InvalidVariable, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn test_interpolate_accepts_plain_resolved_values() {
+        let context = Context::new().with_string("aws:username", "alice");
+        assert_eq!(
+            interpolate_variables("arn:aws:s3:::home/${aws:username}/*", &context).unwrap(),
+            "arn:aws:s3:::home/alice/*"
+        );
+    }
+
+    #[test]
+    fn test_policy_authored_default_may_contain_a_wildcard() {
+        // The default comes from the policy, not from the caller, so a wildcard
+        // in it is the author's intent.
+        let context = Context::new();
+        assert_eq!(
+            interpolate_variables("arn:aws:s3:::home/${aws:PrincipalTag/team, '*'}", &context)
+                .unwrap(),
+            "arn:aws:s3:::home/*"
+        );
+    }
 
     #[test]
     fn test_parse_variable_with_default() {
