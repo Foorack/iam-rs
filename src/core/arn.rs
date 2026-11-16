@@ -197,15 +197,20 @@ impl Arn {
         let mut has_star = false;
 
         while t < text.len() {
-            if p < pattern.len() && (pattern[p] == single || pattern[p] == text[t]) {
-                // `?` or an exact element matches.
-                t += 1;
-                p += 1;
-            } else if p < pattern.len() && pattern[p] == star {
+            if p < pattern.len() && pattern[p] == star {
                 // Remember where to resume after this `*`.
+                //
+                // This has to be tested before the literal comparison below:
+                // a subject that itself contains `*` would otherwise consume the
+                // pattern's `*` as an exact match, so `wildcard_match("*a", "*")`
+                // came out false.
                 has_star = true;
                 star_t = t;
                 star_p = p;
+                p += 1;
+            } else if p < pattern.len() && (pattern[p] == single || pattern[p] == text[t]) {
+                // `?` or an exact element matches.
+                t += 1;
                 p += 1;
             } else if has_star {
                 // Backtrack: let the last `*` consume one more text element.
@@ -444,6 +449,18 @@ mod tests {
         assert!(!Arn::wildcard_match("héllo", "h??llo"));
         assert!(Arn::wildcard_match("héllo", "h*llo"));
         assert!(Arn::wildcard_match("hello", "h?llo"));
+    }
+
+    #[test]
+    fn test_wildcard_match_subject_containing_star() {
+        // A `*` in the subject is data, not a metacharacter: the pattern's `*`
+        // must still consume it.
+        assert!(Arn::wildcard_match("*", "*"));
+        assert!(Arn::wildcard_match("*a", "*"));
+        assert!(Arn::wildcard_match("a*b", "a*b"));
+        assert!(Arn::wildcard_match("a*b", "a**"));
+        assert!(Arn::wildcard_match("**", "?*"));
+        assert!(!Arn::wildcard_match("*a", "b*"));
     }
 
     #[test]
