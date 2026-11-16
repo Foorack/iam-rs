@@ -1577,6 +1577,67 @@ mod tests {
         }
     }
 
+    // `statement_details` stops at the statement that denies. `evaluate_owned` and
+    // `evaluate` share `decide`, so this pins the contract both of them carry, and
+    // the truncation the field documentation promises.
+    #[test]
+    fn test_statement_details_stops_at_the_denying_statement() {
+        let policy = IAMPolicy::new()
+            .add_statement(
+                IAMStatement::new(IAMEffect::Allow)
+                    .with_sid("AllowGet")
+                    .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                    .with_resource(IAMResource::Single("*".to_string())),
+            )
+            .add_statement(
+                IAMStatement::new(IAMEffect::Deny)
+                    .with_sid("DenyAll")
+                    .with_action(IAMAction::Single("s3:*".to_string()))
+                    .with_resource(IAMResource::Single("*".to_string())),
+            )
+            .add_statement(
+                IAMStatement::new(IAMEffect::Allow)
+                    .with_sid("AllowPut")
+                    .with_action(IAMAction::Single("s3:PutObject".to_string()))
+                    .with_resource(IAMResource::Single("*".to_string())),
+            );
+        let request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
+            "s3:GetObject",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        );
+
+        let short_circuit = PolicyEvaluator::with_policies(vec![policy.clone()]).with_options(
+            EvaluationOptions {
+                collect_match_details: true,
+                ..Default::default()
+            },
+        );
+        let result = short_circuit.evaluate(&request).unwrap();
+        assert_eq!(result.decision, Decision::Deny);
+        assert_eq!(
+            result.statement_details.len(),
+            2,
+            "the denying statement is recorded and nothing after it"
+        );
+        assert_eq!(result.statement_details[1].sid.as_deref(), Some("DenyAll"));
+
+        let full = PolicyEvaluator::with_policies(vec![policy]).with_options(EvaluationOptions {
+            collect_match_details: true,
+            stop_on_explicit_deny: false,
+            ..Default::default()
+        });
+        let result = full.evaluate(&request).unwrap();
+        assert_eq!(result.decision, Decision::Deny);
+        assert_eq!(
+            result.statement_details.len(),
+            3,
+            "without the short circuit every statement is recorded"
+        );
+    }
+
     #[derive(Debug, Clone, Serialize, Deserialize)]
     struct TestCase {
         result: Decision,
