@@ -717,6 +717,103 @@ impl std::str::FromStr for IAMOperator {
 mod tests {
     use super::*;
 
+    /// The wire name of every operator has to be the string `as_str` returns.
+    ///
+    /// Evaluation classifies operators by `as_str` while policies and the
+    /// `OpenAPI` schema speak the serde name. A rename on one side only would
+    /// silently classify a condition as the wrong operator family, with no compile
+    /// error.
+    #[test]
+    fn test_as_str_matches_the_serialized_name() {
+        let operators: &[(IAMOperator, &str)] = &[
+            (IAMOperator::StringEquals, "StringEquals"),
+            (IAMOperator::StringNotEquals, "StringNotEquals"),
+            (IAMOperator::StringEqualsIgnoreCase, "StringEqualsIgnoreCase"),
+            (IAMOperator::StringNotEqualsIgnoreCase, "StringNotEqualsIgnoreCase"),
+            (IAMOperator::StringLike, "StringLike"),
+            (IAMOperator::StringNotLike, "StringNotLike"),
+            (IAMOperator::ForAllValuesStringEquals, "ForAllValues:StringEquals"),
+            (IAMOperator::ForAnyValueStringEquals, "ForAnyValue:StringEquals"),
+            (IAMOperator::ForAnyValueStringEqualsIgnoreCase, "ForAnyValue:StringEqualsIgnoreCase"),
+            (IAMOperator::ForAllValuesStringNotEquals, "ForAllValues:StringNotEquals"),
+            (IAMOperator::ForAnyValueStringNotEquals, "ForAnyValue:StringNotEquals"),
+            (IAMOperator::ForAllValuesStringLike, "ForAllValues:StringLike"),
+            (IAMOperator::ForAnyValueStringLike, "ForAnyValue:StringLike"),
+            (IAMOperator::ForAllValuesStringNotLike, "ForAllValues:StringNotLike"),
+            (IAMOperator::ForAnyValueStringNotLike, "ForAnyValue:StringNotLike"),
+            (IAMOperator::NumericEquals, "NumericEquals"),
+            (IAMOperator::NumericNotEquals, "NumericNotEquals"),
+            (IAMOperator::NumericLessThan, "NumericLessThan"),
+            (IAMOperator::NumericLessThanEquals, "NumericLessThanEquals"),
+            (IAMOperator::NumericGreaterThan, "NumericGreaterThan"),
+            (IAMOperator::NumericGreaterThanEquals, "NumericGreaterThanEquals"),
+            (IAMOperator::DateEquals, "DateEquals"),
+            (IAMOperator::DateNotEquals, "DateNotEquals"),
+            (IAMOperator::DateLessThan, "DateLessThan"),
+            (IAMOperator::DateLessThanEquals, "DateLessThanEquals"),
+            (IAMOperator::DateGreaterThan, "DateGreaterThan"),
+            (IAMOperator::DateGreaterThanEquals, "DateGreaterThanEquals"),
+            (IAMOperator::Bool, "Bool"),
+            (IAMOperator::ForAllValuesBool, "ForAllValues:Bool"),
+            (IAMOperator::ForAnyValueBool, "ForAnyValue:Bool"),
+            (IAMOperator::BinaryEquals, "BinaryEquals"),
+            (IAMOperator::IpAddress, "IpAddress"),
+            (IAMOperator::NotIpAddress, "NotIpAddress"),
+            (IAMOperator::ArnEquals, "ArnEquals"),
+            (IAMOperator::ArnLike, "ArnLike"),
+            (IAMOperator::ArnNotEquals, "ArnNotEquals"),
+            (IAMOperator::ArnNotLike, "ArnNotLike"),
+            (IAMOperator::ForAllValuesArnEquals, "ForAllValues:ArnEquals"),
+            (IAMOperator::ForAllValuesArnLike, "ForAllValues:ArnLike"),
+            (IAMOperator::ForAnyValueArnEquals, "ForAnyValue:ArnEquals"),
+            (IAMOperator::ForAnyValueArnLike, "ForAnyValue:ArnLike"),
+            (IAMOperator::ForAllValuesArnNotEquals, "ForAllValues:ArnNotEquals"),
+            (IAMOperator::ForAllValuesArnNotLike, "ForAllValues:ArnNotLike"),
+            (IAMOperator::ForAnyValueArnNotEquals, "ForAnyValue:ArnNotEquals"),
+            (IAMOperator::ForAnyValueArnNotLike, "ForAnyValue:ArnNotLike"),
+            (IAMOperator::Null, "Null"),
+            (IAMOperator::StringEqualsIfExists, "StringEqualsIfExists"),
+            (IAMOperator::StringNotEqualsIfExists, "StringNotEqualsIfExists"),
+            (IAMOperator::StringEqualsIgnoreCaseIfExists, "StringEqualsIgnoreCaseIfExists"),
+            (IAMOperator::StringNotEqualsIgnoreCaseIfExists, "StringNotEqualsIgnoreCaseIfExists"),
+            (IAMOperator::StringLikeIfExists, "StringLikeIfExists"),
+            (IAMOperator::StringNotLikeIfExists, "StringNotLikeIfExists"),
+            (IAMOperator::NumericEqualsIfExists, "NumericEqualsIfExists"),
+            (IAMOperator::NumericNotEqualsIfExists, "NumericNotEqualsIfExists"),
+            (IAMOperator::NumericLessThanIfExists, "NumericLessThanIfExists"),
+            (IAMOperator::NumericLessThanEqualsIfExists, "NumericLessThanEqualsIfExists"),
+            (IAMOperator::NumericGreaterThanIfExists, "NumericGreaterThanIfExists"),
+            (IAMOperator::NumericGreaterThanEqualsIfExists, "NumericGreaterThanEqualsIfExists"),
+            (IAMOperator::DateEqualsIfExists, "DateEqualsIfExists"),
+            (IAMOperator::DateNotEqualsIfExists, "DateNotEqualsIfExists"),
+            (IAMOperator::DateLessThanIfExists, "DateLessThanIfExists"),
+            (IAMOperator::DateLessThanEqualsIfExists, "DateLessThanEqualsIfExists"),
+            (IAMOperator::DateGreaterThanIfExists, "DateGreaterThanIfExists"),
+            (IAMOperator::DateGreaterThanEqualsIfExists, "DateGreaterThanEqualsIfExists"),
+            (IAMOperator::BoolIfExists, "BoolIfExists"),
+            (IAMOperator::BinaryEqualsIfExists, "BinaryEqualsIfExists"),
+            (IAMOperator::IpAddressIfExists, "IpAddressIfExists"),
+            (IAMOperator::NotIpAddressIfExists, "NotIpAddressIfExists"),
+            (IAMOperator::ArnEqualsIfExists, "ArnEqualsIfExists"),
+            (IAMOperator::ArnLikeIfExists, "ArnLikeIfExists"),
+            (IAMOperator::ArnNotEqualsIfExists, "ArnNotEqualsIfExists"),
+            (IAMOperator::ArnNotLikeIfExists, "ArnNotLikeIfExists"),
+            (IAMOperator::ForAllValuesStringEqualsIgnoreCase, "ForAllValues:StringEqualsIgnoreCase"),
+            (IAMOperator::ForAllValuesStringNotEqualsIgnoreCase, "ForAllValues:StringNotEqualsIgnoreCase"),
+            (IAMOperator::ForAnyValueStringNotEqualsIgnoreCase, "ForAnyValue:StringNotEqualsIgnoreCase"),
+        ];
+
+        assert_eq!(operators.len(), 75, "operator list is stale");
+        for (operator, name) in operators {
+            assert_eq!(operator.as_str(), *name);
+            assert_eq!(
+                serde_json::to_string(operator).expect("operator must serialize"),
+                format!("\"{name}\""),
+                "{name} serialises under a different name than as_str returns"
+            );
+        }
+    }
+
     #[test]
     fn test_operator_serialization() {
         let operator = IAMOperator::StringEquals;
