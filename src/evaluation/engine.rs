@@ -148,20 +148,25 @@ impl PolicyEvaluator {
 
     /// Add a policy to the evaluator
     ///
-    /// The policy is stored as given, without validation. A malformed statement
-    /// inside it makes every later [`evaluate`](Self::evaluate) call return `Err`,
-    /// so use [`try_add_policy`](Self::try_add_policy) for policies that come from
-    /// a user or a file.
+    /// The policy is stored as given, without validation. A statement that cannot
+    /// be evaluated — a resource pattern that is not a valid ARN, for instance —
+    /// makes [`evaluate`](Self::evaluate) return `Err` for every request that
+    /// reaches it, so use [`try_add_policy`](Self::try_add_policy) for policies
+    /// that come from a user or a file.
     pub fn add_policy(&mut self, policy: IAMPolicy) {
         self.policies.push(policy);
     }
 
     /// Validate a policy and add it only if it passes
     ///
+    /// Validation is structural: it catches malformed documents, but a policy that
+    /// passes can still fail to evaluate (an interpolated resource that is not an
+    /// ARN, say), so `evaluate` can still return `Err`.
+    ///
     /// # Errors
     ///
-    /// Returns the first [`ValidationError`](crate::ValidationError) in the policy,
-    /// leaving the evaluator unchanged.
+    /// Returns the validation errors in the policy, leaving the evaluator
+    /// unchanged.
     pub fn try_add_policy(&mut self, policy: IAMPolicy) -> Result<(), crate::ValidationError> {
         policy.validate_result()?;
         self.policies.push(policy);
@@ -172,8 +177,7 @@ impl PolicyEvaluator {
     ///
     /// # Errors
     ///
-    /// Returns the first [`ValidationError`](crate::ValidationError) found across
-    /// the policies.
+    /// Returns the validation errors found across the policies.
     pub fn try_with_policies(policies: Vec<IAMPolicy>) -> Result<Self, crate::ValidationError> {
         for policy in &policies {
             policy.validate_result()?;
