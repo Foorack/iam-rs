@@ -303,30 +303,28 @@
       },
       "EvaluationOptions": {
         "type": "object",
-        "description": "Options for policy evaluation",
-        "required": [
-          "stop_on_explicit_deny",
-          "collect_match_details",
-          "max_statements",
-          "ignore_resource_constraints"
-        ],
+        "description": "Options for policy evaluation\n\nDeserialising accepts a partial document: any field left out keeps its\n[`Default`] value, so `{\"max_statements\": 50}` is a valid configuration.",
         "properties": {
           "collect_match_details": {
             "type": "boolean",
-            "description": "Whether to collect detailed match information"
+            "description": "Whether to collect detailed match information",
+            "default": false
           },
           "ignore_resource_constraints": {
             "type": "boolean",
-            "description": "Whether to ignore resource constraints"
+            "description": "Whether to ignore resource constraints",
+            "default": false
           },
           "max_statements": {
             "type": "integer",
             "description": "Maximum number of statements to evaluate (for safety)",
+            "default": 1000,
             "minimum": 0
           },
           "stop_on_explicit_deny": {
             "type": "boolean",
-            "description": "Whether to continue evaluation after finding an explicit deny"
+            "description": "Whether to continue evaluation after finding an explicit deny",
+            "default": true
           }
         }
       },
