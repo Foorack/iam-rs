@@ -94,10 +94,13 @@ pub fn interpolate_variables(input: &str, context: &Context) -> Result<String, E
             // one into a pattern verbatim lets a value of "*" turn
             // `home/${aws:username}/*` into `home/*/*`, granting every user's home
             // directory. AWS restricts the characters it substitutes for the same
-            // reason; here the policy simply refuses to resolve.
-            if resolved_value.contains(['*', '?']) {
+            // reason; here the policy refuses to resolve.
+            //
+            // A default written by the policy author is not attacker-controlled, so
+            // `${aws:PrincipalTag/team, '*'}` keeps working.
+            if context.get(&variable.key).is_some() && resolved_value.contains(['*', '?']) {
                 return Err(EvaluationError::InvalidVariable(format!(
-                    "policy variable `{variable_str}` resolved to a value containing a wildcard: {resolved_value}"
+                    "policy variable `{variable_str}` resolved to a value containing a wildcard"
                 )));
             }
 
@@ -134,6 +137,18 @@ mod tests {
         assert_eq!(
             interpolate_variables("arn:aws:s3:::home/${aws:username}/*", &context).unwrap(),
             "arn:aws:s3:::home/alice/*"
+        );
+    }
+
+    #[test]
+    fn test_policy_authored_default_may_contain_a_wildcard() {
+        // The default comes from the policy, not from the caller, so a wildcard
+        // in it is the author's intent.
+        let context = Context::new();
+        assert_eq!(
+            interpolate_variables("arn:aws:s3:::home/${aws:PrincipalTag/team, '*'}", &context)
+                .unwrap(),
+            "arn:aws:s3:::home/*"
         );
     }
 
