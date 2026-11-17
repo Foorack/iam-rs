@@ -161,10 +161,13 @@ enum CompiledResourcePattern {
 }
 
 impl CompiledResourcePattern {
-    fn compile(pattern: &str) -> Self {
+    /// Compile `pattern`, treating `${...}` as a variable only when the policy's
+    /// `Version` is one that supports policy variables. Otherwise the braces are
+    /// ordinary characters and the pattern is static.
+    fn compile(pattern: &str, policy_variables: bool) -> Self {
         if pattern == "*" {
             Self::Any
-        } else if pattern.contains("${") {
+        } else if policy_variables && pattern.contains("${") {
             Self::Dynamic
         } else {
             Self::Static(ArnMatcher::from_pattern(pattern).map_err(|e| e.to_string()))
@@ -211,19 +214,30 @@ struct StatementPatternCache {
 }
 
 impl StatementPatternCache {
-    fn build(statement: &IAMStatement) -> Self {
+    fn build(statement: &IAMStatement, policy_variables: bool) -> Self {
         Self {
-            resource: statement.resource.as_ref().map(Self::compile_list),
-            not_resource: statement.not_resource.as_ref().map(Self::compile_list),
+            resource: statement
+                .resource
+                .as_ref()
+                .map(|resource| Self::compile_list(resource, policy_variables)),
+            not_resource: statement
+                .not_resource
+                .as_ref()
+                .map(|resource| Self::compile_list(resource, policy_variables)),
         }
     }
 
-    fn compile_list(resource: &IAMResource) -> Vec<CompiledResourcePattern> {
+    fn compile_list(
+        resource: &IAMResource,
+        policy_variables: bool,
+    ) -> Vec<CompiledResourcePattern> {
         match resource {
-            IAMResource::Single(pattern) => vec![CompiledResourcePattern::compile(pattern)],
+            IAMResource::Single(pattern) => {
+                vec![CompiledResourcePattern::compile(pattern, policy_variables)]
+            }
             IAMResource::Multiple(patterns) => patterns
                 .iter()
-                .map(|pattern| CompiledResourcePattern::compile(pattern))
+                .map(|pattern| CompiledResourcePattern::compile(pattern, policy_variables))
                 .collect(),
         }
     }
@@ -237,11 +251,12 @@ struct PolicyPatternCache {
 
 impl PolicyPatternCache {
     fn build(policy: &IAMPolicy) -> Self {
+        let policy_variables = policy.version.supports_policy_variables();
         Self {
             statements: policy
                 .statement
                 .iter()
-                .map(StatementPatternCache::build)
+                .map(|statement| StatementPatternCache::build(statement, policy_variables))
                 .collect(),
         }
     }
@@ -280,6 +295,11 @@ impl PolicyEvaluator {
     /// makes [`evaluate`](Self::evaluate) return `Err` for every request that
     /// reaches it, so use [`try_add_policy`](Self::try_add_policy) for policies
     /// that come from a user or a file.
+    ///
+    /// Unlike [`try_add_policy`](Self::try_add_policy), a policy whose `Version` is
+    /// not `2012-10-17` is accepted here: evaluation then treats `${...}` as
+    /// literal text, as AWS does for the policy language versions that predate
+    /// policy variables.
     pub fn add_policy(&mut self, policy: IAMPolicy) {
         self.resource_patterns
             .push(PolicyPatternCache::build(&policy));
@@ -394,6 +414,7 @@ impl PolicyEvaluator {
         // Evaluate each policy
         for (policy_index, policy) in self.policies.iter().enumerate() {
             let policy_patterns = self.resource_patterns.get(policy_index);
+            let policy_variables = policy.version.supports_policy_variables();
             for (statement_index, statement) in policy.statement.iter().enumerate() {
                 statement_count += 1;
                 if statement_count > self.options.max_statements {
@@ -403,8 +424,13 @@ impl PolicyEvaluator {
                 }
 
                 let patterns = policy_patterns.and_then(|p| p.statement(statement_index));
-                let statement_result =
-                    Self::evaluate_statement(statement, patterns, request, &self.options)?;
+                let statement_result = Self::evaluate_statement(
+                    statement,
+                    patterns,
+                    request,
+                    &self.options,
+                    policy_variables,
+                )?;
 
                 if self.options.collect_match_details {
                     statement_details.push(statement_result.clone());
@@ -441,11 +467,16 @@ impl PolicyEvaluator {
     }
 
     /// Evaluate a single statement against a request
+    ///
+    /// `policy_variables` says whether the enclosing policy's `Version` resolves
+    /// policy variables; when it does not, `${...}` is literal text in both
+    /// resource patterns and condition values.
     fn evaluate_statement(
         statement: &IAMStatement,
         patterns: Option<&StatementPatternCache>,
         request: &IAMRequest,
         options: &EvaluationOptions,
+        policy_variables: bool,
     ) -> Result<StatementMatch, EvaluationError> {
         // AWS only supports NotPrincipal with Effect: Deny, so an Allow statement
         // carrying one cannot exist as a policy. Treat it as never matching
@@ -514,6 +545,7 @@ impl PolicyEvaluator {
                 patterns.and_then(|p| p.resource.as_deref()),
                 &request.resource,
                 &request.context,
+                policy_variables,
             )?
         } else if let Some(ref not_resource) = statement.not_resource {
             Self::not_resource_matches(
@@ -521,6 +553,7 @@ impl PolicyEvaluator {
                 patterns.and_then(|p| p.not_resource.as_deref()),
                 &request.resource,
                 &request.context,
+                policy_variables,
             )?
         } else {
             return Ok(StatementMatch {
@@ -542,7 +575,7 @@ impl PolicyEvaluator {
 
         // Check conditions
         if let Some(ref condition_block) = statement.condition
-            && !Self::evaluate_conditions(condition_block, &request.context)?
+            && !Self::evaluate_conditions(condition_block, &request.context, policy_variables)?
         {
             return Ok(StatementMatch {
                 sid: statement.sid.clone(),
@@ -772,11 +805,18 @@ impl PolicyEvaluator {
         compiled: Option<&[CompiledResourcePattern]>,
         request_resource: &Arn,
         context: &Context,
+        policy_variables: bool,
     ) -> Result<bool, EvaluationError> {
         match not_resource {
             IAMResource::Multiple(patterns) if patterns.is_empty() => Ok(false),
-            _ => Self::resource_matches(not_resource, compiled, request_resource, context)
-                .map(|matches| !matches),
+            _ => Self::resource_matches(
+                not_resource,
+                compiled,
+                request_resource,
+                context,
+                policy_variables,
+            )
+            .map(|matches| !matches),
         }
     }
 
@@ -791,6 +831,7 @@ impl PolicyEvaluator {
         compiled: Option<&[CompiledResourcePattern]>,
         request_resource: &Arn,
         context: &Context,
+        policy_variables: bool,
     ) -> Result<bool, EvaluationError> {
         match resource {
             IAMResource::Single(pattern) => Self::pattern_matches(
@@ -798,6 +839,7 @@ impl PolicyEvaluator {
                 pattern,
                 request_resource,
                 context,
+                policy_variables,
             ),
             IAMResource::Multiple(patterns) => {
                 for (index, pattern) in patterns.iter().enumerate() {
@@ -806,6 +848,7 @@ impl PolicyEvaluator {
                         pattern,
                         request_resource,
                         context,
+                        policy_variables,
                     )? {
                         return Ok(true);
                     }
@@ -821,10 +864,11 @@ impl PolicyEvaluator {
         pattern: &str,
         request_resource: &Arn,
         context: &Context,
+        policy_variables: bool,
     ) -> Result<bool, EvaluationError> {
         match compiled {
             Some(compiled) => compiled.matches(pattern, request_resource, context),
-            None => CompiledResourcePattern::compile(pattern).matches(
+            None => CompiledResourcePattern::compile(pattern, policy_variables).matches(
                 pattern,
                 request_resource,
                 context,
@@ -836,6 +880,7 @@ impl PolicyEvaluator {
     fn evaluate_conditions(
         condition_block: &ConditionBlock,
         context: &Context,
+        policy_variables: bool,
     ) -> Result<bool, EvaluationError> {
         // All conditions in a block must be satisfied (AND logic)
         for (operator, condition_map) in &condition_block.conditions {
@@ -844,8 +889,10 @@ impl PolicyEvaluator {
                 // `"aws:ResourceTag/Owner": "${aws:username}"`. AWS resolves it
                 // against the request context before comparing, for the string
                 // and ARN operators — the same set this crate reports through
-                // `supports_policy_variables`.
-                let interpolated = if operator.supports_policy_variables() {
+                // `supports_policy_variables` — but only from `Version`
+                // 2012-10-17, which introduced policy variables. In an earlier
+                // version the `${...}` is literal text.
+                let interpolated = if policy_variables && operator.supports_policy_variables() {
                     interpolate_condition_value(value, context)?
                 } else {
                     Interpolated::Resolved(Cow::Borrowed(value))
@@ -975,7 +1022,7 @@ mod tests {
     use super::*;
     use crate::{
         Arn, ConditionValue, ContextValue, IAMAction, IAMEffect, IAMOperator, IAMResource,
-        IAMStatement,
+        IAMStatement, IAMVersion,
     };
 
     #[test]
@@ -2561,6 +2608,142 @@ mod tests {
             ],
         );
         assert_eq!(evaluate_policy(&policy, &request).unwrap(), Decision::Allow);
+    }
+
+    // AWS: "In order to use policy variables, you must include the `Version`
+    // element ... set to a version that supports policy variables. Earlier
+    // versions of the policy language don't support policy variables ... variables
+    // like ${aws:username} are treated as literal strings."
+    #[allow(deprecated)]
+    fn version_without_policy_variables() -> IAMVersion {
+        IAMVersion::V20081017
+    }
+
+    fn username_resource_policy(version: IAMVersion) -> IAMPolicy {
+        IAMPolicy::with_version(version).add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("s3:*".to_string()))
+                .with_resource(IAMResource::Single(
+                    "arn:aws:s3:::b/${aws:username}".to_string(),
+                )),
+        )
+    }
+
+    // Guard: 2012-10-17 is the version that introduced policy variables, so the
+    // pattern resolves against the request context.
+    #[test]
+    fn test_policy_variables_resolve_in_2012_policy() {
+        let policy = username_resource_policy(IAMVersion::V20121017);
+        let request = request_with_context(
+            "s3:GetObject",
+            "arn:aws:s3:::b/test",
+            &[("aws:username", "test")],
+        );
+        assert_eq!(evaluate_policy(&policy, &request).unwrap(), Decision::Allow);
+    }
+
+    #[test]
+    fn test_policy_variables_are_literal_in_2008_policy() {
+        // Same policy and request as the 2012 case, but the pattern stays the
+        // literal text `arn:aws:s3:::b/${aws:username}` and matches nothing.
+        let policy = username_resource_policy(version_without_policy_variables());
+        let request = request_with_context(
+            "s3:GetObject",
+            "arn:aws:s3:::b/test",
+            &[("aws:username", "test")],
+        );
+        assert_eq!(
+            evaluate_policy(&policy, &request).unwrap(),
+            Decision::NotApplicable
+        );
+    }
+
+    #[test]
+    fn test_condition_value_variable_is_literal_in_2008_policy() {
+        let policy = IAMPolicy::with_version(version_without_policy_variables()).add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("ec2:StartInstances".to_string()))
+                .with_resource(IAMResource::Single(
+                    "arn:aws:ec2:*:*:instance/*".to_string(),
+                ))
+                .with_condition(
+                    IAMOperator::StringEquals,
+                    "aws:ResourceTag/Owner".to_string(),
+                    ConditionValue::String("${aws:username}".to_string()),
+                ),
+        );
+        let resource = "arn:aws:ec2:us-east-1:123456789012:instance/i-1";
+
+        // The caller's own tag does not match: the variable is not resolved.
+        let own = request_with_context(
+            "ec2:StartInstances",
+            resource,
+            &[
+                ("aws:ResourceTag/Owner", "alice"),
+                ("aws:username", "alice"),
+            ],
+        );
+        assert_eq!(
+            evaluate_policy(&policy, &own).unwrap(),
+            Decision::NotApplicable
+        );
+
+        // Only the literal `${aws:username}` text matches the condition.
+        let literal = request_with_context(
+            "ec2:StartInstances",
+            resource,
+            &[
+                ("aws:ResourceTag/Owner", "${aws:username}"),
+                ("aws:username", "alice"),
+            ],
+        );
+        assert_eq!(evaluate_policy(&policy, &literal).unwrap(), Decision::Allow);
+    }
+
+    // Guard: gating variables must not change anything else about a policy that
+    // has no `${...}` in it.
+    #[test]
+    fn test_2008_policy_without_variables_evaluates_normally() {
+        let policy = IAMPolicy::with_version(version_without_policy_variables()).add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                .with_resource(IAMResource::Single("arn:aws:s3:::b/*".to_string()))
+                .with_condition(
+                    IAMOperator::StringEquals,
+                    "aws:RequestedRegion".to_string(),
+                    ConditionValue::String("us-east-1".to_string()),
+                ),
+        );
+
+        let matching = request_with_context(
+            "s3:GetObject",
+            "arn:aws:s3:::b/test",
+            &[("aws:RequestedRegion", "us-east-1")],
+        );
+        assert_eq!(
+            evaluate_policy(&policy, &matching).unwrap(),
+            Decision::Allow
+        );
+
+        let other_region = request_with_context(
+            "s3:GetObject",
+            "arn:aws:s3:::b/test",
+            &[("aws:RequestedRegion", "eu-west-1")],
+        );
+        assert_eq!(
+            evaluate_policy(&policy, &other_region).unwrap(),
+            Decision::NotApplicable
+        );
+
+        let other_resource = request_with_context(
+            "s3:GetObject",
+            "arn:aws:s3:::other-bucket/test",
+            &[("aws:RequestedRegion", "us-east-1")],
+        );
+        assert_eq!(
+            evaluate_policy(&policy, &other_resource).unwrap(),
+            Decision::NotApplicable
+        );
     }
 
     fn test_request(action: &str, resource: &str) -> IAMRequest {
