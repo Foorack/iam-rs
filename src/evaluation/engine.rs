@@ -1,10 +1,10 @@
 use super::{context::Context, matcher::ArnMatcher, request::IAMRequest};
 use crate::{
     Arn, Validate,
-    core::{IAMAction, IAMEffect, IAMResource, Principal, PrincipalId},
+    core::{IAMAction, IAMEffect, IAMOperator, IAMResource, Principal, PrincipalId},
     evaluation::{
-        operator_eval::{evaluate_condition, wildcard_match},
-        variable::interpolate_variables_checked,
+        operator_eval::{evaluate_condition, uses_wildcard_matching, wildcard_match},
+        variable::{interpolate_variables_checked, unescape_literals},
     },
     policy::{ConditionBlock, ConditionValue, IAMPolicy, IAMStatement},
 };
@@ -1038,7 +1038,7 @@ impl PolicyEvaluator {
                 // 2012-10-17, which introduced policy variables. In an earlier
                 // version the `${...}` is literal text.
                 let interpolated = if policy_variables && operator.supports_policy_variables() {
-                    interpolate_condition_value(value, context)?
+                    interpolate_condition_value(value, operator, context)?
                 } else {
                     Interpolated::Resolved(Cow::Borrowed(value))
                 };
@@ -1091,8 +1091,14 @@ enum Interpolated<'a> {
 /// always returned as they are.
 fn interpolate_condition_value<'a>(
     value: &'a ConditionValue,
+    operator: &IAMOperator,
     context: &Context,
 ) -> Result<Interpolated<'a>, EvaluationError> {
+    // `${*}` and `${?}` are interpolated as escaped literals, which only a
+    // wildcard pattern can interpret. An operator that compares exactly has no
+    // wildcard to protect, so it gets the plain character back.
+    let wildcards = uses_wildcard_matching(operator);
+
     match value {
         ConditionValue::String(text) if text.contains("${") => {
             let interpolation = interpolate_variables_checked(text, context)?;
@@ -1100,7 +1106,7 @@ fn interpolate_condition_value<'a>(
                 return Ok(Interpolated::Unresolved);
             }
             Ok(Interpolated::Resolved(Cow::Owned(ConditionValue::String(
-                interpolation.text,
+                condition_pattern_text(interpolation.text, wildcards),
             ))))
         }
         ConditionValue::StringList(list) if list.iter().any(|item| item.contains("${")) => {
@@ -1110,7 +1116,7 @@ fn interpolate_condition_value<'a>(
                 if interpolation.unresolved {
                     return Ok(Interpolated::Unresolved);
                 }
-                resolved.push(interpolation.text);
+                resolved.push(condition_pattern_text(interpolation.text, wildcards));
             }
             Ok(Interpolated::Resolved(Cow::Owned(
                 ConditionValue::StringList(resolved),
@@ -1118,6 +1124,16 @@ fn interpolate_condition_value<'a>(
         }
         _ => Ok(Interpolated::Resolved(Cow::Borrowed(value))),
     }
+}
+
+/// Drop the literal escapes of an interpolated condition value unless the
+/// operator matches it as a wildcard pattern.
+fn condition_pattern_text(text: String, wildcards: bool) -> String {
+    if wildcards || !text.contains(crate::LITERAL_ESCAPE) {
+        return text;
+    }
+
+    unescape_literals(&text)
 }
 
 impl Default for PolicyEvaluator {
@@ -3196,6 +3212,157 @@ mod tests {
         assert!(
             matches!(error, EvaluationError::InvalidVariable(_)),
             "expected InvalidVariable, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn test_predefined_wildcard_variable_does_not_widen_a_like_condition() {
+        // `${*}` is the literal character `*`, not a wildcard: with a wildcard
+        // the pattern below would match every key containing "admin/".
+        let policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("s3:ListBucket".to_string()))
+                .with_resource(IAMResource::Single("arn:aws:s3:::bucket".to_string()))
+                .with_condition(
+                    IAMOperator::StringLike,
+                    "s3:prefix".to_string(),
+                    ConditionValue::String("${*}admin/*".to_string()),
+                ),
+        );
+
+        let plain = request_with_context(
+            "s3:ListBucket",
+            "arn:aws:s3:::bucket",
+            &[("s3:prefix", "admin/x")],
+        );
+        assert_eq!(
+            evaluate_policy(&policy, &plain).unwrap(),
+            Decision::NotApplicable
+        );
+
+        // A prefix that really starts with `*` matches, and the `*` after
+        // "admin/" is still a wildcard.
+        let starred = request_with_context(
+            "s3:ListBucket",
+            "arn:aws:s3:::bucket",
+            &[("s3:prefix", "*admin/x")],
+        );
+        assert_eq!(evaluate_policy(&policy, &starred).unwrap(), Decision::Allow);
+    }
+
+    #[test]
+    fn test_predefined_question_and_dollar_variables_are_literal_characters() {
+        let question = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("s3:ListBucket".to_string()))
+                .with_resource(IAMResource::Single("arn:aws:s3:::bucket".to_string()))
+                .with_condition(
+                    IAMOperator::StringLike,
+                    "s3:prefix".to_string(),
+                    ConditionValue::String("log${?}.txt".to_string()),
+                ),
+        );
+        let any_letter = request_with_context(
+            "s3:ListBucket",
+            "arn:aws:s3:::bucket",
+            &[("s3:prefix", "logx.txt")],
+        );
+        assert_eq!(
+            evaluate_policy(&question, &any_letter).unwrap(),
+            Decision::NotApplicable
+        );
+        let literal_question = request_with_context(
+            "s3:ListBucket",
+            "arn:aws:s3:::bucket",
+            &[("s3:prefix", "log?.txt")],
+        );
+        assert_eq!(
+            evaluate_policy(&question, &literal_question).unwrap(),
+            Decision::Allow
+        );
+
+        // Resolving `${$}` to the empty string would match "literal".
+        let dollar = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("s3:ListBucket".to_string()))
+                .with_resource(IAMResource::Single("arn:aws:s3:::bucket".to_string()))
+                .with_condition(
+                    IAMOperator::StringLike,
+                    "s3:prefix".to_string(),
+                    ConditionValue::String("${$}literal".to_string()),
+                ),
+        );
+        let without_dollar = request_with_context(
+            "s3:ListBucket",
+            "arn:aws:s3:::bucket",
+            &[("s3:prefix", "literal")],
+        );
+        assert_eq!(
+            evaluate_policy(&dollar, &without_dollar).unwrap(),
+            Decision::NotApplicable
+        );
+        let with_dollar = request_with_context(
+            "s3:ListBucket",
+            "arn:aws:s3:::bucket",
+            &[("s3:prefix", "$literal")],
+        );
+        assert_eq!(
+            evaluate_policy(&dollar, &with_dollar).unwrap(),
+            Decision::Allow
+        );
+    }
+
+    #[test]
+    fn test_predefined_wildcard_variable_is_a_plain_character_for_an_exact_operator() {
+        // `StringEquals` has no wildcard, so `${*}` is simply the character.
+        let policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("ec2:StartInstances".to_string()))
+                .with_resource(IAMResource::Single(
+                    "arn:aws:ec2:*:*:instance/*".to_string(),
+                ))
+                .with_condition(
+                    IAMOperator::StringEquals,
+                    "aws:ResourceTag/tier".to_string(),
+                    ConditionValue::String("${*}".to_string()),
+                ),
+        );
+        let literal = request_with_context(
+            "ec2:StartInstances",
+            "arn:aws:ec2:us-east-1:123456789012:instance/i-1",
+            &[("aws:ResourceTag/tier", "*")],
+        );
+        assert_eq!(evaluate_policy(&policy, &literal).unwrap(), Decision::Allow);
+
+        let other = request_with_context(
+            "ec2:StartInstances",
+            "arn:aws:ec2:us-east-1:123456789012:instance/i-1",
+            &[("aws:ResourceTag/tier", "frontend")],
+        );
+        assert_eq!(
+            evaluate_policy(&policy, &other).unwrap(),
+            Decision::NotApplicable
+        );
+    }
+
+    #[test]
+    fn test_predefined_wildcard_variable_is_literal_in_a_resource_pattern() {
+        // ARN matching honours `*` too, so the escape has to survive into
+        // `ArnMatcher` as well.
+        let policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                .with_resource(IAMResource::Single(
+                    "arn:aws:s3:::bucket/${*}report".to_string(),
+                )),
+        );
+        let literal = request_with_context("s3:GetObject", "arn:aws:s3:::bucket/*report", &[]);
+        assert_eq!(evaluate_policy(&policy, &literal).unwrap(), Decision::Allow);
+
+        let other = request_with_context("s3:GetObject", "arn:aws:s3:::bucket/daily/report", &[]);
+        assert_eq!(
+            evaluate_policy(&policy, &other).unwrap(),
+            Decision::NotApplicable
         );
     }
 

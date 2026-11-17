@@ -809,6 +809,24 @@ fn ev_ip(
     Ok(predicate(context_value, value))
 }
 
+/// Whether the operator compares its policy value as a wildcard pattern, where
+/// `*` matches any sequence and `?` any single character.
+///
+/// Policy-variable interpolation escapes the literal characters of `${*}` and
+/// `${?}` so the pattern operators match them exactly; an operator that compares
+/// without wildcards wants the plain character instead. `ArnEquals` and
+/// `ArnNotEquals` are included because AWS documents them as behaving
+/// identically to `ArnLike` and `ArnNotLike`.
+pub(super) fn uses_wildcard_matching(operator: &IAMOperator) -> bool {
+    let name = operator.as_str();
+    let base = name.rsplit(':').next().unwrap_or(name);
+    let base = base.strip_suffix("IfExists").unwrap_or(base);
+    matches!(
+        base,
+        "StringLike" | "StringNotLike" | "ArnLike" | "ArnNotLike" | "ArnEquals" | "ArnNotEquals"
+    )
+}
+
 /// Simple wildcard matching for actions and strings
 #[must_use]
 pub(super) fn wildcard_match(text: &str, pattern: &str) -> bool {

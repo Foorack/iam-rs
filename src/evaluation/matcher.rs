@@ -1,4 +1,4 @@
-use crate::{Arn, ArnError};
+use crate::{Arn, ArnError, LITERAL_ESCAPE};
 use std::collections::HashSet;
 
 /// Advanced ARN matching capabilities for policy evaluation
@@ -162,18 +162,26 @@ impl ArnPattern {
         }
 
         let arn = Arn::parse(pattern)?;
-        let has_wildcards = pattern.contains('*') || pattern.contains('?');
+        // An escape makes a component's match non-exact even when it holds no
+        // `*` or `?`, so it has to count here: otherwise the component would be
+        // compared for equality against the escape marker and never match.
+        let has_wildcards = Self::is_pattern(pattern);
 
         Ok(ArnPattern {
             pattern: pattern.to_string(),
-            partition_wildcard: arn.partition.contains('*') || arn.partition.contains('?'),
-            service_wildcard: arn.service.contains('*') || arn.service.contains('?'),
-            region_wildcard: arn.region.contains('*') || arn.region.contains('?'),
-            account_wildcard: arn.account_id.contains('*') || arn.account_id.contains('?'),
-            resource_wildcard: arn.resource.contains('*') || arn.resource.contains('?'),
+            partition_wildcard: Self::is_pattern(&arn.partition),
+            service_wildcard: Self::is_pattern(&arn.service),
+            region_wildcard: Self::is_pattern(&arn.region),
+            account_wildcard: Self::is_pattern(&arn.account_id),
+            resource_wildcard: Self::is_pattern(&arn.resource),
             arn,
             has_wildcards,
         })
+    }
+
+    /// Whether a component needs wildcard matching rather than an exact compare.
+    fn is_pattern(component: &str) -> bool {
+        component.contains(['*', '?', LITERAL_ESCAPE])
     }
 
     /// Check if this pattern matches the given ARN

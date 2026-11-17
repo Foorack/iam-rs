@@ -1,4 +1,4 @@
-use crate::{Context, ContextValue, EvaluationError};
+use crate::{Context, ContextValue, EvaluationError, LITERAL_ESCAPE};
 
 /// Represents a parsed policy variable
 #[derive(Debug, Clone, PartialEq)]
@@ -11,6 +11,24 @@ pub struct PolicyVariable {
 }
 
 impl PolicyVariable {
+    /// The literal character this variable stands for, if it is one of the three
+    /// predefined variables.
+    ///
+    /// AWS defines `${*}`, `${?}` and `${$}` as the literal characters `*`, `?`
+    /// and `$`, so that a policy can put those characters into a value without
+    /// them acting as wildcards or as variable syntax. They are not context
+    /// lookups at all: a context key named `*` is meaningless, so the context is
+    /// never consulted for them, and a default written next to them is ignored.
+    #[must_use]
+    pub(crate) fn predefined_literal(&self) -> Option<char> {
+        match self.key.as_str() {
+            "*" => Some('*'),
+            "?" => Some('?'),
+            "$" => Some('$'),
+            _ => None,
+        }
+    }
+
     /// Parse a policy variable from a string like "${aws:PrincipalTag/team, 'company-wide'}"
     ///
     /// AWS default values are wrapped in single quotes and separated from the
@@ -68,8 +86,15 @@ impl PolicyVariable {
     /// type that does not render, such as a boolean list) *and* the policy
     /// author supplied no default. AWS calls that a null value, which does not
     /// equal anything — so it must not be confused with the empty string.
+    ///
+    /// The three predefined variables `${*}`, `${?}` and `${$}` are never looked
+    /// up and always resolve to their literal character.
     #[must_use]
     pub fn resolve_checked(&self, context: &Context) -> Option<String> {
+        if let Some(literal) = self.predefined_literal() {
+            return Some(literal.to_string());
+        }
+
         match context.get(&self.key) {
             Some(ContextValue::String(value)) => Some(value.clone()),
             Some(ContextValue::Boolean(b)) => Some(b.to_string()),
@@ -88,17 +113,47 @@ impl PolicyVariable {
 /// which equals nothing; that distinction is not observable through this
 /// function, so the evaluation engine uses the crate-internal checked variant.
 ///
+/// The result is a wildcard pattern, so the characters produced by the
+/// predefined variables `${*}`, `${?}` and `${$}` are prefixed with an escape
+/// that [`crate::Arn::wildcard_match`] treats as literal. A caller that compares
+/// the text exactly, rather than as a pattern, has to strip the escape again;
+/// the evaluation engine does that for the non-pattern operators.
+///
 /// # Errors
 ///
 /// Returns `EvaluationError::InvalidVariable` for a malformed variable, an
 /// unclosed `${`, or a context-derived value containing a wildcard.
 pub fn interpolate_variables(input: &str, context: &Context) -> Result<String, EvaluationError> {
-    interpolate_variables_checked(input, context).map(|interpolation| interpolation.text)
+    // The checked variant marks the characters `${*}`, `${?}` and `${$}` stand
+    // for so that evaluation can keep them literal inside a wildcard pattern.
+    // A caller of this function wants the text, not the marker.
+    interpolate_variables_checked(input, context)
+        .map(|interpolation| unescape_literals(&interpolation.text))
+}
+
+/// `text` with every literal-escape sequence collapsed back to the character it
+/// protects. Callers that compare the interpolated text exactly, rather than as
+/// a wildcard pattern, need the plain character.
+pub(crate) fn unescape_literals(text: &str) -> String {
+    let mut unescaped = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match chars.peek() {
+            Some(&literal) if c == LITERAL_ESCAPE => {
+                unescaped.push(literal);
+                chars.next();
+            }
+            _ => unescaped.push(c),
+        }
+    }
+    unescaped
 }
 
 /// The result of interpolating a policy pattern.
 pub(crate) struct Interpolation {
-    /// The pattern with every variable that had a value substituted.
+    /// The pattern with every variable that had a value substituted. Literal
+    /// `*` and `?` from the predefined variables are escaped; use
+    /// [`unescape_literals`] where the text is compared exactly.
     pub(crate) text: String,
     /// Whether at least one variable had no value and no default, which AWS
     /// treats as null rather than as an empty string.
@@ -120,6 +175,19 @@ pub(crate) fn interpolate_variables_checked(
             let variable_str = &result[absolute_start..absolute_end];
 
             let variable = PolicyVariable::parse(variable_str)?;
+
+            // `${*}`, `${?}` and `${$}` are the literal characters, which AWS
+            // defines so that a policy can write a wildcard or a `$` without it
+            // being interpreted. The character goes in escaped, because the
+            // interpolated text is used as a wildcard pattern: a bare `*` would
+            // widen the match instead of matching a `*`.
+            if let Some(literal) = variable.predefined_literal() {
+                let substitute = format!("{LITERAL_ESCAPE}{literal}");
+                result.replace_range(absolute_start..absolute_end, &substitute);
+                start = absolute_start + substitute.len();
+                continue;
+            }
+
             // Nothing to substitute: AWS leaves the pattern with no value, so it
             // cannot equal anything. The caller decides what that means for the
             // operator it is evaluating.
@@ -192,6 +260,93 @@ mod tests {
             interpolate_variables("arn:aws:s3:::home/${aws:PrincipalTag/team, '*'}", &context)
                 .unwrap(),
             "arn:aws:s3:::home/*"
+        );
+    }
+
+    /// The escaped form interpolation writes for a predefined literal.
+    fn escaped(literal: char) -> String {
+        format!("{LITERAL_ESCAPE}{literal}")
+    }
+
+    #[test]
+    fn test_predefined_variables_resolve_to_their_character() {
+        // AWS: "${*} is replaced with *, ${?} with ?" and "${$} with $". They
+        // used to be looked up as context keys, which are never present, so each
+        // silently resolved to the empty string.
+        let context = Context::new();
+        for (variable, expected) in [("${*}", '*'), ("${?}", '?'), ("${$}", '$')] {
+            let var = PolicyVariable::parse(variable).unwrap();
+            assert_eq!(
+                var.resolve_checked(&context),
+                Some(expected.to_string()),
+                "{variable}"
+            );
+            assert_eq!(var.resolve(&context), expected.to_string(), "{variable}");
+        }
+    }
+
+    #[test]
+    fn test_predefined_variables_ignore_context_keys_of_the_same_name() {
+        // `*`, `?` and `$` are not context keys, so a request that happens to
+        // carry them must not change what the predefined variables mean.
+        let mut context = Context::new();
+        for key in ["*", "?", "$"] {
+            context.insert(
+                key.to_string(),
+                ContextValue::String("from-context".to_string()),
+            );
+        }
+        for (variable, expected) in [("${*}", '*'), ("${?}", '?'), ("${$}", '$')] {
+            let var = PolicyVariable::parse(variable).unwrap();
+            assert_eq!(var.resolve(&context), expected.to_string(), "{variable}");
+        }
+    }
+
+    #[test]
+    fn test_predefined_variables_are_unescaped_by_the_public_function() {
+        let context = Context::new();
+        // The public function hands back the text a caller expects.
+        assert_eq!(interpolate_variables("a${*}b", &context).unwrap(), "a*b");
+        assert_eq!(interpolate_variables("a${?}b", &context).unwrap(), "a?b");
+        assert_eq!(interpolate_variables("a${$}b", &context).unwrap(), "a$b");
+
+        // Internally the characters are escaped, because the interpolated text is
+        // used as a wildcard pattern and a bare `*` would widen the match.
+        let escaped_form = interpolate_variables_checked("a${*}b", &context).unwrap();
+        assert_eq!(escaped_form.text, format!("a{}b", escaped('*')));
+        assert!(!escaped_form.unresolved);
+    }
+
+    #[test]
+    fn test_predefined_variables_do_not_trip_the_wildcard_guard() {
+        // The guard rejects a *context* value holding a wildcard. These three are
+        // not context-derived, and a context key named `*` holding `**` must not
+        // make them look as if they were.
+        let mut context = Context::new();
+        for key in ["*", "?", "$"] {
+            context.insert(key.to_string(), ContextValue::String("**".to_string()));
+        }
+        assert_eq!(
+            interpolate_variables("${*}admin/*", &context).unwrap(),
+            "*admin/*"
+        );
+        assert_eq!(interpolate_variables("${?}", &context).unwrap(), "?");
+        assert_eq!(interpolate_variables("${$}", &context).unwrap(), "$");
+    }
+
+    #[test]
+    fn test_unescape_literals_restores_the_characters() {
+        assert_eq!(
+            unescape_literals(&format!(
+                "{LITERAL_ESCAPE}*a{LITERAL_ESCAPE}?{LITERAL_ESCAPE}$b"
+            )),
+            "*a?$b"
+        );
+        assert_eq!(unescape_literals("plain"), "plain");
+        // A trailing escape protects nothing and stays as written.
+        assert_eq!(
+            unescape_literals(&LITERAL_ESCAPE.to_string()),
+            LITERAL_ESCAPE.to_string()
         );
     }
 
