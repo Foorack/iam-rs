@@ -1,6 +1,50 @@
-use crate::{Arn, Context, ContextValue, EvaluationError, IAMOperator, OperatorType};
+use crate::{
+    Arn, ConditionValue, Context, ContextValue, EvaluationError, IAMOperator, OperatorType,
+};
 use chrono::{DateTime, Utc};
 use ipnet::IpNet;
+use std::fmt;
+
+/// A borrowed, single element of a [`ConditionValue`].
+///
+/// `StringList` is the multivalued form: each of its elements is evaluated like
+/// a single `String` value. The helpers take this view rather than an owned
+/// `serde_json::Value`, which `ConditionValue::to_json_value` used to deep-clone
+/// for every condition key of every statement.
+#[derive(Debug, Clone, Copy)]
+enum ValueRef<'a> {
+    Boolean(bool),
+    Number(&'a serde_json::Number),
+    String(&'a str),
+}
+
+impl<'a> ValueRef<'a> {
+    const fn as_str(self) -> Option<&'a str> {
+        match self {
+            ValueRef::String(s) => Some(s),
+            ValueRef::Boolean(_) | ValueRef::Number(_) => None,
+        }
+    }
+
+    const fn as_bool(self) -> Option<bool> {
+        match self {
+            ValueRef::Boolean(b) => Some(b),
+            ValueRef::String(_) | ValueRef::Number(_) => None,
+        }
+    }
+}
+
+impl fmt::Display for ValueRef<'_> {
+    /// Renders like `serde_json::Value`'s `Display` so condition error messages
+    /// read the same as before.
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ValueRef::Boolean(b) => b.fmt(f),
+            ValueRef::Number(n) => n.fmt(f),
+            ValueRef::String(s) => f.write_str(&serde_json::to_string(s).map_err(|_| fmt::Error)?),
+        }
+    }
+}
 
 #[derive(Copy, Debug, Clone, PartialEq, Eq, Hash)]
 enum SetOperatorType {
@@ -59,7 +103,7 @@ pub(super) fn evaluate_condition(
     ctx: &Context,
     operator: &IAMOperator,
     key: &str,
-    value: &serde_json::Value,
+    value: &ConditionValue,
 ) -> Result<bool, EvaluationError> {
     let if_exists = operator.is_if_exists_operator();
     let set_operator = SetOperatorType::from_operator(operator);
@@ -179,10 +223,27 @@ pub(super) fn evaluate_condition(
         }
     }
 
-    // Convert value into Array if it isn't already
-    let values = match value {
-        serde_json::Value::Array(arr) => arr,
-        _ => std::slice::from_ref(value),
+    // A `StringList` is the multivalued form, where every element is evaluated
+    // like a single `String`. A scalar value stays on the stack.
+    let list_values: Vec<ValueRef<'_>>;
+    let single_value: [ValueRef<'_>; 1];
+    let values: &[ValueRef<'_>] = match value {
+        ConditionValue::StringList(list) => {
+            list_values = list.iter().map(|s| ValueRef::String(s)).collect();
+            &list_values
+        }
+        ConditionValue::Boolean(b) => {
+            single_value = [ValueRef::Boolean(*b)];
+            &single_value
+        }
+        ConditionValue::Number(n) => {
+            single_value = [ValueRef::Number(n)];
+            &single_value
+        }
+        ConditionValue::String(s) => {
+            single_value = [ValueRef::String(s)];
+            &single_value
+        }
     };
 
     // Set operators (ForAllValues / ForAnyValue) need the whole policy value
@@ -197,27 +258,29 @@ pub(super) fn evaluate_condition(
     for value in values {
         let result = match operator.category() {
             OperatorType::String | OperatorType::Arn | OperatorType::Binary => {
-                ev_str(ctx, key, value, &predicate_str, if_exists, is_negated)?
+                ev_str(ctx, key, *value, &predicate_str, if_exists, is_negated)?
             }
             OperatorType::Numeric => {
-                ev_numeric(ctx, key, value, &predicate_num, if_exists, is_negated)?
+                ev_numeric(ctx, key, *value, &predicate_num, if_exists, is_negated)?
             }
-            OperatorType::Date => ev_date(ctx, key, value, &predicate_date, if_exists, is_negated)?,
-            OperatorType::Boolean => ev_bool(ctx, key, value, &predicate_bool, if_exists)?,
+            OperatorType::Date => {
+                ev_date(ctx, key, *value, &predicate_date, if_exists, is_negated)?
+            }
+            OperatorType::Boolean => ev_bool(ctx, key, *value, &predicate_bool, if_exists)?,
             OperatorType::IpAddress => {
-                ev_ip(ctx, key, value, &predicate_ip, if_exists, is_negated)?
+                ev_ip(ctx, key, *value, &predicate_ip, if_exists, is_negated)?
             }
             OperatorType::Null => {
                 // Null check. AWS accepts both a JSON boolean and the string
                 // forms "true"/"false" for the expected presence of the key.
-                let should_be_null = match value {
-                    serde_json::Value::Bool(b) => *b,
-                    serde_json::Value::String(s) => s.parse::<bool>().map_err(|_| {
+                let should_be_null = match *value {
+                    ValueRef::Boolean(b) => b,
+                    ValueRef::String(s) => s.parse::<bool>().map_err(|_| {
                         EvaluationError::ConditionError(
                             "Null operator value must be 'true' or 'false'".to_string(),
                         )
                     })?,
-                    _ => {
+                    ValueRef::Number(_) => {
                         return Err(EvaluationError::ConditionError(
                             "Null operator value must be a boolean or the string 'true'/'false'"
                                 .to_string(),
@@ -256,7 +319,7 @@ fn evaluate_set_operator(
     ctx: &Context,
     operator: &IAMOperator,
     key: &str,
-    values: &[serde_json::Value],
+    values: &[ValueRef<'_>],
     predicate_str: &Predicate<String>,
     predicate_bool: &Predicate<bool>,
 ) -> Result<bool, EvaluationError> {
@@ -353,7 +416,7 @@ fn evaluate_set_operator(
 fn ev_str(
     ctx: &Context,
     key: &str,
-    value: &serde_json::Value,
+    value: ValueRef<'_>,
     predicate: &Predicate<String>,
     if_exists: bool,
     is_negated: bool,
@@ -384,20 +447,30 @@ fn ev_str(
 fn ev_numeric(
     ctx: &Context,
     key: &str,
-    value: &serde_json::Value,
+    value: ValueRef<'_>,
     predicate: &Predicate<f64>,
     if_exists: bool,
     is_negated: bool,
 ) -> Result<bool, EvaluationError> {
-    let value = value
-        .to_string()
-        .trim_matches('"') // Remove quotes if present
-        .parse::<f64>()
-        .map_err(|err| {
+    // A JSON number is already numeric. Every other variant keeps the
+    // historical text conversion, which is what makes a numeric string such as
+    // `"42.5"` acceptable while `true` is rejected.
+    let value = match value {
+        ValueRef::Number(n) => n.as_f64().ok_or_else(|| {
             EvaluationError::ConditionError(format!(
-                "Numeric condition value must be a number, was {value}. ParseFloatError: {err}",
+                "Numeric condition value must be a number, was {n}"
             ))
-        })?;
+        })?,
+        other => other
+            .to_string()
+            .trim_matches('"') // Remove quotes if present
+            .parse::<f64>()
+            .map_err(|err| {
+                EvaluationError::ConditionError(format!(
+                    "Numeric condition value must be a number, was {other}. ParseFloatError: {err}",
+                ))
+            })?,
+    };
 
     let context_value = match ctx.get(key) {
         Some(ContextValue::Number(n)) => *n,
@@ -450,7 +523,7 @@ pub(crate) fn parse_date(value: &str) -> Result<DateTime<Utc>, EvaluationError> 
 fn ev_date(
     ctx: &Context,
     key: &str,
-    value: &serde_json::Value,
+    value: ValueRef<'_>,
     predicate: &DatePredicate<DateTime<Utc>>,
     if_exists: bool,
     is_negated: bool,
@@ -458,10 +531,10 @@ fn ev_date(
     // AWS accepts ISO 8601 date/time strings and Unix epoch time. Epoch may be
     // given as a string ("1704067200") or as a JSON number (1704067200).
     let value: DateTime<Utc> = match value {
-        serde_json::Value::String(s) => parse_date(s),
-        serde_json::Value::Number(n) => parse_date(&n.to_string()),
-        other => Err(EvaluationError::ConditionError(format!(
-            "Date condition value must be a string or number, got {other}"
+        ValueRef::String(s) => parse_date(s),
+        ValueRef::Number(n) => parse_date(&n.to_string()),
+        ValueRef::Boolean(_) => Err(EvaluationError::ConditionError(format!(
+            "Date condition value must be a string or number, got {value}"
         ))),
     }
     .map_err(|_| EvaluationError::ConditionError("Invalid date condition value".to_string()))?;
@@ -493,19 +566,23 @@ fn ev_date(
 fn ev_bool(
     ctx: &Context,
     key: &str,
-    value: &serde_json::Value,
+    value: ValueRef<'_>,
     predicate: &Predicate<bool>,
     if_exists: bool,
 ) -> Result<bool, EvaluationError> {
-    let value = value
-        .to_string()
-        .trim_matches('"') // Remove quotes if present
-        .parse::<bool>()
-        .map_err(|err| {
-            EvaluationError::ConditionError(format!(
-                "Boolean condition value must be a boolean, got {value}. Error: {err}",
-            ))
-        })?;
+    let value = match value {
+        ValueRef::Boolean(b) => b,
+        // The string forms "true"/"false" are accepted, as AWS documents them.
+        other => other
+            .to_string()
+            .trim_matches('"') // Remove quotes if present
+            .parse::<bool>()
+            .map_err(|err| {
+                EvaluationError::ConditionError(format!(
+                    "Boolean condition value must be a boolean, got {other}. Error: {err}",
+                ))
+            })?,
+    };
 
     match ctx.get(key) {
         Some(ContextValue::Boolean(b)) => Ok(predicate(*b, value)),
@@ -528,7 +605,7 @@ fn ev_bool(
 fn ev_ip(
     ctx: &Context,
     key: &str,
-    value: &serde_json::Value,
+    value: ValueRef<'_>,
     predicate: &Predicate<IpNet>,
     if_exists: bool,
     is_negated: bool,
@@ -614,10 +691,21 @@ mod tests {
         ctx
     }
 
+    /// Calls [`evaluate_condition`] with the JSON form a policy is parsed from.
+    fn evaluate_condition_json(
+        ctx: &Context,
+        operator: &IAMOperator,
+        key: &str,
+        value: &serde_json::Value,
+    ) -> Result<bool, EvaluationError> {
+        let value = ConditionValue::from_json_value(value.clone()).expect("convertible value");
+        evaluate_condition(ctx, operator, key, &value)
+    }
+
     #[test]
     fn test_evaluate_condition_string_equals() {
         let ctx = create_test_context();
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringEquals,
             "string_key",
@@ -626,7 +714,7 @@ mod tests {
         .unwrap();
         assert!(result);
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringEquals,
             "string_key",
@@ -639,7 +727,7 @@ mod tests {
     #[test]
     fn test_evaluate_condition_string_not_equals() {
         let ctx = create_test_context();
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringNotEquals,
             "string_key",
@@ -648,7 +736,7 @@ mod tests {
         .unwrap();
         assert!(result);
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringNotEquals,
             "string_key",
@@ -665,7 +753,7 @@ mod tests {
         let ctx = Context::new();
 
         // Non-negated operators are false when the key is missing.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringEquals,
             "missing_key",
@@ -674,7 +762,7 @@ mod tests {
         .unwrap();
         assert!(!result);
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringLike,
             "missing_key",
@@ -683,7 +771,7 @@ mod tests {
         .unwrap();
         assert!(!result);
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::NumericEquals,
             "missing_key",
@@ -692,7 +780,7 @@ mod tests {
         .unwrap();
         assert!(!result);
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::IpAddress,
             "missing_key",
@@ -702,7 +790,7 @@ mod tests {
         assert!(!result);
 
         // Negated operators are true when the key is missing.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringNotEquals,
             "missing_key",
@@ -711,7 +799,7 @@ mod tests {
         .unwrap();
         assert!(result);
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringNotLike,
             "missing_key",
@@ -720,7 +808,7 @@ mod tests {
         .unwrap();
         assert!(result);
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::NumericNotEquals,
             "missing_key",
@@ -729,7 +817,7 @@ mod tests {
         .unwrap();
         assert!(result);
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::NotIpAddress,
             "missing_key",
@@ -739,7 +827,7 @@ mod tests {
         assert!(result);
 
         // IfExists operators are true when the key is missing.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringEqualsIfExists,
             "missing_key",
@@ -748,7 +836,7 @@ mod tests {
         .unwrap();
         assert!(result);
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringNotEqualsIfExists,
             "missing_key",
@@ -767,7 +855,7 @@ mod tests {
         );
 
         // Every context value matches at least one policy value -> true.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::ForAllValuesStringEquals,
             "key",
@@ -777,7 +865,7 @@ mod tests {
         assert!(result);
 
         // A policy value that matches nothing extra doesn't change the result.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::ForAllValuesStringEquals,
             "key",
@@ -787,7 +875,7 @@ mod tests {
         assert!(result);
 
         // A context value ("b") that matches no policy value -> false.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::ForAllValuesStringEquals,
             "key",
@@ -798,7 +886,7 @@ mod tests {
 
         // Single policy value behaves the same as before: all context values
         // must match that one value.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::ForAllValuesStringEquals,
             "key",
@@ -809,7 +897,7 @@ mod tests {
 
         let mut scalar_ctx = Context::new();
         scalar_ctx.insert("key".to_string(), ContextValue::String("a".to_string()));
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &scalar_ctx,
             &IAMOperator::ForAllValuesStringEquals,
             "key",
@@ -830,7 +918,7 @@ mod tests {
         );
 
         // A request value inside the allowed set -> false (not denied).
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::ForAllValuesStringNotEquals,
             "region",
@@ -845,7 +933,7 @@ mod tests {
             "region".to_string(),
             ContextValue::String("us-east-1".to_string()),
         );
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx_outside,
             &IAMOperator::ForAllValuesStringNotEquals,
             "region",
@@ -860,7 +948,7 @@ mod tests {
         let ctx = Context::new();
 
         // AWS: ForAllValues with no context key resolves to true.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::ForAllValuesStringEquals,
             "missing_key",
@@ -870,7 +958,7 @@ mod tests {
         assert!(result);
 
         // ForAnyValue with no context key resolves to false.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::ForAnyValueStringEquals,
             "missing_key",
@@ -886,7 +974,7 @@ mod tests {
         let ctx = Context::new().with_string("key", "a");
 
         // "a" equals the first policy value, so NOR is false.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringNotEquals,
             "key",
@@ -897,7 +985,7 @@ mod tests {
 
         // "c" differs from every policy value, so NOR is true.
         let ctx_c = Context::new().with_string("key", "c");
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx_c,
             &IAMOperator::StringNotEquals,
             "key",
@@ -918,7 +1006,7 @@ mod tests {
         );
 
         // "b" matches no policy value -> true.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::ForAnyValueStringNotEquals,
             "key",
@@ -928,7 +1016,7 @@ mod tests {
         assert!(result);
 
         // Both request values match a policy value -> false.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::ForAnyValueStringNotEquals,
             "key",
@@ -949,7 +1037,7 @@ mod tests {
             ContextValue::StringList(vec!["environment".to_string(), "costcenter".to_string()]),
         );
         // At least one tag key matches -> true.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::ForAnyValueStringEquals,
             "aws:TagKeys",
@@ -964,7 +1052,7 @@ mod tests {
             "aws:TagKeys".to_string(),
             ContextValue::StringList(vec!["Environment".to_string()]),
         );
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx_case,
             &IAMOperator::ForAnyValueStringEquals,
             "aws:TagKeys",
@@ -983,7 +1071,7 @@ mod tests {
             ]),
         );
         // Every ARN matches at least one policy pattern -> true.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx_arns,
             &IAMOperator::ForAllValuesArnLike,
             "logs:LogGeneratingResourceArns",
@@ -1003,7 +1091,7 @@ mod tests {
                 "arn:aws:cloudfront::777788889999:distribution/costcenter".to_string(),
             ]),
         );
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx_arns_out,
             &IAMOperator::ForAllValuesArnLike,
             "logs:LogGeneratingResourceArns",
@@ -1018,7 +1106,7 @@ mod tests {
         // ArnNotLike with multiple values is a logical NOR (aws:PrincipalArn).
         let ctx_principal =
             Context::new().with_string("aws:PrincipalArn", "arn:aws:iam::222222222222:user/Nikki");
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx_principal,
             &IAMOperator::ArnNotLike,
             "aws:PrincipalArn",
@@ -1032,7 +1120,7 @@ mod tests {
 
         let ctx_principal_mary =
             Context::new().with_string("aws:PrincipalArn", "arn:aws:iam::222222222222:user/Mary");
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx_principal_mary,
             &IAMOperator::ArnNotLike,
             "aws:PrincipalArn",
@@ -1048,7 +1136,7 @@ mod tests {
     #[test]
     fn test_evaluate_condition_string_equals_ignore_case() {
         let ctx = create_test_context();
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringEqualsIgnoreCase,
             "string_key",
@@ -1057,7 +1145,7 @@ mod tests {
         .unwrap();
         assert!(result);
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringEqualsIgnoreCase,
             "string_key",
@@ -1070,7 +1158,7 @@ mod tests {
     #[test]
     fn test_evaluate_condition_string_like() {
         let ctx = create_test_context();
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringLike,
             "string_key",
@@ -1079,7 +1167,7 @@ mod tests {
         .unwrap();
         assert!(result);
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringLike,
             "string_key",
@@ -1094,7 +1182,7 @@ mod tests {
         let ctx = create_test_context();
 
         // NumericEquals
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::NumericEquals,
             "numeric_key",
@@ -1104,7 +1192,7 @@ mod tests {
         assert!(result);
 
         // NumericLessThan
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::NumericLessThan,
             "numeric_key",
@@ -1114,7 +1202,7 @@ mod tests {
         assert!(result);
 
         // NumericGreaterThan
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::NumericGreaterThan,
             "numeric_key",
@@ -1124,7 +1212,7 @@ mod tests {
         assert!(result);
 
         // Test with string that can be parsed as number
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::NumericEquals,
             "numeric_string",
@@ -1142,7 +1230,7 @@ mod tests {
         ctx.insert("key".to_string(), ContextValue::Number(1e-17));
 
         // 1e-17 != 2e-17.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::NumericEquals,
             "key",
@@ -1152,7 +1240,7 @@ mod tests {
         assert!(!result);
 
         // Exact match still works.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::NumericEquals,
             "key",
@@ -1162,7 +1250,7 @@ mod tests {
         assert!(result);
 
         // NumericNotEquals for the differing values.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::NumericNotEquals,
             "key",
@@ -1180,7 +1268,7 @@ mod tests {
         // treats such values as effectively null. Previously these errored.
         let ctx = Context::new().with_string("num_key", "not-a-number");
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::NumericEquals,
             "num_key",
@@ -1189,7 +1277,7 @@ mod tests {
         .unwrap();
         assert!(!result);
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::NumericNotEquals,
             "num_key",
@@ -1202,7 +1290,7 @@ mod tests {
         // the same way.
         let ctx = Context::new().with_boolean("num_key", true);
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::NumericEquals,
             "num_key",
@@ -1211,7 +1299,7 @@ mod tests {
         .unwrap();
         assert!(!result);
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::NumericNotEquals,
             "num_key",
@@ -1223,7 +1311,7 @@ mod tests {
         // Date operators: unparseable string context.
         let ctx = Context::new().with_string("date_key", "not-a-date");
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::DateEquals,
             "date_key",
@@ -1232,7 +1320,7 @@ mod tests {
         .unwrap();
         assert!(!result);
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::DateNotEquals,
             "date_key",
@@ -1244,7 +1332,7 @@ mod tests {
         // String operators: a wrong-typed context value is non-comparable too.
         let ctx = Context::new().with_number("str_key", 42.0);
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringEquals,
             "str_key",
@@ -1253,7 +1341,7 @@ mod tests {
         .unwrap();
         assert!(!result);
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringNotEquals,
             "str_key",
@@ -1266,7 +1354,7 @@ mod tests {
     #[test]
     fn test_evaluate_condition_boolean() {
         let ctx = create_test_context();
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::Bool,
             "bool_key",
@@ -1275,7 +1363,7 @@ mod tests {
         .unwrap();
         assert!(result);
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::Bool,
             "bool_key",
@@ -1290,7 +1378,7 @@ mod tests {
         let ctx = create_test_context();
 
         // DateEquals with ISO 8601 string
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::DateEquals,
             "datetime_key",
@@ -1300,7 +1388,7 @@ mod tests {
         assert!(result);
 
         // DateLessThan
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::DateLessThan,
             "datetime_key",
@@ -1310,7 +1398,7 @@ mod tests {
         assert!(result);
 
         // Test with string context value
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::DateEquals,
             "date_key",
@@ -1320,7 +1408,7 @@ mod tests {
         assert!(result);
 
         // Test with epoch time
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::DateEquals,
             "datetime_key",
@@ -1335,7 +1423,7 @@ mod tests {
         let ctx = create_test_context();
 
         // IpAddress - check if IP is in CIDR range
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::IpAddress,
             "ip_key",
@@ -1345,7 +1433,7 @@ mod tests {
         assert!(result);
 
         // NotIpAddress
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::NotIpAddress,
             "ip_key",
@@ -1360,7 +1448,7 @@ mod tests {
         let ctx = create_test_context();
 
         // Key exists - should return false when checking if null
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::Null,
             "string_key",
@@ -1370,7 +1458,7 @@ mod tests {
         assert!(!result);
 
         // Key doesn't exist - should return true when checking if null
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::Null,
             "nonexistent_key",
@@ -1380,7 +1468,7 @@ mod tests {
         assert!(result);
 
         // Key exists - should return true when checking if not null
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::Null,
             "string_key",
@@ -1396,7 +1484,7 @@ mod tests {
 
         // AWS IAM policies commonly use the string form "true"/"false".
         // Key exists, checking "false" (key is not null) -> true.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::Null,
             "string_key",
@@ -1406,7 +1494,7 @@ mod tests {
         assert!(result);
 
         // Key exists, checking "true" (is null) -> false.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::Null,
             "string_key",
@@ -1416,7 +1504,7 @@ mod tests {
         assert!(!result);
 
         // Missing key, checking "true" (is null) -> true.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::Null,
             "nonexistent_key",
@@ -1426,7 +1514,7 @@ mod tests {
         assert!(result);
 
         // Missing key, checking "false" (is null) -> false.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::Null,
             "nonexistent_key",
@@ -1436,7 +1524,7 @@ mod tests {
         assert!(!result);
 
         // A non-boolean string is still an error.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::Null,
             "string_key",
@@ -1450,7 +1538,7 @@ mod tests {
         let ctx = create_test_context();
 
         // Key exists and matches
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringEqualsIfExists,
             "string_key",
@@ -1460,7 +1548,7 @@ mod tests {
         assert!(result);
 
         // Key doesn't exist - should return true for IfExists operators
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringEqualsIfExists,
             "nonexistent_key",
@@ -1470,7 +1558,7 @@ mod tests {
         assert!(result);
 
         // Key exists but doesn't match
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringEqualsIfExists,
             "string_key",
@@ -1485,7 +1573,7 @@ mod tests {
         let ctx = create_test_context();
 
         // ForAnyValue:StringEquals - should return true if any value matches
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::ForAnyValueStringEquals,
             "string_list",
@@ -1495,7 +1583,7 @@ mod tests {
         assert!(result);
 
         // ForAnyValue:StringEquals - should return false if no value matches
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::ForAnyValueStringEquals,
             "string_list",
@@ -1505,7 +1593,7 @@ mod tests {
         assert!(!result);
 
         // ForAnyValue:Bool
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::ForAnyValueBool,
             "bool_list",
@@ -1531,7 +1619,7 @@ mod tests {
         );
 
         // ForAllValues:StringEquals - should return true if all values match
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx_all_same,
             &IAMOperator::ForAllValuesStringEquals,
             "all_same",
@@ -1541,7 +1629,7 @@ mod tests {
         assert!(result);
 
         // ForAllValues:StringEquals - should return false if not all values match
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::ForAllValuesStringEquals,
             "string_list",
@@ -1562,7 +1650,7 @@ mod tests {
         ]);
 
         let result =
-            evaluate_condition(&ctx, &IAMOperator::StringEquals, "string_key", &array_value)
+            evaluate_condition_json(&ctx, &IAMOperator::StringEquals, "string_key", &array_value)
                 .unwrap();
         assert!(result); // Should return true because one of the values matches
     }
@@ -1573,7 +1661,7 @@ mod tests {
 
         // A plain operator against a multivalued context key matches if any
         // value matches (implicit ForAnyValue semantics).
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringEquals,
             "string_list",
@@ -1583,7 +1671,7 @@ mod tests {
         assert!(result);
 
         // No value matches -> false.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringEquals,
             "string_list",
@@ -1593,7 +1681,7 @@ mod tests {
         assert!(!result);
 
         // Negated plain operator: any value not equal -> true.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringNotEquals,
             "string_list",
@@ -1603,7 +1691,7 @@ mod tests {
         assert!(result);
 
         // Boolean multivalued context.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::Bool,
             "bool_list",
@@ -1618,7 +1706,7 @@ mod tests {
         // AWS: context key names are case-insensitive (aws:SourceIP == AWS:SourceIp).
         let ctx = Context::new().with_string("AWS:USERNAME", "alice");
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringEquals,
             "aws:username",
@@ -1633,7 +1721,7 @@ mod tests {
         let ctx = create_test_context();
 
         // String operator with non-string context value
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringEquals,
             "numeric_key",
@@ -1646,7 +1734,7 @@ mod tests {
         // number: non-comparable, so the condition is false (no error).
         let ctx_with_unparseable = Context::new().with_string("unparseable_string", "not_a_number");
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx_with_unparseable,
             &IAMOperator::NumericEquals,
             "unparseable_string",
@@ -1656,7 +1744,7 @@ mod tests {
         assert!(!result);
 
         // Boolean operator with non-boolean context value
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::Bool,
             "string_key",
@@ -1671,7 +1759,7 @@ mod tests {
         let ctx = create_test_context();
 
         // String operator with non-string value
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringEquals,
             "string_key",
@@ -1680,7 +1768,7 @@ mod tests {
         assert!(result.is_err());
 
         // Numeric operator with non-numeric value
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::NumericEquals,
             "numeric_key",
@@ -1689,7 +1777,7 @@ mod tests {
         assert!(result.is_err());
 
         // Boolean operator with non-boolean value
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::Bool,
             "bool_key",
@@ -1698,7 +1786,7 @@ mod tests {
         assert!(result.is_err());
 
         // Date operator with invalid date string
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::DateEquals,
             "date_key",
@@ -1707,7 +1795,7 @@ mod tests {
         assert!(result.is_err());
 
         // IP operator with invalid IP string
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::IpAddress,
             "ip_key",
@@ -1716,7 +1804,7 @@ mod tests {
         assert!(result.is_err());
 
         // Null operator with non-boolean value
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::Null,
             "string_key",
@@ -1725,7 +1813,7 @@ mod tests {
         assert!(result.is_err());
 
         // Multivalued context without set operator matches if any value matches.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringEquals,
             "string_list",
@@ -1739,7 +1827,7 @@ mod tests {
     fn test_evaluate_condition_binary_equals() {
         let ctx = Context::new().with_string("binary_key", "SGVsbG8gV29ybGQ="); // "Hello World" in base64
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::BinaryEquals,
             "binary_key",
@@ -1749,7 +1837,7 @@ mod tests {
         assert!(result);
 
         // Test case insensitive and padding removal
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::BinaryEquals,
             "binary_key",
@@ -1789,7 +1877,7 @@ mod tests {
         // A fractional epoch context value and condition value must match.
         let ctx = Context::new().with_number("epoch_key", 1_704_067_200.5);
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::DateEquals,
             "epoch_key",
@@ -1805,7 +1893,7 @@ mod tests {
         // e.g. "DateLessThan": {"aws:EpochTime": 1704067200}.
         let ctx = Context::new().with_number("epoch_key", 1_704_067_200.5);
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::DateEquals,
             "epoch_key",
@@ -1815,7 +1903,7 @@ mod tests {
         assert!(result);
 
         // A different numeric epoch must not match.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::DateEquals,
             "epoch_key",
@@ -1855,7 +1943,7 @@ mod tests {
         let ctx = create_test_context();
 
         // Test ForAnyValue prefix detection
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::ForAnyValueStringEquals,
             "string_list",
@@ -1871,7 +1959,7 @@ mod tests {
             ContextValue::StringList(vec!["same".to_string(), "same".to_string()]),
         );
 
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx_all_same,
             &IAMOperator::ForAllValuesStringEquals,
             "all_same",
@@ -1886,7 +1974,7 @@ mod tests {
         let ctx = Context::new().with_string("arn_key", "arn:aws:s3:::my-bucket/*");
 
         // ArnEquals
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::ArnEquals,
             "arn_key",
@@ -1896,7 +1984,7 @@ mod tests {
         assert!(result);
 
         // ArnLike with wildcard
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::ArnLike,
             "arn_key",
@@ -1906,7 +1994,7 @@ mod tests {
         assert!(result);
 
         // ArnNotEquals
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::ArnNotEquals,
             "arn_key",
@@ -1924,7 +2012,7 @@ mod tests {
             .with_string("invalid_date", "not_a_date");
 
         // Unparseable numeric string context: non-comparable -> no match.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::NumericEquals,
             "invalid_numeric",
@@ -1934,7 +2022,7 @@ mod tests {
         assert!(!result);
 
         // Unparseable IP string context: non-comparable -> no match.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::IpAddress,
             "invalid_ip",
@@ -1944,7 +2032,7 @@ mod tests {
         assert!(!result);
 
         // Unparseable date string context: non-comparable -> no match.
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::DateEquals,
             "invalid_date",
@@ -1959,7 +2047,7 @@ mod tests {
         let ctx = Context::new(); // Empty context
 
         // Non-IfExists operators should return false for missing keys
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringEquals,
             "missing_key",
@@ -1971,7 +2059,7 @@ mod tests {
         // Negated operators (e.g. StringNotEquals) return true for a missing
         // key: "NOT (key == value)" holds when the key is absent. Non-negated
         // operators return false instead (see test_missing_key_negated_operators).
-        let result = evaluate_condition(
+        let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::StringNotEquals,
             "missing_key",
@@ -1979,5 +2067,86 @@ mod tests {
         )
         .unwrap();
         assert!(result);
+    }
+
+    /// The evaluator reads `ConditionValue` directly, so each variant must mean
+    /// what the JSON form it came from meant.
+    #[test]
+    fn test_evaluate_condition_reads_condition_value_variants() {
+        let ctx = create_test_context();
+
+        // Numeric: a JSON number and a numeric string both compare as numbers,
+        // an unparseable string is still an error.
+        for value in [
+            ConditionValue::Number(serde_json::Number::from(42)),
+            ConditionValue::String("42".to_string()),
+        ] {
+            assert!(
+                evaluate_condition(&ctx, &IAMOperator::NumericEquals, "numeric_key", &value)
+                    .unwrap(),
+                "{value:?} should equal 42"
+            );
+        }
+        assert!(
+            evaluate_condition(
+                &ctx,
+                &IAMOperator::NumericEquals,
+                "numeric_key",
+                &ConditionValue::String("not_a_number".to_string()),
+            )
+            .is_err()
+        );
+
+        // A list-valued condition matches when any element matches.
+        assert!(
+            evaluate_condition(
+                &ctx,
+                &IAMOperator::StringEquals,
+                "string_key",
+                &ConditionValue::StringList(vec!["other".to_string(), "test_value".to_string()]),
+            )
+            .unwrap()
+        );
+        assert!(
+            !evaluate_condition(
+                &ctx,
+                &IAMOperator::StringEquals,
+                "string_key",
+                &ConditionValue::StringList(vec!["other".to_string()]),
+            )
+            .unwrap()
+        );
+
+        // Booleans: the JSON boolean and its string form both work.
+        assert!(
+            evaluate_condition(
+                &ctx,
+                &IAMOperator::Bool,
+                "bool_key",
+                &ConditionValue::Boolean(true),
+            )
+            .unwrap()
+        );
+        assert!(
+            evaluate_condition(
+                &ctx,
+                &IAMOperator::Bool,
+                "bool_key",
+                &ConditionValue::String("true".to_string()),
+            )
+            .unwrap()
+        );
+
+        // Dates: ISO 8601, and Unix epoch as either a string or a number.
+        for value in [
+            ConditionValue::String("2024-01-01T00:00:00Z".to_string()),
+            ConditionValue::String("1704067200".to_string()),
+            ConditionValue::Number(serde_json::Number::from(1_704_067_200)),
+        ] {
+            assert!(
+                evaluate_condition(&ctx, &IAMOperator::DateEquals, "date_key", &value).unwrap(),
+                "{value:?} should equal the context date"
+            );
+        }
     }
 }
