@@ -4,7 +4,7 @@ use crate::{
     core::{IAMAction, IAMEffect, IAMResource, Principal, PrincipalId},
     evaluation::{
         operator_eval::{evaluate_condition, wildcard_match},
-        variable::interpolate_variables,
+        variable::interpolate_variables_checked,
     },
     policy::{ConditionBlock, ConditionValue, IAMPolicy, IAMStatement},
 };
@@ -184,8 +184,15 @@ impl CompiledResourcePattern {
                 .map_err(|e| EvaluationError::InvalidArn(e.to_string())),
             Self::Static(Err(message)) => Err(EvaluationError::InvalidArn(message.clone())),
             Self::Dynamic => {
-                let interpolated = interpolate_variables(pattern, context)?;
-                let matcher = ArnMatcher::from_pattern(&interpolated)
+                let interpolation = interpolate_variables_checked(pattern, context)?;
+                // AWS: "the resource that includes a policy variable with no
+                // value will not match any resource". Substituting the empty
+                // string instead would let `home/${aws:username}*` match every
+                // user's prefix.
+                if interpolation.unresolved {
+                    return Ok(false);
+                }
+                let matcher = ArnMatcher::from_pattern(&interpolation.text)
                     .map_err(|e| EvaluationError::InvalidArn(e.to_string()))?;
                 matcher
                     .matches(request_resource)
@@ -792,10 +799,34 @@ impl PolicyEvaluator {
                 // against the request context before comparing, for the string
                 // and ARN operators — the same set this crate reports through
                 // `supports_policy_variables`.
-                let value = if operator.supports_policy_variables() {
+                let interpolated = if operator.supports_policy_variables() {
                     interpolate_condition_value(value, context)?
                 } else {
-                    Cow::Borrowed(value)
+                    Interpolated::Resolved(Cow::Borrowed(value))
+                };
+                let value = match interpolated {
+                    Interpolated::Resolved(value) => value,
+                    Interpolated::Unresolved => {
+                        // A variable with no value is null, so it equals nothing.
+                        // When the condition key is itself absent there is nothing
+                        // to compare either way, and the operator's own missing-key
+                        // rule decides (`ForAllValues` true, `ForAnyValue` false,
+                        // `...IfExists` true, negated true) — so let it decide,
+                        // with a value that cannot be reached.
+                        if context.get(key).is_none() {
+                            let placeholder = ConditionValue::String(String::new());
+                            if !evaluate_condition(context, operator, key, &placeholder)? {
+                                return Ok(false);
+                            }
+                            continue;
+                        }
+                        // The key is present: a null policy value matches no
+                        // positive operator, and therefore matches a negated one.
+                        if !operator.is_negated_operator() {
+                            return Ok(false);
+                        }
+                        continue;
+                    }
                 };
                 if !evaluate_condition(context, operator, key, &value)? {
                     return Ok(false);
@@ -806,6 +837,15 @@ impl PolicyEvaluator {
     }
 }
 
+/// A condition value after policy variables have been resolved.
+enum Interpolated<'a> {
+    /// Every variable had a value, or there was none to resolve.
+    Resolved(Cow<'a, ConditionValue>),
+    /// At least one variable had no value and no default, which AWS treats as
+    /// null rather than as an empty string.
+    Unresolved,
+}
+
 /// Resolve policy variables in a condition value against the request context.
 ///
 /// Returns the value unchanged, without allocating, when it holds no `${...}`.
@@ -814,19 +854,31 @@ impl PolicyEvaluator {
 fn interpolate_condition_value<'a>(
     value: &'a ConditionValue,
     context: &Context,
-) -> Result<Cow<'a, ConditionValue>, EvaluationError> {
+) -> Result<Interpolated<'a>, EvaluationError> {
     match value {
-        ConditionValue::String(text) if text.contains("${") => Ok(Cow::Owned(
-            ConditionValue::String(interpolate_variables(text, context)?),
-        )),
-        ConditionValue::StringList(list) if list.iter().any(|item| item.contains("${")) => {
-            let resolved = list
-                .iter()
-                .map(|item| interpolate_variables(item, context))
-                .collect::<Result<Vec<_>, _>>()?;
-            Ok(Cow::Owned(ConditionValue::StringList(resolved)))
+        ConditionValue::String(text) if text.contains("${") => {
+            let interpolation = interpolate_variables_checked(text, context)?;
+            if interpolation.unresolved {
+                return Ok(Interpolated::Unresolved);
+            }
+            Ok(Interpolated::Resolved(Cow::Owned(ConditionValue::String(
+                interpolation.text,
+            ))))
         }
-        _ => Ok(Cow::Borrowed(value)),
+        ConditionValue::StringList(list) if list.iter().any(|item| item.contains("${")) => {
+            let mut resolved = Vec::with_capacity(list.len());
+            for item in list {
+                let interpolation = interpolate_variables_checked(item, context)?;
+                if interpolation.unresolved {
+                    return Ok(Interpolated::Unresolved);
+                }
+                resolved.push(interpolation.text);
+            }
+            Ok(Interpolated::Resolved(Cow::Owned(
+                ConditionValue::StringList(resolved),
+            )))
+        }
+        _ => Ok(Interpolated::Resolved(Cow::Borrowed(value))),
     }
 }
 
@@ -2382,6 +2434,114 @@ mod tests {
                 ("aws:username", "alice"),
             ],
         );
+        assert_eq!(evaluate_policy(&policy, &request).unwrap(), Decision::Allow);
+    }
+
+    fn unresolved_variable_policy(resource: &str) -> IAMPolicy {
+        IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                .with_resource(IAMResource::Single(resource.to_string())),
+        )
+    }
+
+    #[test]
+    fn test_unresolved_variable_matches_no_resource() {
+        // AWS: "the resource that includes a policy variable with no value will
+        // not match any resource". Substituting the empty string instead would
+        // turn `home/${aws:username}*` into `home/*` and match every user.
+        let policy = unresolved_variable_policy("arn:aws:s3:::home/${aws:username}*");
+        let request = request_with_context("s3:GetObject", "arn:aws:s3:::home/bob/secret", &[]);
+        assert_eq!(
+            evaluate_policy(&policy, &request).unwrap(),
+            Decision::NotApplicable
+        );
+
+        // With the key present the pattern resolves and matches as usual.
+        let resolved = request_with_context(
+            "s3:GetObject",
+            "arn:aws:s3:::home/bob/secret",
+            &[("aws:username", "bob")],
+        );
+        assert_eq!(
+            evaluate_policy(&policy, &resolved).unwrap(),
+            Decision::Allow
+        );
+    }
+
+    #[test]
+    fn test_unresolved_variable_matches_no_positive_condition() {
+        let policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("s3:ListBucket".to_string()))
+                .with_resource(IAMResource::Single("arn:aws:s3:::bucket".to_string()))
+                .with_condition(
+                    IAMOperator::StringLike,
+                    "s3:prefix".to_string(),
+                    ConditionValue::String("${aws:PrincipalTag/team}*".to_string()),
+                ),
+        );
+        // A principal with no `team` tag must not get a `*` pattern.
+        let request = request_with_context(
+            "s3:ListBucket",
+            "arn:aws:s3:::bucket",
+            &[("s3:prefix", "anything")],
+        );
+        assert_eq!(
+            evaluate_policy(&policy, &request).unwrap(),
+            Decision::NotApplicable
+        );
+    }
+
+    #[test]
+    fn test_unresolved_variable_still_satisfies_a_negated_operator() {
+        // A null value equals nothing, so `StringNotEquals` matches — which is
+        // what makes the documented "deny everyone but the owner" pattern deny.
+        let policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Deny)
+                .with_action(IAMAction::Single("s3:*".to_string()))
+                .with_resource(IAMResource::Single("*".to_string()))
+                .with_condition(
+                    IAMOperator::StringNotEquals,
+                    "s3:ExistingObjectTag/Team".to_string(),
+                    ConditionValue::String("${aws:PrincipalTag/Team}".to_string()),
+                ),
+        );
+        let request = request_with_context(
+            "s3:GetObject",
+            "arn:aws:s3:::bucket/object",
+            &[("s3:ExistingObjectTag/Team", "media")],
+        );
+        assert_eq!(evaluate_policy(&policy, &request).unwrap(), Decision::Deny);
+    }
+
+    #[test]
+    fn test_unresolved_variable_leaves_missing_key_rules_alone() {
+        // The variable has no value *and* the condition key is absent. The
+        // operator's missing-key rule decides: `ForAllValues` is true.
+        let policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("dynamodb:PutItem".to_string()))
+                .with_resource(IAMResource::Single("*".to_string()))
+                .with_condition(
+                    IAMOperator::ForAllValuesStringEquals,
+                    "dynamodb:LeadingKeys".to_string(),
+                    ConditionValue::String("${cognito-identity.amazonaws.com:sub}".to_string()),
+                ),
+        );
+        let request = request_with_context(
+            "dynamodb:PutItem",
+            "arn:aws:dynamodb:us-east-1:123456789012:table/T",
+            &[],
+        );
+        assert_eq!(evaluate_policy(&policy, &request).unwrap(), Decision::Allow);
+    }
+
+    #[test]
+    fn test_unresolved_variable_keeps_policy_authored_defaults_working() {
+        let policy = unresolved_variable_policy("arn:aws:s3:::home/${aws:username, 'anonymous'}/*");
+        let request =
+            request_with_context("s3:GetObject", "arn:aws:s3:::home/anonymous/report", &[]);
         assert_eq!(evaluate_policy(&policy, &request).unwrap(), Decision::Allow);
     }
 }
