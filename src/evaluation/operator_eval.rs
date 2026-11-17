@@ -341,6 +341,22 @@ pub(super) fn evaluate_condition(
 ///   (every policy value must hold).
 /// * `ForAllValues` with a missing or empty context resolves to true;
 ///   `ForAnyValue` with a missing or empty context resolves to false.
+// The result of a set operator when the request carries no values for the key.
+//
+// AWS: "The `ForAllValues` qualifier returns true if there are no context keys in
+// the request or if the context key value resolves to a null dataset, such as an
+// empty string." A key that is absent, an empty string, or an empty list all mean
+// the same thing here: there are no request values to test.
+//
+// The negated forms are the exception, on the evidence of AWS's own set-operator
+// evaluation table, which gives `ForAllValues:StringNotLike` with "no
+// `aws:ResourceOrgPaths` in the request" as no-match: they assert something about
+// the request's values ("none of them matches"), which cannot hold when there are
+// none.
+const fn set_operator_without_request_values(for_all_values: bool, negated: bool) -> bool {
+    for_all_values && !negated
+}
+
 fn evaluate_set_operator(
     ctx: &Context,
     operator: &IAMOperator,
@@ -381,6 +397,9 @@ fn evaluate_set_operator(
             };
 
             match ctx.get(key) {
+                Some(ContextValue::StringList(list)) if list.is_empty() => Ok(
+                    set_operator_without_request_values(for_all_values, all_policy_values),
+                ),
                 Some(ContextValue::StringList(list)) => {
                     if for_all_values {
                         Ok(list.iter().all(satisfies))
@@ -388,17 +407,17 @@ fn evaluate_set_operator(
                         Ok(list.iter().any(satisfies))
                     }
                 }
-                // A scalar context behaves like a single-element set.
+                // A scalar context behaves like a single-element set, except that
+                // an empty string is a null dataset rather than a value.
+                Some(ContextValue::String(s)) if s.is_empty() => Ok(
+                    set_operator_without_request_values(for_all_values, all_policy_values),
+                ),
                 Some(ContextValue::String(s)) => Ok(satisfies(s)),
                 Some(_) => Ok(false), // Type mismatch
-                // AWS's evaluation table for the set operators gives
-                // `ForAllValues:StringNotLike` with "no aws:ResourceOrgPaths in
-                // the request" as *no match*: the negated forms are defined as
-                // "none of the request values matches any policy value", and an
-                // absent key has no request values to satisfy that with. So a
-                // negated set operator does not match when the key is missing,
-                // even under `ForAllValues`.
-                None => Ok(for_all_values && !all_policy_values),
+                None => Ok(set_operator_without_request_values(
+                    for_all_values,
+                    all_policy_values,
+                )),
             }
         }
         OperatorType::Boolean => {
@@ -422,6 +441,9 @@ fn evaluate_set_operator(
             };
 
             match ctx.get(key) {
+                Some(ContextValue::BooleanList(list)) if list.is_empty() => Ok(
+                    set_operator_without_request_values(for_all_values, all_policy_values),
+                ),
                 Some(ContextValue::BooleanList(list)) => {
                     if for_all_values {
                         Ok(list.iter().all(satisfies))
@@ -431,14 +453,10 @@ fn evaluate_set_operator(
                 }
                 Some(ContextValue::Boolean(b)) => Ok(satisfies(b)),
                 Some(_) => Ok(false), // Type mismatch
-                // AWS's evaluation table for the set operators gives
-                // `ForAllValues:StringNotLike` with "no aws:ResourceOrgPaths in
-                // the request" as *no match*: the negated forms are defined as
-                // "none of the request values matches any policy value", and an
-                // absent key has no request values to satisfy that with. So a
-                // negated set operator does not match when the key is missing,
-                // even under `ForAllValues`.
-                None => Ok(for_all_values && !all_policy_values),
+                None => Ok(set_operator_without_request_values(
+                    for_all_values,
+                    all_policy_values,
+                )),
             }
         }
         // Set operators are only defined for string/ARN/boolean operators.
@@ -1258,6 +1276,53 @@ mod tests {
         )
         .unwrap();
         assert!(result);
+    }
+
+    #[test]
+    fn test_set_operator_null_dataset_matches_a_missing_key() {
+        // AWS: ForAllValues "returns true if there are no context keys in the
+        // request or if the context key value resolves to a null dataset, such as
+        // an empty string". An empty list is the same thing. All three must agree,
+        // for the positive and the negated forms alike.
+        let policy = serde_json::json!(["a", "b"]);
+        let cases = [
+            (IAMOperator::ForAllValuesStringEquals, true),
+            (IAMOperator::ForAnyValueStringEquals, false),
+            (IAMOperator::ForAllValuesStringNotEquals, false),
+            (IAMOperator::ForAnyValueStringNotEquals, false),
+        ];
+
+        for (operator, expected) in cases {
+            let mut context = Context::new();
+            let absent = evaluate_condition_json(&context, &operator, "k", &policy).unwrap();
+            assert_eq!(absent, expected, "{operator:?} with the key absent");
+
+            context.insert("k".to_string(), ContextValue::String(String::new()));
+            let empty_string = evaluate_condition_json(&context, &operator, "k", &policy).unwrap();
+            assert_eq!(
+                empty_string, expected,
+                "{operator:?} must treat an empty string as a null dataset"
+            );
+
+            context.insert("k".to_string(), ContextValue::StringList(Vec::new()));
+            let empty_list = evaluate_condition_json(&context, &operator, "k", &policy).unwrap();
+            assert_eq!(
+                empty_list, expected,
+                "{operator:?} must treat an empty list as a null dataset"
+            );
+        }
+
+        // A real value still decides normally.
+        let context = Context::new().with_string("k", "a");
+        assert!(
+            evaluate_condition_json(
+                &context,
+                &IAMOperator::ForAllValuesStringEquals,
+                "k",
+                &policy
+            )
+            .unwrap()
+        );
     }
 
     #[test]
