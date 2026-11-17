@@ -111,6 +111,12 @@ To regenerate, run and save the printed output:
 cargo test --features utoipa test_generate_openapi_spec -- --nocapture
 ```
 
+**The release PR must regenerate it too.** Because `info.version` is stripped from the comparison, a
+version bump alone leaves the snapshot's own `"version"` line stale without any test failing — and
+`tests/spec.json` is packaged inside the `.crate`, so a consumer reading it sees the wrong version.
+That happened in 0.15.0 and had to be corrected in 0.15.1. Adding the regeneration step to the release
+PR costs one command and keeps the published snapshot honest.
+
 ## Releases
 
 Publishing is bound to a tag push and nothing else. Workflow: [.github/workflows/release.yml](.github/workflows/release.yml).
