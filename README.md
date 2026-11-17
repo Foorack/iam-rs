@@ -204,6 +204,11 @@ used in `"aws:ResourceTag/Owner": "${aws:username}"` resolves per request, which
 AWS documents "let users manage their own resources". `Action` is compared literally, and
 a condition *key* is never interpolated.
 
+Variables require `Version: 2012-10-17`. In a policy with any other `Version` — including
+`2008-10-17`, which predates them — `${...}` is literal text, as in AWS, so
+`arn:aws:s3:::b/${aws:username}` matches only that literal resource name. Evaluation still
+runs normally; `validate()` continues to reject every version but `2012-10-17`.
+
 ### Variables with Default Values
 
 ```rust
