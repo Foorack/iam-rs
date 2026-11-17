@@ -3773,4 +3773,104 @@ mod tests {
             );
         }
     }
+
+    // AWS managed policies are owned by AWS itself and carry the reserved
+    // account `aws`, in every partition. Such a resource is data, not a policy
+    // pattern, so the request must be decided instead of rejected.
+    #[test]
+    fn test_aws_owned_policy_resource_is_decided() {
+        let policy = IAMPolicy::from_json(
+            r#"{"Version":"2012-10-17","Statement":{"Effect":"Allow","Action":"*","Resource":"*"}}"#,
+        )
+        .unwrap();
+
+        for resource in [
+            "arn:aws:iam::aws:policy/AdministratorAccess",
+            "arn:aws-us-gov:iam::aws:policy/AdministratorAccess",
+            "arn:aws-cn:iam::aws:policy/AdministratorAccess",
+        ] {
+            let request = IAMRequest::new(
+                Principal::Aws(PrincipalId::String(
+                    "arn:aws:iam::111122223333:user/alice".into(),
+                )),
+                "iam:AttachRolePolicy",
+                Arn::parse(resource).unwrap(),
+            );
+
+            assert_eq!(
+                evaluate_policy(&policy, &request).unwrap(),
+                Decision::Allow,
+                "a request whose resource is '{resource}' must be decided"
+            );
+        }
+    }
+
+    // Regression guard: an ordinary 12-digit account resource keeps deciding.
+    #[test]
+    fn test_numeric_account_request_resource_is_decided() {
+        let policy = IAMPolicy::from_json(
+            r#"{"Version":"2012-10-17","Statement":{"Effect":"Allow","Action":"*","Resource":"*"}}"#,
+        )
+        .unwrap();
+
+        let request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::111122223333:user/alice".into(),
+            )),
+            "iam:AttachRolePolicy",
+            Arn::parse("arn:aws:iam::111122223333:policy/AdministratorAccess").unwrap(),
+        );
+
+        assert_eq!(evaluate_policy(&policy, &request).unwrap(), Decision::Allow);
+    }
+
+    // The reserved account is a single exception: a malformed account is still
+    // an invalid request resource. `Arn::parse` is lenient, so such an ARN can
+    // reach `IAMRequest` and must be rejected before any statement runs.
+    #[test]
+    fn test_invalid_request_resource_is_still_rejected() {
+        let policy = IAMPolicy::from_json(
+            r#"{"Version":"2012-10-17","Statement":{"Effect":"Allow","Action":"*","Resource":"*"}}"#,
+        )
+        .unwrap();
+
+        let request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::111122223333:user/alice".into(),
+            )),
+            "iam:AttachRolePolicy",
+            Arn::parse("arn:aws:iam::not-an-account:policy/AdministratorAccess").unwrap(),
+        );
+
+        let error = evaluate_policy(&policy, &request)
+            .expect_err("a malformed request resource must not be decided");
+        assert_eq!(
+            error,
+            EvaluationError::InvalidRequest("Invalid resource ARN".to_string())
+        );
+    }
+
+    // Accepting the reserved account says nothing about what a *policy* may
+    // declare, nor about principal validation: bare account IDs and ARNs keep
+    // validating, non-ARN strings keep failing.
+    #[test]
+    fn test_reserved_aws_account_does_not_loosen_document_validation() {
+        let invalid_resource_policy = IAMPolicy::from_json(
+            r#"{"Version":"2012-10-17","Statement":{"Effect":"Allow","Action":"s3:GetObject","Resource":"not-an-arn"}}"#,
+        )
+        .unwrap();
+        assert!(
+            !invalid_resource_policy.is_valid(),
+            "policy validation must still reject a non-ARN Resource"
+        );
+
+        assert!(Principal::Aws(PrincipalId::String("123456789012".into())).is_valid());
+        assert!(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/alice".into()
+            ))
+            .is_valid()
+        );
+        assert!(!Principal::Aws(PrincipalId::String("not-a-principal".into())).is_valid());
+    }
 }
