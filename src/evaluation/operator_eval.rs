@@ -211,8 +211,16 @@ pub(super) fn evaluate_condition(
 
         // Binary conditions
         O::BinaryEquals | O::BinaryEqualsIfExists => {
-            predicate_str = Box::new(|a, b| {
-                a.to_lowercase().trim_end_matches('=') == b.to_lowercase().trim_end_matches('=')
+            // AWS: "compares the value of the specified key byte for byte against
+            // a base-64 encoded representation". Base64 is case-sensitive and its
+            // padding is significant, so decode both sides and compare the bytes
+            // instead of the encoded text.
+            validate_binary_values(value)?;
+            predicate_str = Box::new(|a, b| match (decode_base64(&a), decode_base64(&b)) {
+                (Some(a), Some(b)) => a == b,
+                // A context value that is not canonical base64 cannot be a
+                // byte-for-byte match for any valid policy value.
+                _ => false,
             });
         }
 
@@ -650,6 +658,103 @@ fn ev_ip(
 pub(super) fn wildcard_match(text: &str, pattern: &str) -> bool {
     // Use the ARN wildcard matching logic
     Arn::wildcard_match(text, pattern)
+}
+
+/// Verifies that every policy value of a binary condition is valid base64.
+///
+/// AWS treats a `BinaryEquals` policy value that is not base64 as an invalid
+/// policy, so this reports a [`EvaluationError::ConditionError`] instead of
+/// silently failing to match.
+fn validate_binary_values(value: &ConditionValue) -> Result<(), EvaluationError> {
+    let check = |encoded: &str| {
+        decode_base64(encoded).map(|_| ()).ok_or_else(|| {
+            EvaluationError::ConditionError(format!(
+                "Binary condition value must be valid base64, was {encoded:?}"
+            ))
+        })
+    };
+
+    match value {
+        ConditionValue::String(encoded) => check(encoded),
+        ConditionValue::StringList(list) => list.iter().try_for_each(|encoded| check(encoded)),
+        ConditionValue::Boolean(b) => Err(EvaluationError::ConditionError(format!(
+            "Binary condition value must be a base64-encoded string, was {b}"
+        ))),
+        ConditionValue::Number(n) => Err(EvaluationError::ConditionError(format!(
+            "Binary condition value must be a base64-encoded string, was {n}"
+        ))),
+    }
+}
+
+/// Value of a standard base64 (`RFC 4648`) alphabet character, as a sextet.
+const fn base64_sextet(byte: u8) -> Option<u8> {
+    match byte {
+        b'A'..=b'Z' => Some(byte - b'A'),
+        b'a'..=b'z' => Some(byte - b'a' + 26),
+        b'0'..=b'9' => Some(byte - b'0' + 52),
+        b'+' => Some(62),
+        b'/' => Some(63),
+        _ => None,
+    }
+}
+
+/// Decodes canonical base64 into the bytes it represents.
+///
+/// Only the canonical encoding is accepted: the standard alphabet, padding
+/// required to a multiple of four characters, and zero non-padding bits in the
+/// final quantum. That keeps the encoding of a given byte sequence unique, so
+/// alternate spellings such as `"YQ"`, `"YQ="` or `"YR=="` never decode to the
+/// same bytes as `"YQ=="`.
+fn decode_base64(encoded: &str) -> Option<Vec<u8>> {
+    if !encoded.len().is_multiple_of(4) {
+        return None;
+    }
+
+    let input = encoded.as_bytes();
+    let mut out = Vec::with_capacity(encoded.len() / 4 * 3);
+    let (chunks, _) = input.as_chunks::<4>();
+
+    for (index, chunk) in chunks.iter().enumerate() {
+        let is_last = index + 1 == chunks.len();
+        let padding = match (chunk[2] == b'=', chunk[3] == b'=') {
+            (false, false) => 0,
+            (true, true) => 2,
+            (false, true) => 1,
+            // `=` may only follow another `=` in the final quantum.
+            (true, false) => return None,
+        };
+        if padding > 0 && !is_last {
+            return None;
+        }
+
+        let a = base64_sextet(chunk[0])?;
+        let b = base64_sextet(chunk[1])?;
+        match padding {
+            0 => {
+                let c = base64_sextet(chunk[2])?;
+                let d = base64_sextet(chunk[3])?;
+                out.push((a << 2) | (b >> 4));
+                out.push((b << 4) | (c >> 2));
+                out.push((c << 6) | d);
+            }
+            1 => {
+                let c = base64_sextet(chunk[2])?;
+                if c & 0b11 != 0 {
+                    return None;
+                }
+                out.push((a << 2) | (b >> 4));
+                out.push((b << 4) | (c >> 2));
+            }
+            _ => {
+                if b & 0b1111 != 0 {
+                    return None;
+                }
+                out.push((a << 2) | (b >> 4));
+            }
+        }
+    }
+
+    Some(out)
 }
 
 #[cfg(test)]
@@ -1840,15 +1945,167 @@ mod tests {
         .unwrap();
         assert!(result);
 
-        // Test case insensitive and padding removal
+        // Base64 is case-sensitive: the same text in a different case encodes
+        // different bytes and must not match.
         let result = evaluate_condition_json(
             &ctx,
             &IAMOperator::BinaryEquals,
             "binary_key",
-            &serde_json::Value::String("sGVsbG8gV29ybGQ".to_string()), // Different case and no padding
+            &serde_json::Value::String("sGVsbG8gV29ybGQ=".to_string()),
+        )
+        .unwrap();
+        assert!(!result);
+    }
+
+    #[test]
+    fn test_binary_equals_compares_decoded_bytes() {
+        // "yQ==" is byte 0xc9, "YQ==" is byte 0x61.
+        let ctx = Context::new().with_string("k", "YQ==");
+        let result = evaluate_condition_json(
+            &ctx,
+            &IAMOperator::BinaryEquals,
+            "k",
+            &serde_json::Value::String("yQ==".to_string()),
+        )
+        .unwrap();
+        assert!(!result);
+
+        // "QUJD" is "ABC", "quJd" is 0xaa 0xe2 0x5d.
+        let ctx = Context::new().with_string("k", "quJd");
+        let result = evaluate_condition_json(
+            &ctx,
+            &IAMOperator::BinaryEquals,
+            "k",
+            &serde_json::Value::String("QUJD".to_string()),
+        )
+        .unwrap();
+        assert!(!result);
+
+        // Identical base64 still matches.
+        let result = evaluate_condition_json(
+            &ctx,
+            &IAMOperator::BinaryEquals,
+            "k",
+            &serde_json::Value::String("quJd".to_string()),
         )
         .unwrap();
         assert!(result);
+    }
+
+    #[test]
+    fn test_binary_equals_padding_is_significant() {
+        // The policy side must be canonical, padded base64.
+        let ctx = Context::new().with_string("k", "YQ==");
+        for policy in ["YQ", "YQ=", "YR=="] {
+            let result = evaluate_condition_json(
+                &ctx,
+                &IAMOperator::BinaryEquals,
+                "k",
+                &serde_json::Value::String(policy.to_string()),
+            );
+            assert!(result.is_err(), "policy {policy:?} should be rejected");
+        }
+
+        // A context value with different (or missing) padding is not a match.
+        for context in ["YQ", "YQ=", "YR=="] {
+            let ctx = Context::new().with_string("k", context);
+            let result = evaluate_condition_json(
+                &ctx,
+                &IAMOperator::BinaryEquals,
+                "k",
+                &serde_json::Value::String("YQ==".to_string()),
+            )
+            .unwrap();
+            assert!(!result, "context {context:?} should not match");
+        }
+    }
+
+    #[test]
+    fn test_binary_equals_rejects_non_base64_policy() {
+        let ctx = Context::new().with_string("k", "hello");
+        let result = evaluate_condition_json(
+            &ctx,
+            &IAMOperator::BinaryEquals,
+            "k",
+            &serde_json::Value::String("hello".to_string()),
+        );
+        assert!(matches!(result, Err(EvaluationError::ConditionError(_))));
+
+        // A non-string policy value is a condition error too.
+        let result = evaluate_condition_json(
+            &ctx,
+            &IAMOperator::BinaryEquals,
+            "k",
+            &serde_json::Value::Bool(true),
+        );
+        assert!(matches!(result, Err(EvaluationError::ConditionError(_))));
+    }
+
+    #[test]
+    fn test_binary_equals_if_exists_missing_key() {
+        let ctx = Context::new().with_string("other", "YQ==");
+
+        // AWS: `...IfExists` is true when the key is absent.
+        let result = evaluate_condition_json(
+            &ctx,
+            &IAMOperator::BinaryEqualsIfExists,
+            "k",
+            &serde_json::Value::String("YQ==".to_string()),
+        )
+        .unwrap();
+        assert!(result);
+
+        // Non-IfExists is false when the key is absent.
+        let result = evaluate_condition_json(
+            &ctx,
+            &IAMOperator::BinaryEquals,
+            "k",
+            &serde_json::Value::String("YQ==".to_string()),
+        )
+        .unwrap();
+        assert!(!result);
+
+        // With the key present, both compare exactly.
+        let ctx = Context::new().with_string("k", "YQ==");
+        for (policy, expected) in [("YQ==", true), ("yQ==", false)] {
+            let result = evaluate_condition_json(
+                &ctx,
+                &IAMOperator::BinaryEqualsIfExists,
+                "k",
+                &serde_json::Value::String(policy.to_string()),
+            )
+            .unwrap();
+            assert_eq!(result, expected, "policy {policy:?}");
+        }
+    }
+
+    #[test]
+    fn test_decode_base64() {
+        // No padding, one byte of padding, two bytes of padding.
+        assert_eq!(decode_base64("QUJD").as_deref(), Some(&b"ABC"[..]));
+        assert_eq!(
+            decode_base64("SGVsbG8gV29ybGQ=").as_deref(),
+            Some(&b"Hello World"[..])
+        );
+        assert_eq!(decode_base64("YQ==").as_deref(), Some(&[0x61][..]));
+        // Both non-alphanumeric alphabet characters.
+        assert_eq!(
+            decode_base64("+/+/").as_deref(),
+            Some(&[0xfb, 0xff, 0xbf][..])
+        );
+        // The empty input is valid base64 for zero bytes.
+        assert_eq!(decode_base64("").as_deref(), Some(&[][..]));
+
+        // Wrong lengths, misplaced padding and invalid characters.
+        for invalid in [
+            "YQ", "YQ=", "YQ===", "=AAA", "A===", "Y Q==", "YQ==\n", "YQ-_",
+        ] {
+            assert_eq!(decode_base64(invalid), None, "{invalid:?}");
+        }
+        // Non-canonical: padding must drop only zero bits.
+        assert_eq!(decode_base64("YR=="), None);
+        // Padding is only allowed in the final quantum.
+        assert_eq!(decode_base64("YQ==QUJD"), None);
     }
 
     #[test]
