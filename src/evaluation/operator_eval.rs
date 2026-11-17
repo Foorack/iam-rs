@@ -285,6 +285,9 @@ pub(super) fn evaluate_condition(
             OperatorType::Null => {
                 // Null check. AWS accepts both a JSON boolean and the string
                 // forms "true"/"false" for the expected presence of the key.
+                // A multi-value Null behaves like any other list of policy
+                // values: the condition holds when any value holds, so this
+                // must fall through to the aggregation below.
                 let should_be_null = match *value {
                     ValueRef::Boolean(b) => b,
                     ValueRef::String(s) => s.parse::<bool>().map_err(|_| {
@@ -300,7 +303,7 @@ pub(super) fn evaluate_condition(
                     }
                 };
                 let is_null = ctx.get(key).is_none();
-                return Ok(is_null == should_be_null);
+                is_null == should_be_null
             }
         };
         if is_negated {
@@ -1640,6 +1643,99 @@ mod tests {
             &serde_json::Value::String("not_a_bool".to_string()),
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_evaluate_condition_null_single_value_polarity() {
+        let ctx = create_test_context();
+
+        // Key present, checking if null -> no match.
+        let present = evaluate_condition_json(
+            &ctx,
+            &IAMOperator::Null,
+            "string_key",
+            &serde_json::json!(true),
+        )
+        .unwrap();
+        assert!(!present);
+
+        // Key present, checking if not null -> match.
+        let present = evaluate_condition_json(
+            &ctx,
+            &IAMOperator::Null,
+            "string_key",
+            &serde_json::json!(false),
+        )
+        .unwrap();
+        assert!(present);
+
+        // Key absent, checking if null -> match.
+        let absent = evaluate_condition_json(
+            &ctx,
+            &IAMOperator::Null,
+            "nonexistent_key",
+            &serde_json::json!(true),
+        )
+        .unwrap();
+        assert!(absent);
+
+        // Key absent, checking if not null -> no match.
+        let absent = evaluate_condition_json(
+            &ctx,
+            &IAMOperator::Null,
+            "nonexistent_key",
+            &serde_json::json!(false),
+        )
+        .unwrap();
+        assert!(!absent);
+    }
+
+    #[test]
+    fn test_evaluate_condition_null_multiple_values() {
+        let ctx = create_test_context();
+
+        // A multi-value Null is satisfied when any policy value is satisfied,
+        // regardless of the order of the values.
+        for values in [
+            serde_json::json!(["false", "true"]),
+            serde_json::json!(["true", "false"]),
+        ] {
+            let result =
+                evaluate_condition_json(&ctx, &IAMOperator::Null, "nonexistent_key", &values)
+                    .unwrap();
+            assert!(result, "{values} should match when the key is absent");
+        }
+
+        // No value is satisfied: the key is absent, so "false" never holds.
+        let result = evaluate_condition_json(
+            &ctx,
+            &IAMOperator::Null,
+            "nonexistent_key",
+            &serde_json::json!(["false", "false"]),
+        )
+        .unwrap();
+        assert!(!result);
+
+        // Symmetrically, no value is satisfied when the key is present and
+        // every element expects it to be absent.
+        let result = evaluate_condition_json(
+            &ctx,
+            &IAMOperator::Null,
+            "string_key",
+            &serde_json::json!(["true", "true"]),
+        )
+        .unwrap();
+        assert!(!result);
+
+        // One satisfied element is enough when the key is present too.
+        let result = evaluate_condition_json(
+            &ctx,
+            &IAMOperator::Null,
+            "string_key",
+            &serde_json::json!(["true", "false"]),
+        )
+        .unwrap();
+        assert!(result);
     }
 
     #[test]
