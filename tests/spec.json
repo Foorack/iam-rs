@@ -463,7 +463,6 @@
         "type": "object",
         "description": "JSON policy documents are made up of elements.\nThe elements are listed here in the general order you use them in a policy.\nThe order of the elements doesn't matter—for example, the Resource element can come before the Action element.\nYou're not required to specify any Condition elements in the policy.\nTo learn more about the general structure and purpose of a JSON policy document, see Overview of JSON policies.\n\nSome JSON policy elements are mutually exclusive.\nThis means that you cannot create a policy that uses both.\nFor example, you cannot use both Action and `NotAction` in the same policy statement.\nOther pairs that are mutually exclusive include Principal/NotPrincipal and Resource/NotResource.\n\nThe details of what goes into a policy vary for each service, depending on what actions the service makes available, what types of resources it contains, and so on.\nWhen you're writing policies for a specific service, it's helpful to see examples of policies for that service.\n\nWhen you create or edit a JSON policy, `iam-rw` can perform policy validation to help you create an effective policy.\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements.html>",
         "required": [
-          "Version",
           "Statement"
         ],
         "properties": {
@@ -480,7 +479,7 @@
           },
           "Version": {
             "$ref": "#/components/schemas/IAMVersion",
-            "description": "The `Version` policy element specifies the language syntax rules that are to be used to process a policy.\n\nTo use all of the available policy features, include the following Version element outside the Statement element in all policies.\n`Version` is a required element in all IAM policies and must always be set to at least `2012-10-17`.\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_version.html>"
+            "description": "The `Version` policy element specifies the language syntax rules that are to be used to process a policy.\n\nTo use all of the available policy features, include the following Version element outside the Statement element in all policies.\n`2012-10-17` is the current version, and the one that introduced policy variables. The element is optional in\nAWS's grammar: a document without it is evaluated under the older policy language, in which `${...}` policy\nvariables are literal text, so it deserialises to the `IAMVersion::Unspecified` variant and is written back out without\na `Version` element.\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_version.html>"
           }
         }
       },
@@ -641,7 +640,7 @@
       },
       "IAMVersion": {
         "type": "string",
-        "description": "Represents the version of the IAM policy language",
+        "description": "Represents the version of the IAM policy language\n\nAWS's grammar marks the version block optional (`<version_block?>`), and an\nabsent `Version` is not the same as one naming `2012-10-17`: such a document\nis evaluated under the older policy language, where policy variables are\nliteral text. The `Unspecified` variant carries that distinction.",
         "enum": [
           "2012-10-17",
           "2008-10-17"

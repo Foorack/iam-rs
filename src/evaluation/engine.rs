@@ -373,9 +373,9 @@ impl PolicyEvaluator {
     /// that come from a user or a file.
     ///
     /// Unlike [`try_add_policy`](Self::try_add_policy), a policy whose `Version` is
-    /// not `2012-10-17` is accepted here: evaluation then treats `${...}` as
-    /// literal text, as AWS does for the policy language versions that predate
-    /// policy variables.
+    /// not `2012-10-17` — including one with no `Version` element at all — is
+    /// accepted here: evaluation then treats `${...}` as literal text, as AWS
+    /// does for the policy language versions that predate policy variables.
     pub fn add_policy(&mut self, policy: IAMPolicy) {
         self.resource_patterns
             .push(PolicyPatternCache::build(&policy));
@@ -3263,6 +3263,34 @@ mod tests {
         // Same policy and request as the 2012 case, but the pattern stays the
         // literal text `arn:aws:s3:::b/${aws:username}` and matches nothing.
         let policy = username_resource_policy(version_without_policy_variables());
+        let request = request_with_context(
+            "s3:GetObject",
+            "arn:aws:s3:::b/test",
+            &[("aws:username", "test")],
+        );
+        assert_eq!(
+            evaluate_policy(&policy, &request).unwrap(),
+            Decision::NotApplicable
+        );
+    }
+
+    #[test]
+    fn test_policy_variables_are_literal_when_version_is_absent() {
+        // AWS's grammar marks the `Version` block optional and describes a
+        // document without it as behaving like the older policy language, so
+        // the pattern must stay literal exactly as in the 2008 case above.
+        let policy = IAMPolicy::from_json(
+            r#"{
+                "Statement": [{
+                    "Effect": "Allow",
+                    "Action": "s3:*",
+                    "Resource": "arn:aws:s3:::b/${aws:username}"
+                }]
+            }"#,
+        )
+        .expect("a policy without a Version element is valid AWS JSON");
+        assert_eq!(policy.version, IAMVersion::Unspecified);
+
         let request = request_with_context(
             "s3:GetObject",
             "arn:aws:s3:::b/test",
