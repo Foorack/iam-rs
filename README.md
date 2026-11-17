@@ -321,6 +321,27 @@ IAMOperator::Null                 // Key exists/doesn't exist
 IAMOperator::BinaryEquals         // Base64 binary comparison
 ```
 
+### Multivalued Request Keys
+
+A request key can carry several values (a list). AWS documents that such a key **must** be used with
+a set operator (`ForAllValues:` / `ForAnyValue:`), and that combining one with a single-valued
+operator "can lead to unpredictable results" — those combinations have no defined AWS behaviour.
+
+This crate still evaluates them, by the set reading: a positive operator matches when any request
+value matches, and a negated operator matches when any request value differs. That is a reading of
+the request, not a rule from AWS, and it is why `StringEquals` and `StringNotEquals` can both hold
+for the same request. Prefer a set operator whenever a key may be multivalued:
+
+```rust
+// Undefined in AWS, and self-contradictory here: with aws:TagKeys = ["a", "c"] both statements match.
+"IAMOperator::StringEquals"    => "a"
+"IAMOperator::StringNotEquals" => "a"
+
+// Defined: this asks what AWS asks.
+"IAMOperator::ForAnyValueStringEquals"    => "a"   // some value equals "a"
+"IAMOperator::ForAllValuesStringNotEquals" => "a"  // every value differs from "a"
+```
+
 ### Complex Condition Example
 
 ```rust
