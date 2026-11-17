@@ -712,6 +712,21 @@ impl PolicyEvaluator {
 
         match (principal, request_principal) {
             //
+            // A principal map with several entries: any entry that matches is
+            // enough. `NotPrincipal` inverts this whole answer, so a principal
+            // listed under any key is excluded from the deny, which is what AWS
+            // means by the set of principals in the block.
+            //
+            (Principal::Multiple(entries), _) => {
+                for entry in entries {
+                    if Self::principal_matches(entry, request_principal)? {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
+            }
+
+            //
             // Check: AWS
             //
             (
@@ -4058,5 +4073,96 @@ mod tests {
             .is_valid()
         );
         assert!(!Principal::Aws(PrincipalId::String("not-a-principal".into())).is_valid());
+    }
+    const MULTI_PRINCIPAL_CANONICAL_USER: &str =
+        "79a59df900b949e55d96a1e698fbacedfd6e09d98eacf8f8d5218e7cd47ef2be";
+
+    fn multi_principal_policy(effect: &str, element: &str) -> IAMPolicy {
+        let json = format!(
+            r#"{{"Version":"2012-10-17","Statement":{{"Effect":"{effect}",
+                "{element}":{{"AWS":"111122223333","CanonicalUser":"{MULTI_PRINCIPAL_CANONICAL_USER}"}},
+                "Action":"s3:GetObject","Resource":"*"}}}}"#
+        );
+        IAMPolicy::from_json(&json).expect("multi-entry principal map")
+    }
+
+    fn decide_for(principal: Principal) -> Decision {
+        let policy = multi_principal_policy("Allow", "Principal");
+        let request = IAMRequest::new(
+            principal,
+            "s3:GetObject",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        );
+        evaluate_policy(&policy, &request).unwrap()
+    }
+
+    #[test]
+    fn test_multi_entry_principal_grants_either_type() {
+        // The account entry, a user in that account, and the canonical user all
+        // match; a stranger does not. Before this, the document did not parse.
+        assert_eq!(
+            decide_for(Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::111122223333:user/alice".into()
+            ))),
+            Decision::Allow
+        );
+        assert_eq!(
+            decide_for(Principal::Aws(PrincipalId::String("123456789012".into()))),
+            Decision::NotApplicable
+        );
+        assert_eq!(
+            decide_for(Principal::CanonicalUser(PrincipalId::String(
+                MULTI_PRINCIPAL_CANONICAL_USER.into()
+            ))),
+            Decision::Allow
+        );
+        assert_eq!(
+            decide_for(Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::444444444444:user/alice".into()
+            ))),
+            Decision::NotApplicable
+        );
+        // The type matters: a service principal is not the canonical user.
+        assert_eq!(
+            decide_for(Principal::Service(PrincipalId::String(
+                "ec2.amazonaws.com".into()
+            ))),
+            Decision::NotApplicable
+        );
+    }
+
+    #[test]
+    fn test_multi_entry_not_principal_excludes_every_listed_type() {
+        let policy = multi_principal_policy("Deny", "NotPrincipal");
+
+        let deny_for = |principal: Principal| {
+            let request = IAMRequest::new(
+                principal,
+                "s3:GetObject",
+                Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+            );
+            evaluate_policy(&policy, &request).unwrap()
+        };
+
+        // A principal listed under *either* key is excluded from the deny.
+        assert_eq!(
+            deny_for(Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::111122223333:user/alice".into()
+            ))),
+            Decision::NotApplicable
+        );
+        assert_eq!(
+            deny_for(Principal::CanonicalUser(PrincipalId::String(
+                MULTI_PRINCIPAL_CANONICAL_USER.into()
+            ))),
+            Decision::NotApplicable
+        );
+        // Anything else is denied.
+        assert_eq!(
+            deny_for(Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::444444444444:user/alice".into()
+            ))),
+            Decision::Deny
+        );
     }
 }

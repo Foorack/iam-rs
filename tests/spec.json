@@ -11,7 +11,7 @@
       "name": "MIT",
       "identifier": "MIT"
     },
-    "version": "0.9.0"
+    "version": "0.14.0"
   },
   "paths": {},
   "components": {
@@ -706,71 +706,32 @@
       "Principal": {
         "oneOf": [
           {
-            "type": "object",
-            "title": "PrincipalAws",
-            "description": "AWS principals (users, roles, root accounts)",
-            "required": [
-              "AWS"
-            ],
-            "properties": {
-              "AWS": {
-                "$ref": "#/components/schemas/PrincipalId",
-                "description": "AWS principals (users, roles, root accounts)"
-              }
-            }
-          },
-          {
-            "type": "object",
-            "title": "PrincipalFederated",
-            "description": "Federated principals (SAML, OIDC providers)",
-            "required": [
-              "Federated"
-            ],
-            "properties": {
-              "Federated": {
-                "$ref": "#/components/schemas/PrincipalId",
-                "description": "Federated principals (SAML, OIDC providers)"
-              }
-            }
-          },
-          {
-            "type": "object",
-            "title": "PrincipalService",
-            "description": "AWS service principals",
-            "required": [
-              "Service"
-            ],
-            "properties": {
-              "Service": {
-                "$ref": "#/components/schemas/PrincipalId",
-                "description": "AWS service principals"
-              }
-            }
-          },
-          {
-            "type": "object",
-            "title": "PrincipalCanonicalUser",
-            "description": "Canonical user principals",
-            "required": [
-              "CanonicalUser"
-            ],
-            "properties": {
-              "CanonicalUser": {
-                "$ref": "#/components/schemas/PrincipalId",
-                "description": "Canonical user principals"
-              }
-            }
-          },
-          {
             "type": "string",
-            "title": "PrincipalWildcard",
-            "description": "Wildcard principal (matches all principals)",
+            "description": "All principals. The only principal block that is not a map.",
             "enum": [
               "*"
             ]
+          },
+          {
+            "type": "object",
+            "description": "A principal map: one or more of AWS, Federated, Service and CanonicalUser, each holding an id or a list of ids. Any entry may match.",
+            "properties": {
+              "AWS": {
+                "$ref": "#/components/schemas/PrincipalId"
+              },
+              "CanonicalUser": {
+                "$ref": "#/components/schemas/PrincipalId"
+              },
+              "Federated": {
+                "$ref": "#/components/schemas/PrincipalId"
+              },
+              "Service": {
+                "$ref": "#/components/schemas/PrincipalId"
+              }
+            },
+            "additionalProperties": false
           }
-        ],
-        "description": "Represents a principal in an IAM policy\n\n`<principal_block>` = (\"Principal\" | \"`NotPrincipal`\") : (\"*\" | `<principal_map>`)\n`<principal_map>` = { `<principal_map_entry>`, `<principal_map_entry>`, ... }\n`<principal_map_entry>` = (\"AWS\" | \"Federated\" | \"Service\" | \"`CanonicalUser`\") :\n    [`<principal_id_string>`, `<principal_id_string>`, ...]\n\n(e.g., {\"AWS\": \"`arn:aws:iam::123456789012:user/username`\"})\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_principal.html>"
+        ]
       },
       "PrincipalId": {
         "oneOf": [
