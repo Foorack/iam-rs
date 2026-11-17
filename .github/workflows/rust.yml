@@ -20,10 +20,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup update ${{ matrix.toolchain }} && rustup default ${{ matrix.toolchain }}
+      # Only the stable toolchain ships clippy here; beta and nightly need it added explicitly.
+      - run: rustup component add clippy
       - run: cargo build --verbose --all-features
       # Both feature sets. The utoipa tests are the ones that pin the published schemas to what
       # the serializers actually write, and without `--all-features` they never ran here: issue 25
       # and issue 27 both shipped a schema disagreeing with the wire format with CI green.
       - run: cargo test --verbose --all-features
       - run: cargo test --verbose
+      # `correctness` and `suspicious` are deny in Cargo.toml, but nothing ran clippy here, so a
+      # lint regression could land on main with every check green (as one did in #72).
+      - run: cargo clippy --all-targets --all-features -- -D warnings
   
