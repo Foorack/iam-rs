@@ -206,8 +206,11 @@ a condition *key* is never interpolated.
 
 Variables require `Version: 2012-10-17`. In a policy with any other `Version` — including
 `2008-10-17`, which predates them — `${...}` is literal text, as in AWS, so
-`arn:aws:s3:::b/${aws:username}` matches only that literal resource name. Evaluation still
-runs normally; `validate()` continues to reject every version but `2012-10-17`.
+`arn:aws:s3:::b/${aws:username}` matches only that literal resource name. The same holds for a
+document that omits `Version` altogether: AWS's grammar marks the element optional and evaluates
+such a policy under the older language, so it deserialises to `IAMVersion::Unspecified` and
+`${...}` stays literal. Evaluation still runs normally; `validate()` accepts an absent `Version`
+and `2012-10-17`, and continues to reject every other version.
 
 ### Variables with Default Values
 

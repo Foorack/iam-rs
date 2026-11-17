@@ -85,10 +85,17 @@ pub struct IAMPolicy {
     /// The `Version` policy element specifies the language syntax rules that are to be used to process a policy.
     ///
     /// To use all of the available policy features, include the following Version element outside the Statement element in all policies.
-    /// `Version` is a required element in all IAM policies and must always be set to at least `2012-10-17`.
+    /// `2012-10-17` is the current version, and the one that introduced policy variables. The element is optional in
+    /// AWS's grammar: a document without it is evaluated under the older policy language, in which `${...}` policy
+    /// variables are literal text, so it deserialises to the `IAMVersion::Unspecified` variant and is written back out without
+    /// a `Version` element.
     ///
     /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_version.html>
-    #[serde(rename = "Version")]
+    #[serde(
+        rename = "Version",
+        default = "IAMVersion::unspecified",
+        skip_serializing_if = "IAMVersion::is_unspecified"
+    )]
     pub version: IAMVersion,
 
     /// The `Id` element specifies an optional identifier for the policy.
@@ -233,9 +240,10 @@ impl Validate for IAMPolicy {
 
             // Validate that policy version is supported
             match self.version {
-                IAMVersion::V20121017 => {
-                    // Supported version
-                }
+                // `2012-10-17` is the supported version, and an absent element
+                // is valid too: AWS evaluates such a policy under the older
+                // language, which is what the evaluator does.
+                IAMVersion::V20121017 | IAMVersion::Unspecified => {}
                 #[allow(deprecated)]
                 IAMVersion::V20081017 => {
                     results.push(Err(ValidationError::InvalidValue {
@@ -300,6 +308,32 @@ mod tests {
                     .with_resource(IAMResource::Single("*".to_string())),
             );
         assert!(!duplicate_sid_policy.is_valid());
+    }
+
+    #[test]
+    fn test_policy_without_version_parses() {
+        // AWS's grammar marks the version block optional (`<version_block?>`).
+        // Before the field was defaulted this document failed to parse with
+        // "missing field `Version`".
+        let policy = IAMPolicy::from_json(
+            r#"{
+                "Statement": {
+                    "Effect": "Allow",
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::my-bucket/*"
+                }
+            }"#,
+        )
+        .expect("a policy without a Version element is valid AWS JSON");
+
+        assert_eq!(policy.version, IAMVersion::Unspecified);
+        assert!(policy.is_valid());
+        // Absent stays absent: the document must not gain a version the author
+        // never wrote.
+        assert!(
+            !policy.to_json().unwrap().contains("Version"),
+            "serialisation added a Version element"
+        );
     }
 
     // AWS documents `{"AWS": "*"}` as another spelling of `"Principal": "*"`.
