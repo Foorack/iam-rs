@@ -124,7 +124,11 @@ impl PolicyVariable {
 /// Returns `EvaluationError::InvalidVariable` for a malformed variable, an
 /// unclosed `${`, or a context-derived value containing a wildcard.
 pub fn interpolate_variables(input: &str, context: &Context) -> Result<String, EvaluationError> {
-    interpolate_variables_checked(input, context).map(|interpolation| interpolation.text)
+    // The checked variant marks the characters `${*}`, `${?}` and `${$}` stand
+    // for so that evaluation can keep them literal inside a wildcard pattern.
+    // A caller of this function wants the text, not the marker.
+    interpolate_variables_checked(input, context)
+        .map(|interpolation| unescape_literals(&interpolation.text))
 }
 
 /// `text` with every literal-escape sequence collapsed back to the character it
@@ -299,23 +303,18 @@ mod tests {
     }
 
     #[test]
-    fn test_predefined_variables_are_interpolated_escaped() {
-        // The characters go into a wildcard pattern, so a bare `*` or `?` would
-        // widen the match. Interpolation escapes them instead, and `unescape_literals`
-        // gives the plain character back for a caller that compares exactly.
+    fn test_predefined_variables_are_unescaped_by_the_public_function() {
         let context = Context::new();
-        assert_eq!(
-            interpolate_variables("a${*}b", &context).unwrap(),
-            format!("a{}b", escaped('*'))
-        );
-        assert_eq!(
-            interpolate_variables("a${?}b", &context).unwrap(),
-            format!("a{}b", escaped('?'))
-        );
-        assert_eq!(
-            interpolate_variables("a${$}b", &context).unwrap(),
-            format!("a{}b", escaped('$'))
-        );
+        // The public function hands back the text a caller expects.
+        assert_eq!(interpolate_variables("a${*}b", &context).unwrap(), "a*b");
+        assert_eq!(interpolate_variables("a${?}b", &context).unwrap(), "a?b");
+        assert_eq!(interpolate_variables("a${$}b", &context).unwrap(), "a$b");
+
+        // Internally the characters are escaped, because the interpolated text is
+        // used as a wildcard pattern and a bare `*` would widen the match.
+        let escaped_form = interpolate_variables_checked("a${*}b", &context).unwrap();
+        assert_eq!(escaped_form.text, format!("a{}b", escaped('*')));
+        assert!(!escaped_form.unresolved);
     }
 
     #[test]
@@ -329,16 +328,10 @@ mod tests {
         }
         assert_eq!(
             interpolate_variables("${*}admin/*", &context).unwrap(),
-            format!("{}admin/*", escaped('*'))
+            "*admin/*"
         );
-        assert_eq!(
-            interpolate_variables("${?}", &context).unwrap(),
-            escaped('?')
-        );
-        assert_eq!(
-            interpolate_variables("${$}", &context).unwrap(),
-            escaped('$')
-        );
+        assert_eq!(interpolate_variables("${?}", &context).unwrap(), "?");
+        assert_eq!(interpolate_variables("${$}", &context).unwrap(), "$");
     }
 
     #[test]
