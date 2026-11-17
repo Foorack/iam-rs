@@ -104,6 +104,10 @@ pub struct StatementMatch {
 pub struct PolicyEvaluator {
     /// Policies to evaluate
     policies: Vec<IAMPolicy>,
+    /// Resource patterns of `policies` compiled ahead of evaluation, parallel to
+    /// `policies` → statement. Rebuilt/extended by every mutator of `policies`.
+    #[cfg_attr(feature = "utoipa", schema(ignore))]
+    resource_patterns: Vec<PolicyPatternCache>,
     /// Evaluation options
     options: EvaluationOptions,
 }
@@ -137,12 +141,115 @@ impl Default for EvaluationOptions {
     }
 }
 
+/// One resource pattern of a statement, with the request-invariant part parsed
+/// ahead of evaluation.
+///
+/// Only patterns that interpolate a `${...}` variable vary per request; every
+/// other pattern can be parsed once when the policy is added to the evaluator
+/// rather than on every [`PolicyEvaluator::evaluate`] call.
+#[derive(Debug, Clone)]
+enum CompiledResourcePattern {
+    /// `"*"`: matches every resource.
+    Any,
+    /// A pattern without variables, parsed once. The parse error is stored
+    /// rather than returned so that adding a policy stays infallible while
+    /// evaluation keeps reporting the same [`EvaluationError::InvalidArn`].
+    Static(Result<ArnMatcher, String>),
+    /// A pattern containing `${...}`, interpolated and parsed per request.
+    Dynamic,
+}
+
+impl CompiledResourcePattern {
+    fn compile(pattern: &str) -> Self {
+        if pattern == "*" {
+            Self::Any
+        } else if pattern.contains("${") {
+            Self::Dynamic
+        } else {
+            Self::Static(ArnMatcher::from_pattern(pattern).map_err(|e| e.to_string()))
+        }
+    }
+
+    fn matches(
+        &self,
+        pattern: &str,
+        request_resource: &Arn,
+        context: &Context,
+    ) -> Result<bool, EvaluationError> {
+        match self {
+            Self::Any => Ok(true),
+            Self::Static(Ok(matcher)) => matcher
+                .matches(request_resource)
+                .map_err(|e| EvaluationError::InvalidArn(e.to_string())),
+            Self::Static(Err(message)) => Err(EvaluationError::InvalidArn(message.clone())),
+            Self::Dynamic => {
+                let interpolated = interpolate_variables(pattern, context)?;
+                let matcher = ArnMatcher::from_pattern(&interpolated)
+                    .map_err(|e| EvaluationError::InvalidArn(e.to_string()))?;
+                matcher
+                    .matches(request_resource)
+                    .map_err(|e| EvaluationError::InvalidArn(e.to_string()))
+            }
+        }
+    }
+}
+
+/// Compiled resource patterns of one statement, parallel to its `resource` and
+/// `not_resource` entries.
+#[derive(Debug, Clone, Default)]
+struct StatementPatternCache {
+    resource: Option<Vec<CompiledResourcePattern>>,
+    not_resource: Option<Vec<CompiledResourcePattern>>,
+}
+
+impl StatementPatternCache {
+    fn build(statement: &IAMStatement) -> Self {
+        Self {
+            resource: statement.resource.as_ref().map(Self::compile_list),
+            not_resource: statement.not_resource.as_ref().map(Self::compile_list),
+        }
+    }
+
+    fn compile_list(resource: &IAMResource) -> Vec<CompiledResourcePattern> {
+        match resource {
+            IAMResource::Single(pattern) => vec![CompiledResourcePattern::compile(pattern)],
+            IAMResource::Multiple(patterns) => patterns
+                .iter()
+                .map(|pattern| CompiledResourcePattern::compile(pattern))
+                .collect(),
+        }
+    }
+}
+
+/// Compiled resource patterns of one policy, parallel to its statements.
+#[derive(Debug, Clone, Default)]
+struct PolicyPatternCache {
+    statements: Vec<StatementPatternCache>,
+}
+
+impl PolicyPatternCache {
+    fn build(policy: &IAMPolicy) -> Self {
+        Self {
+            statements: policy
+                .statement
+                .iter()
+                .map(StatementPatternCache::build)
+                .collect(),
+        }
+    }
+
+    fn statement(&self, index: usize) -> Option<&StatementPatternCache> {
+        self.statements.get(index)
+    }
+}
+
 impl PolicyEvaluator {
     /// Create a new policy evaluator
     #[must_use]
     pub fn new() -> Self {
         Self {
             policies: Vec::new(),
+            resource_patterns: Vec::new(),
             options: EvaluationOptions::default(),
         }
     }
@@ -150,8 +257,10 @@ impl PolicyEvaluator {
     /// Create evaluator with policies
     #[must_use]
     pub fn with_policies(policies: Vec<IAMPolicy>) -> Self {
+        let resource_patterns = policies.iter().map(PolicyPatternCache::build).collect();
         Self {
             policies,
+            resource_patterns,
             options: EvaluationOptions::default(),
         }
     }
@@ -164,6 +273,8 @@ impl PolicyEvaluator {
     /// reaches it, so use [`try_add_policy`](Self::try_add_policy) for policies
     /// that come from a user or a file.
     pub fn add_policy(&mut self, policy: IAMPolicy) {
+        self.resource_patterns
+            .push(PolicyPatternCache::build(&policy));
         self.policies.push(policy);
     }
 
@@ -179,6 +290,8 @@ impl PolicyEvaluator {
     /// unchanged.
     pub fn try_add_policy(&mut self, policy: IAMPolicy) -> Result<(), crate::ValidationError> {
         policy.validate_result()?;
+        self.resource_patterns
+            .push(PolicyPatternCache::build(&policy));
         self.policies.push(policy);
         Ok(())
     }
@@ -271,8 +384,9 @@ impl PolicyEvaluator {
         let mut statement_count = 0;
 
         // Evaluate each policy
-        for policy in &self.policies {
-            for statement in &policy.statement {
+        for (policy_index, policy) in self.policies.iter().enumerate() {
+            let policy_patterns = self.resource_patterns.get(policy_index);
+            for (statement_index, statement) in policy.statement.iter().enumerate() {
                 statement_count += 1;
                 if statement_count > self.options.max_statements {
                     return Err(EvaluationError::InternalError(
@@ -280,7 +394,9 @@ impl PolicyEvaluator {
                     ));
                 }
 
-                let statement_result = Self::evaluate_statement(statement, request, &self.options)?;
+                let patterns = policy_patterns.and_then(|p| p.statement(statement_index));
+                let statement_result =
+                    Self::evaluate_statement(statement, patterns, request, &self.options)?;
 
                 if self.options.collect_match_details {
                     statement_details.push(statement_result.clone());
@@ -319,6 +435,7 @@ impl PolicyEvaluator {
     /// Evaluate a single statement against a request
     fn evaluate_statement(
         statement: &IAMStatement,
+        patterns: Option<&StatementPatternCache>,
         request: &IAMRequest,
         options: &EvaluationOptions,
     ) -> Result<StatementMatch, EvaluationError> {
@@ -372,9 +489,19 @@ impl PolicyEvaluator {
         let resource_matches = if options.ignore_resource_constraints {
             true
         } else if let Some(ref resource) = statement.resource {
-            Self::resource_matches(resource, &request.resource, &request.context)?
+            Self::resource_matches(
+                resource,
+                patterns.and_then(|p| p.resource.as_deref()),
+                &request.resource,
+                &request.context,
+            )?
         } else if let Some(ref not_resource) = statement.not_resource {
-            !Self::resource_matches(not_resource, &request.resource, &request.context)?
+            !Self::resource_matches(
+                not_resource,
+                patterns.and_then(|p| p.not_resource.as_deref()),
+                &request.resource,
+                &request.context,
+            )?
         } else {
             return Ok(StatementMatch {
                 sid: statement.sid.clone(),
@@ -600,31 +727,29 @@ impl PolicyEvaluator {
     }
 
     /// Check if a resource matches the request resource
+    ///
+    /// `compiled` holds the patterns of `resource`, compiled when the policy was
+    /// added to the evaluator. It is only a performance input: when it is absent
+    /// (or shorter than the resource list) the affected entries are compiled on
+    /// the fly, so the result and the error are the same either way.
     fn resource_matches(
         resource: &IAMResource,
+        compiled: Option<&[CompiledResourcePattern]>,
         request_resource: &Arn,
         context: &Context,
     ) -> Result<bool, EvaluationError> {
         match resource {
-            IAMResource::Single(r) => {
-                if r == "*" {
-                    Ok(true)
-                } else {
-                    // First, interpolate variables
-                    let interpolated = interpolate_variables(r, context)?;
-
-                    // Then use ARN matcher for pattern matching
-                    let matcher = ArnMatcher::from_pattern(&interpolated)
-                        .map_err(|e| EvaluationError::InvalidArn(e.to_string()))?;
-                    matcher
-                        .matches(request_resource)
-                        .map_err(|e| EvaluationError::InvalidArn(e.to_string()))
-                }
-            }
-            IAMResource::Multiple(resources) => {
-                for r in resources {
-                    if Self::resource_matches(
-                        &IAMResource::Single(r.clone()),
+            IAMResource::Single(pattern) => Self::pattern_matches(
+                compiled.and_then(|c| c.first()),
+                pattern,
+                request_resource,
+                context,
+            ),
+            IAMResource::Multiple(patterns) => {
+                for (index, pattern) in patterns.iter().enumerate() {
+                    if Self::pattern_matches(
+                        compiled.and_then(|c| c.get(index)),
+                        pattern,
                         request_resource,
                         context,
                     )? {
@@ -633,6 +758,23 @@ impl PolicyEvaluator {
                 }
                 Ok(false)
             }
+        }
+    }
+
+    /// Check if a single resource pattern matches the request resource
+    fn pattern_matches(
+        compiled: Option<&CompiledResourcePattern>,
+        pattern: &str,
+        request_resource: &Arn,
+        context: &Context,
+    ) -> Result<bool, EvaluationError> {
+        match compiled {
+            Some(compiled) => compiled.matches(pattern, request_resource, context),
+            None => CompiledResourcePattern::compile(pattern).matches(
+                pattern,
+                request_resource,
+                context,
+            ),
         }
     }
 
@@ -1486,6 +1628,229 @@ mod tests {
         let borrowed = evaluator.evaluate(&request).unwrap();
         let owned = evaluator.evaluate_owned(request).unwrap();
         assert_eq!(owned, borrowed);
+    }
+
+    // Patterns without `${...}` are compiled when the policy is added to the
+    // evaluator. The cached matchers must match exactly what per-request
+    // compilation matched, including entry-wise "*" and wildcard components.
+    #[test]
+    fn test_precompiled_patterns_match_same_resources() {
+        let evaluator_for = |resource: IAMResource| {
+            PolicyEvaluator::with_policies(vec![
+                IAMPolicy::new().add_statement(
+                    IAMStatement::new(IAMEffect::Allow)
+                        .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                        .with_resource(resource),
+                ),
+            ])
+        };
+        let decision_for = |evaluator: &PolicyEvaluator, resource: &str| {
+            let request = IAMRequest::new(
+                Principal::Aws(PrincipalId::String(
+                    "arn:aws:iam::123456789012:user/test".into(),
+                )),
+                "s3:GetObject",
+                Arn::parse(resource).unwrap(),
+            );
+            evaluator.evaluate(&request).unwrap().decision
+        };
+
+        let patterns = evaluator_for(IAMResource::Multiple(vec![
+            "arn:aws:s3:::other-bucket/*".to_string(),
+            "arn:aws:s3:::my-*/*.txt".to_string(),
+        ]));
+        assert_eq!(
+            decision_for(&patterns, "arn:aws:s3:::other-bucket/object.json"),
+            Decision::Allow
+        );
+        assert_eq!(
+            decision_for(&patterns, "arn:aws:s3:::my-bucket/file.txt"),
+            Decision::Allow
+        );
+        // The wildcard components stay meaningful: another extension and another
+        // bucket do not match.
+        assert_eq!(
+            decision_for(&patterns, "arn:aws:s3:::my-bucket/file.json"),
+            Decision::NotApplicable
+        );
+        assert_eq!(
+            decision_for(&patterns, "arn:aws:s3:::unrelated-bucket/file.txt"),
+            Decision::NotApplicable
+        );
+
+        // "*" keeps its always-true short circuit when it is one entry of a list.
+        let any = evaluator_for(IAMResource::Multiple(vec![
+            "arn:aws:s3:::other-bucket/*".to_string(),
+            "*".to_string(),
+        ]));
+        assert_eq!(
+            decision_for(&any, "arn:aws:s3:::unrelated-bucket/file.txt"),
+            Decision::Allow
+        );
+    }
+
+    // A pattern with `${...}` is request-dependent: it must not be frozen at
+    // add time, so the same evaluator resolves a different username per request.
+    #[test]
+    fn test_variable_resource_pattern_resolved_per_request() {
+        let evaluator = PolicyEvaluator::with_policies(vec![
+            IAMPolicy::new().add_statement(
+                IAMStatement::new(IAMEffect::Allow)
+                    .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                    .with_resource(IAMResource::Single(
+                        "arn:aws:s3:::home/${aws:username}/*".to_string(),
+                    )),
+            ),
+        ]);
+
+        let decision_for = |username: &str| {
+            let request = IAMRequest::new_with_context(
+                Principal::Aws(PrincipalId::String(
+                    "arn:aws:iam::123456789012:user/test".into(),
+                )),
+                "s3:GetObject",
+                Arn::parse("arn:aws:s3:::home/alice/notes.txt").unwrap(),
+                Context::new().with_string("aws:username", username),
+            );
+            evaluator.evaluate(&request).unwrap().decision
+        };
+
+        assert_eq!(decision_for("alice"), Decision::Allow);
+        assert_eq!(decision_for("bob"), Decision::NotApplicable);
+    }
+
+    // A malformed static pattern is only detected when the pattern is compiled.
+    // `add_policy` is infallible, so the error must reach the caller from
+    // `evaluate` exactly as the per-request compilation used to report it.
+    #[test]
+    fn test_malformed_static_pattern_fails_at_evaluation() {
+        let mut evaluator = PolicyEvaluator::new();
+        evaluator.add_policy(
+            IAMPolicy::new().add_statement(
+                IAMStatement::new(IAMEffect::Allow)
+                    .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                    .with_resource(IAMResource::Single("not-an-arn".to_string())),
+            ),
+        );
+
+        let request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
+            "s3:GetObject",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        );
+
+        let error = evaluator
+            .evaluate(&request)
+            .expect_err("a malformed static resource pattern must fail evaluation");
+        let expected = ArnMatcher::from_pattern("not-an-arn")
+            .unwrap_err()
+            .to_string();
+        assert_eq!(error, EvaluationError::InvalidArn(expected));
+    }
+
+    // The compiled patterns are parallel to `policies`; a policy added after
+    // construction must extend both, or evaluation would read bindings that do
+    // not describe its statements.
+    #[test]
+    fn test_policies_added_after_construction_stay_in_sync() {
+        let mut evaluator = PolicyEvaluator::new();
+        assert_eq!(evaluator.resource_patterns.len(), evaluator.policies.len());
+
+        evaluator.add_policy(
+            IAMPolicy::new().add_statement(
+                IAMStatement::new(IAMEffect::Allow)
+                    .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                    .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
+            ),
+        );
+        assert_eq!(evaluator.resource_patterns.len(), evaluator.policies.len());
+
+        evaluator
+            .try_add_policy(
+                IAMPolicy::new().add_statement(
+                    IAMStatement::new(IAMEffect::Deny)
+                        .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                        .with_resource(IAMResource::Single(
+                            "arn:aws:s3:::my-bucket/secret/*".to_string(),
+                        )),
+                ),
+            )
+            .expect("valid policy must be accepted");
+        assert_eq!(evaluator.resource_patterns.len(), evaluator.policies.len());
+
+        let decision_for = |resource: &str| {
+            let request = IAMRequest::new(
+                Principal::Aws(PrincipalId::String(
+                    "arn:aws:iam::123456789012:user/test".into(),
+                )),
+                "s3:GetObject",
+                Arn::parse(resource).unwrap(),
+            );
+            evaluator.evaluate(&request).unwrap().decision
+        };
+
+        assert_eq!(
+            decision_for("arn:aws:s3:::my-bucket/object.json"),
+            Decision::Allow
+        );
+        assert_eq!(
+            decision_for("arn:aws:s3:::my-bucket/secret/object.json"),
+            Decision::Deny
+        );
+    }
+
+    #[test]
+    fn test_cloned_evaluator_evaluates_identically() {
+        let evaluator = PolicyEvaluator::with_policies(vec![
+            IAMPolicy::new().add_statement(
+                IAMStatement::new(IAMEffect::Allow)
+                    .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                    .with_resource(IAMResource::Single(
+                        "arn:aws:s3:::home/${aws:username}/*".to_string(),
+                    )),
+            ),
+            IAMPolicy::new().add_statement(
+                IAMStatement::new(IAMEffect::Deny)
+                    .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                    .with_resource(IAMResource::Single(
+                        "arn:aws:s3:::home/*/private/*".to_string(),
+                    )),
+            ),
+        ])
+        .with_options(EvaluationOptions {
+            collect_match_details: true,
+            ..EvaluationOptions::default()
+        });
+
+        let cloned = evaluator.clone();
+        let request = IAMRequest::new_with_context(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
+            "s3:GetObject",
+            Arn::parse("arn:aws:s3:::home/alice/notes.txt").unwrap(),
+            Context::new().with_string("aws:username", "alice"),
+        );
+
+        let original = evaluator.evaluate(&request).unwrap();
+        assert_eq!(original.decision, Decision::Allow);
+        assert_eq!(cloned.evaluate(&request).unwrap(), original);
+
+        let denied = IAMRequest::new_with_context(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
+            "s3:GetObject",
+            Arn::parse("arn:aws:s3:::home/alice/private/notes.txt").unwrap(),
+            Context::new().with_string("aws:username", "alice"),
+        );
+        assert_eq!(
+            cloned.evaluate(&denied).unwrap(),
+            evaluator.evaluate(&denied).unwrap()
+        );
+        assert_eq!(cloned.evaluate(&denied).unwrap().decision, Decision::Deny);
     }
 
     #[test]
