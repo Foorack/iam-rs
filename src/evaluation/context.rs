@@ -27,6 +27,18 @@ pub enum ContextValue {
     #[cfg_attr(feature = "utoipa", schema(title = "Number"))]
     Number(f64),
     /// `DateTime` value (e.g., request time)
+    ///
+    /// A Rust-API convenience: it serialises to an RFC 3339 string, and a document
+    /// holding that string reads back as [`ContextValue::String`], because JSON
+    /// gives no way to tell the two apart. Use it to hand the engine a typed
+    /// instant without going through string parsing; do not expect the
+    /// distinction to survive a round trip.
+    ///
+    /// `skip_deserializing` states exactly that: no document can produce this
+    /// variant. It also keeps the unreachable `date-time` alternative out of the
+    /// published schema, which otherwise advertised a value no client could send
+    /// or receive.
+    #[serde(skip_deserializing)]
     #[cfg_attr(feature = "utoipa", schema(title = "DateTime"))]
     DateTime(DateTime<Utc>),
     /// List of strings (e.g., list of ARNs)
@@ -482,5 +494,45 @@ mod tests {
             serde_json::from_str::<Context>(&json).expect("reads back"),
             context
         );
+    }
+
+    #[test]
+    fn test_datetime_is_carried_as_a_string() {
+        // The variant exists so a host can hand the engine a typed instant. JSON
+        // cannot tell it apart from a string, so that is what it becomes on the
+        // way out and on the way back in — pinned so the published schema, which
+        // no longer offers a `date-time` alternative, keeps describing reality.
+        use chrono::TimeZone;
+
+        let datetime = ContextValue::DateTime(Utc.with_ymd_and_hms(2024, 1, 2, 3, 4, 5).unwrap());
+        let json = serde_json::to_string(&datetime).unwrap();
+        assert_eq!(json, "\"2024-01-02T03:04:05Z\"");
+        assert_eq!(
+            serde_json::from_str::<ContextValue>(&json).unwrap(),
+            ContextValue::String("2024-01-02T03:04:05Z".to_string()),
+            "a document can only carry the string form"
+        );
+    }
+
+    #[test]
+    fn test_datetime_context_value_still_evaluates_as_a_date() {
+        // Typed instants remain usable input; only the round-trip type is lost.
+        use super::super::operator_eval::evaluate_condition;
+        use crate::IAMOperator;
+        use chrono::TimeZone;
+
+        let mut context = Context::new();
+        context.insert(
+            "aws:CurrentTime".to_string(),
+            ContextValue::DateTime(Utc.with_ymd_and_hms(2024, 6, 1, 0, 0, 0).unwrap()),
+        );
+        let matched = evaluate_condition(
+            &context,
+            &IAMOperator::DateLessThan,
+            "aws:CurrentTime",
+            &crate::ConditionValue::String("2024-07-01T00:00:00Z".to_string()),
+        )
+        .unwrap();
+        assert!(matched, "a typed DateTime must still compare as a date");
     }
 }
