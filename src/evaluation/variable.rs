@@ -59,27 +59,59 @@ impl PolicyVariable {
     /// Resolve the variable against a context
     #[must_use]
     pub fn resolve(&self, context: &Context) -> String {
+        self.resolve_checked(context).unwrap_or_default()
+    }
+
+    /// Resolve the variable, reporting an unresolvable variable as `None`.
+    ///
+    /// A variable is unresolvable when the context key is absent (or holds a
+    /// type that does not render, such as a boolean list) *and* the policy
+    /// author supplied no default. AWS calls that a null value, which does not
+    /// equal anything — so it must not be confused with the empty string.
+    #[must_use]
+    pub fn resolve_checked(&self, context: &Context) -> Option<String> {
         match context.get(&self.key) {
-            Some(ContextValue::String(value)) => value.clone(),
-            Some(other) => {
-                // Convert other types to string representation
-                match other {
-                    ContextValue::Boolean(b) => b.to_string(),
-                    ContextValue::Number(n) => n.to_string(),
-                    ContextValue::DateTime(dt) => dt.to_rfc3339(),
-                    ContextValue::StringList(list) => list.join(","),
-                    _ => self.default_value.clone().unwrap_or_default(),
-                }
-            }
-            None => self.default_value.clone().unwrap_or_default(),
+            Some(ContextValue::String(value)) => Some(value.clone()),
+            Some(ContextValue::Boolean(b)) => Some(b.to_string()),
+            Some(ContextValue::Number(n)) => Some(n.to_string()),
+            Some(ContextValue::DateTime(dt)) => Some(dt.to_rfc3339()),
+            Some(ContextValue::StringList(list)) => Some(list.join(",")),
+            Some(ContextValue::BooleanList(_)) | None => self.default_value.clone(),
         }
     }
 }
 
 /// Interpolate policy variables in a string
+///
+/// An unresolvable variable resolves to the empty string here, matching
+/// [`PolicyVariable::resolve`]. AWS instead treats such a variable as null,
+/// which equals nothing; that distinction is not observable through this
+/// function, so the evaluation engine uses the crate-internal checked variant.
+///
+/// # Errors
+///
+/// Returns `EvaluationError::InvalidVariable` for a malformed variable, an
+/// unclosed `${`, or a context-derived value containing a wildcard.
 pub fn interpolate_variables(input: &str, context: &Context) -> Result<String, EvaluationError> {
+    interpolate_variables_checked(input, context).map(|interpolation| interpolation.text)
+}
+
+/// The result of interpolating a policy pattern.
+pub(crate) struct Interpolation {
+    /// The pattern with every variable that had a value substituted.
+    pub(crate) text: String,
+    /// Whether at least one variable had no value and no default, which AWS
+    /// treats as null rather than as an empty string.
+    pub(crate) unresolved: bool,
+}
+
+pub(crate) fn interpolate_variables_checked(
+    input: &str,
+    context: &Context,
+) -> Result<Interpolation, EvaluationError> {
     let mut result = input.to_string();
     let mut start = 0;
+    let mut unresolved = false;
 
     while let Some(var_start) = result[start..].find("${") {
         let absolute_start = start + var_start;
@@ -88,7 +120,15 @@ pub fn interpolate_variables(input: &str, context: &Context) -> Result<String, E
             let variable_str = &result[absolute_start..absolute_end];
 
             let variable = PolicyVariable::parse(variable_str)?;
-            let resolved_value = variable.resolve(context);
+            // Nothing to substitute: AWS leaves the pattern with no value, so it
+            // cannot equal anything. The caller decides what that means for the
+            // operator it is evaluating.
+            let Some(resolved_value) = variable.resolve_checked(context) else {
+                unresolved = true;
+                result.replace_range(absolute_start..absolute_end, "");
+                start = absolute_start;
+                continue;
+            };
 
             // Context values are attacker-controlled in most deployments. Splicing
             // one into a pattern verbatim lets a value of "*" turn
@@ -113,7 +153,10 @@ pub fn interpolate_variables(input: &str, context: &Context) -> Result<String, E
         }
     }
 
-    Ok(result)
+    Ok(Interpolation {
+        text: result,
+        unresolved,
+    })
 }
 
 #[cfg(test)]
