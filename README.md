@@ -1,6 +1,9 @@
 # iam-rs
 
-## USAGE NOTICE: This library is still in final phase of verification and may have breaking changes. Pin exact version. It is functional and ready to use, but it has not been externally verified. Small differences may exist compared to AWS's own internal implementation. Please report any discrepancies.
+> `iam-rs` is functional and ready to use, but it has not been externally audited, and small
+> differences from AWS's own implementation are still possible — please report any you find. While
+> the crate is pre-1.0, minor releases can include breaking changes, so pin an exact version if you
+> need a stable API.
 
 [![Crates.io](https://img.shields.io/crates/v/iam-rs.svg)](https://crates.io/crates/iam-rs)
 [![Documentation](https://docs.rs/iam-rs/badge.svg)](https://docs.rs/iam-rs)
