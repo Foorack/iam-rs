@@ -163,6 +163,22 @@ let actions = IAMAction::Multiple(vec![
 ]);
 ```
 
+#### Where Wildcards Are Not Allowed
+
+AWS allows wildcards in an action's name and in most of an ARN, but not everywhere.
+`validate()` rejects — as AWS does with `MalformedPolicyDocument` — a `*` or `?`
+
+- in an action's service namespace, e.g. `s3*:GetObject` or `*:GetObject` (the action
+  name itself may still be wildcarded: `s3:Get*` is valid);
+- in an ARN's partition, service or resource type: `arn:*:s3:::b/*`,
+  `arn:aws:*:::b/*` and `arn:aws:lambda:r:a:functi*:my-function` are all invalid.
+  Region, account and resource id keep their wildcards, so `arn:aws:ec2:*:123456789012:vpc/*`
+  and `arn:aws:s3:::my*bucket/*` are valid.
+
+Evaluation compares an action's service namespace literally for the same reason, so an
+unvalidated `*:GetObject` does not match `ec2:GetObject`. `Arn::matches` stays lenient
+about wildcards in those ARN segments; validation is the gate.
+
 ## 🔧 Variable Interpolation
 
 IAM-rs supports AWS policy variables with default fallback values, enabling dynamic resource paths and conditions.

@@ -177,53 +177,111 @@ pub(crate) mod helpers {
         }
     }
 
+    /// Whether a segment carries an IAM wildcard
+    fn has_wildcard(segment: &str) -> bool {
+        segment.contains('*') || segment.contains('?')
+    }
+
+    /// The resource-type segment of an ARN's resource, if it has one.
+    ///
+    /// The type is the part that precedes the first `:` of the resource and the
+    /// first `/`, so `arn:aws:lambda:r:a:function:my-function` has the type
+    /// `function`. Resources written as `bucket/key` carry no `type:name` split
+    /// at all, which is exactly an S3 resource: they have no type to check.
+    fn resource_type(resource: &str) -> Option<&str> {
+        let (head, _) = resource.split_once(':')?;
+        Some(head.split('/').next().unwrap_or(head))
+    }
+
     /// Validate action format (service:action)
+    ///
+    /// AWS's action grammar is "a service namespace, a colon, and the name of an
+    /// action. Action names can include wildcards." The namespace itself cannot:
+    /// a document such as `s3*:GetObject` is rejected with
+    /// `MalformedPolicyDocument`. Accepting it here would also be unsafe at
+    /// evaluation time, since the wildcard would cross the `:` boundary.
     pub fn validate_action(action: &str, _context: &ValidationContext) -> ValidationResult {
         if action == "*" {
             return Ok(());
         }
 
-        if action.contains(':') {
-            let parts: Vec<&str> = action.split(':').collect();
-            if parts.len() == 2 && !parts[0].is_empty() && !parts[1].is_empty() {
-                // Basic service:action format
-                Ok(())
-            } else {
-                Err(ValidationError::InvalidAction {
-                    action: action.to_string(),
-                    reason: "Action must be in format 'service:action'".to_string(),
-                })
-            }
-        } else {
-            Err(ValidationError::InvalidAction {
+        let Some((namespace, name)) = action.split_once(':') else {
+            return Err(ValidationError::InvalidAction {
                 action: action.to_string(),
                 reason: "Action must contain a colon separator or be '*'".to_string(),
-            })
+            });
+        };
+
+        if namespace.is_empty() || name.is_empty() || name.contains(':') {
+            return Err(ValidationError::InvalidAction {
+                action: action.to_string(),
+                reason: "Action must be in format 'service:action'".to_string(),
+            });
         }
+
+        if has_wildcard(namespace) {
+            return Err(ValidationError::InvalidAction {
+                action: action.to_string(),
+                reason: "the service namespace must not contain wildcards".to_string(),
+            });
+        }
+
+        Ok(())
     }
 
     /// Validate resource ARN or wildcard
+    ///
+    /// Wildcards are allowed in the region, account and resource-id parts of an
+    /// ARN, but AWS forbids them in the partition, the service and the resource
+    /// type ("you can't use a wildcard in the service segment that identifies the
+    /// AWS product", "you cannot ... have a wildcard in the partition section of
+    /// an ARN", "You cannot use a wildcard in the portion of the ARN that
+    /// specifies the resource type"). Those are rejected here rather than in
+    /// `Arn::matches`, so that a policy AWS refuses cannot pass as valid.
+    ///
+    /// A resource with no `type:name` split (`*`, `bucket`, `bucket/key`) has no
+    /// type segment and is left alone, so an S3 pattern such as
+    /// `arn:aws:s3:::my*bucket/*` stays valid.
     pub fn validate_resource(resource: &str, _context: &ValidationContext) -> ValidationResult {
         if resource == "*" {
             return Ok(());
         }
 
-        // Resources should be ARNs, but may contain wildcards
-        if resource.starts_with("arn:") {
-            // Use lenient parsing for resources with wildcards
-            match Arn::parse(resource) {
-                Ok(_) => Ok(()),
-                Err(e) => Err(ValidationError::InvalidResource {
-                    resource: resource.to_string(),
-                    reason: e.to_string(),
-                }),
-            }
-        } else {
-            Err(ValidationError::InvalidResource {
+        if !resource.starts_with("arn:") {
+            return Err(ValidationError::InvalidResource {
                 resource: resource.to_string(),
                 reason: "Resource must be an ARN or '*'".to_string(),
-            })
+            });
         }
+
+        // Use lenient parsing for resources with wildcards
+        let arn = Arn::parse(resource).map_err(|e| ValidationError::InvalidResource {
+            resource: resource.to_string(),
+            reason: e.to_string(),
+        })?;
+
+        if has_wildcard(&arn.partition) {
+            return Err(ValidationError::InvalidResource {
+                resource: resource.to_string(),
+                reason: "the ARN partition must not contain wildcards".to_string(),
+            });
+        }
+
+        if has_wildcard(&arn.service) {
+            return Err(ValidationError::InvalidResource {
+                resource: resource.to_string(),
+                reason: "the ARN service must not contain wildcards".to_string(),
+            });
+        }
+
+        if resource_type(&arn.resource).is_some_and(has_wildcard) {
+            return Err(ValidationError::InvalidResource {
+                resource: resource.to_string(),
+                reason: "the ARN resource type must not contain wildcards".to_string(),
+            });
+        }
+
+        Ok(())
     }
 
     /// Collect multiple validation errors
@@ -305,6 +363,123 @@ mod tests {
         assert!(helpers::validate_resource("arn:aws:s3:::bucket/*", &context).is_ok());
         assert!(helpers::validate_resource("invalid-resource", &context).is_err());
         assert!(helpers::validate_resource("arn:aws:s3:::bucket/object", &context).is_ok());
+    }
+
+    #[test]
+    fn test_wildcard_in_action_namespace_is_invalid() {
+        use crate::{IAMAction, IAMEffect, IAMPolicy, IAMResource, IAMStatement};
+
+        // AWS's grammar allows wildcards in the action name, not in the service
+        // namespace: `s3*:GetObject` and `*:GetObject` are MalformedPolicyDocument.
+        for action in [
+            "s3*:GetObject",
+            "*:GetObject",
+            "s3?GetObject",
+            "?3:GetObject",
+        ] {
+            let policy = IAMPolicy::new().add_statement(
+                IAMStatement::new(IAMEffect::Allow)
+                    .with_action(IAMAction::Single(action.to_string()))
+                    .with_resource(IAMResource::Single("*".to_string())),
+            );
+            let error = policy
+                .validate_result()
+                .expect_err(&format!("'{action}' must not validate"));
+            assert!(
+                error.to_string().contains("Invalid action"),
+                "unexpected error for '{action}': {error}"
+            );
+        }
+
+        // `NotAction` goes through the same check.
+        let mut statement = IAMStatement::new(IAMEffect::Deny);
+        statement.not_action = Some(IAMAction::Multiple(vec!["*:GetObject".to_string()]));
+        statement.resource = Some(IAMResource::Single("*".to_string()));
+        assert!(
+            IAMPolicy::new()
+                .add_statement(statement)
+                .validate_result()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_wildcard_in_arn_partition_service_and_resource_type_is_invalid() {
+        use crate::{IAMAction, IAMEffect, IAMPolicy, IAMResource, IAMStatement};
+
+        for resource in [
+            // partition
+            "arn:*:s3:::bucket/*",
+            "arn:aws-*:s3:::bucket/*",
+            // service
+            "arn:aws:*:::bucket/*",
+            "arn:aws:s3*:::bucket/*",
+            "arn:aws:s3?::bucket/*",
+            // resource type, with a `type:name` resource
+            "arn:aws:lambda:us-east-1:123456789012:functi*:my-function",
+            "arn:aws:lambda:us-east-1:123456789012:function*:my-function",
+            "arn:aws:ec2:us-east-1:123456789012:instanc?:i-1234567890abcdef0",
+        ] {
+            let policy = IAMPolicy::new().add_statement(
+                IAMStatement::new(IAMEffect::Allow)
+                    .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                    .with_resource(IAMResource::Single(resource.to_string())),
+            );
+            let error = policy
+                .validate_result()
+                .expect_err(&format!("'{resource}' must not validate"));
+            assert!(
+                error.to_string().contains("Invalid resource"),
+                "unexpected error for '{resource}': {error}"
+            );
+        }
+
+        // `NotResource` goes through the same check.
+        let mut statement = IAMStatement::new(IAMEffect::Deny);
+        statement.action = Some(IAMAction::Single("s3:*".to_string()));
+        statement.not_resource = Some(IAMResource::Single("arn:aws:*:::bucket/*".to_string()));
+        assert!(
+            IAMPolicy::new()
+                .add_statement(statement)
+                .validate_result()
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_wildcards_outside_action_namespace_and_arn_segments_still_validate() {
+        use crate::{IAMAction, IAMEffect, IAMPolicy, IAMResource, IAMStatement};
+
+        for action in ["*", "s3:*", "s3:GetObject", "s3:Get*", "iam:*AccessKey*"] {
+            let policy = IAMPolicy::new().add_statement(
+                IAMStatement::new(IAMEffect::Allow)
+                    .with_action(IAMAction::Single(action.to_string()))
+                    .with_resource(IAMResource::Single("*".to_string())),
+            );
+            assert!(policy.validate_result().is_ok(), "'{action}' must validate");
+        }
+
+        for resource in [
+            "*",
+            "arn:aws:s3:::bucket/*",
+            "arn:aws:ec2:*:123456789012:vpc/*",
+            "arn:aws:s3:::*",
+            // An S3 resource is `bucket/key`: it has no resource type to reject.
+            "arn:aws:s3:::bucket",
+            "arn:aws:s3:::bucket/reports/2024/*",
+            "arn:aws:iam::123456789012:role/*",
+            "arn:aws:lambda:us-east-1:123456789012:function:my-function",
+        ] {
+            let policy = IAMPolicy::new().add_statement(
+                IAMStatement::new(IAMEffect::Allow)
+                    .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                    .with_resource(IAMResource::Single(resource.to_string())),
+            );
+            assert!(
+                policy.validate_result().is_ok(),
+                "'{resource}' must validate"
+            );
+        }
     }
 
     #[test]
