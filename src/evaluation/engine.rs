@@ -931,10 +931,28 @@ impl PolicyEvaluator {
     /// AWS treats action names as case-insensitive (e.g. `iam:ListAccessKeys`
     /// is the same as `IAM:listaccesskeys`), so both the request action and the
     /// policy pattern are compared lowercased.
+    ///
+    /// Wildcards are honoured only in the action name. The service namespace is
+    /// compared literally, because AWS does not allow a wildcard there: matching
+    /// `s3*:GetObject` against `s3x:GetObject` (or `*:GetObject` against
+    /// `ec2:GetObject`) would let a wildcard cross the `:` separator, which
+    /// Validation rejects. A `Deny` or `NotAction` in an unvalidated document
+    /// would otherwise silently deny every service.
     fn action_matches(action: &IAMAction, request_action: &str) -> bool {
         let request_action = request_action.to_ascii_lowercase();
-        let pattern_matches =
-            |a: &str| a == "*" || wildcard_match(&request_action, &a.to_ascii_lowercase());
+        let request_namespace = request_action
+            .split_once(':')
+            .map_or(request_action.as_str(), |(namespace, _)| namespace);
+        let pattern_matches = |a: &str| {
+            if a == "*" {
+                return true;
+            }
+            let pattern = a.to_ascii_lowercase();
+            let namespace = pattern
+                .split_once(':')
+                .map_or(pattern.as_str(), |(namespace, _)| namespace);
+            namespace == request_namespace && wildcard_match(&request_action, &pattern)
+        };
         match action {
             IAMAction::Single(a) => pattern_matches(a),
             IAMAction::Multiple(actions) => actions.iter().any(|a| pattern_matches(a)),
@@ -3890,6 +3908,57 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn test_action_namespace_wildcard_does_not_cross_the_colon() {
+        // AWS's action grammar allows wildcards in the action name, not in the
+        // service namespace. Validation rejects such a document; evaluating one
+        // that skipped validation must not let the wildcard swallow the `:` and
+        // match another service either, or a `Deny` silently covers every service.
+        for pattern in ["s3*:GetObject", "*:GetObject", "s3?:GetObject"] {
+            for effect in [IAMEffect::Allow, IAMEffect::Deny] {
+                let policy = IAMPolicy::new().add_statement(
+                    IAMStatement::new(effect)
+                        .with_action(IAMAction::Single(pattern.to_string()))
+                        .with_resource(IAMResource::Single("*".to_string())),
+                );
+
+                for foreign in ["s3x:GetObject", "ec2:GetObject", "kms:GetObject"] {
+                    let request = test_request(foreign, "arn:aws:s3:::my-bucket/file.txt");
+                    assert_eq!(
+                        evaluate_policy(&policy, &request).unwrap(),
+                        Decision::NotApplicable,
+                        "{effect:?} '{pattern}' must not match '{foreign}'"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_action_wildcards_in_the_name_still_match() {
+        for (pattern, action) in [
+            ("*", "ec2:GetObject"),
+            ("s3:*", "s3:GetObject"),
+            ("s3:Get*", "s3:GetObject"),
+            ("iam:*AccessKey*", "iam:ListAccessKeys"),
+            ("s3:GetObject", "S3:GETOBJECT"),
+        ] {
+            let policy = IAMPolicy::new().add_statement(
+                IAMStatement::new(IAMEffect::Allow)
+                    .with_action(IAMAction::Single(pattern.to_string()))
+                    .with_resource(IAMResource::Single("*".to_string())),
+            );
+
+            let request = test_request(action, "arn:aws:s3:::my-bucket/file.txt");
+            assert_eq!(
+                evaluate_policy(&policy, &request).unwrap(),
+                Decision::Allow,
+                "'{pattern}' must match '{action}'"
+            );
+        }
+    }
+    // --- tests merged from main ---
 
     // AWS managed policies are owned by AWS itself and carry the reserved
     // account `aws`, in every partition. Such a resource is data, not a policy
