@@ -440,6 +440,18 @@ impl PolicyEvaluator {
         request: &IAMRequest,
         options: &EvaluationOptions,
     ) -> Result<StatementMatch, EvaluationError> {
+        // AWS only supports NotPrincipal with Effect: Deny, so an Allow statement
+        // carrying one cannot exist as a policy. Treat it as never matching
+        // rather than letting the exclusion logic below grant access.
+        if statement.effect == IAMEffect::Allow && statement.not_principal.is_some() {
+            return Ok(StatementMatch {
+                sid: statement.sid.clone(),
+                effect: statement.effect,
+                conditions_satisfied: false,
+                reason: "Allow with NotPrincipal is invalid and never matches".to_string(),
+            });
+        }
+
         // Check if principal matches (for resource-based policies)
         if let Some(ref principal) = statement.principal
             && !Self::principal_matches(principal, &request.principal)?
@@ -1949,6 +1961,86 @@ mod tests {
         evaluator
             .try_add_policy(valid)
             .expect("valid policy must be accepted");
+    }
+
+    fn not_principal_policy(effect: IAMEffect) -> IAMPolicy {
+        let mut statement = IAMStatement::new(effect)
+            .with_action(IAMAction::Single("s3:GetObject".to_string()))
+            .with_resource(IAMResource::Single("*".to_string()));
+        statement.not_principal = Some(Principal::Aws(PrincipalId::String(
+            "arn:aws:iam::123456789012:user/alice".to_string(),
+        )));
+        IAMPolicy::new().add_statement(statement)
+    }
+
+    fn s3_request_for(user: &str) -> IAMRequest {
+        IAMRequest::new(
+            Principal::Aws(PrincipalId::String(format!(
+                "arn:aws:iam::123456789012:user/{user}"
+            ))),
+            "s3:GetObject",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        )
+    }
+
+    // AWS does not support NotPrincipal with Effect: Allow, so no such policy can
+    // exist. The evaluator treats the statement as never matching instead of
+    // mirroring the exclusion and granting every principal outside the list.
+    #[test]
+    fn test_allow_with_not_principal_never_matches() {
+        let policy = not_principal_policy(IAMEffect::Allow);
+        let request = s3_request_for("bob");
+
+        assert_eq!(
+            evaluate_policy(&policy, &request).unwrap(),
+            Decision::NotApplicable
+        );
+
+        // The decision comes from the statement not matching, not from an error.
+        let evaluator =
+            PolicyEvaluator::with_policies(vec![policy]).with_options(EvaluationOptions {
+                collect_match_details: true,
+                ..EvaluationOptions::default()
+            });
+        let result = evaluator.evaluate(&request).unwrap();
+        assert_eq!(result.decision, Decision::NotApplicable);
+        assert_eq!(result.statement_details.len(), 1);
+        assert!(!result.statement_details[0].conditions_satisfied);
+        assert!(
+            result.statement_details[0].reason.contains("NotPrincipal"),
+            "unexpected reason: {}",
+            result.statement_details[0].reason
+        );
+    }
+
+    #[test]
+    fn test_allow_with_not_principal_does_not_match_the_listed_principal() {
+        let policy = not_principal_policy(IAMEffect::Allow);
+
+        assert_eq!(
+            evaluate_policy(&policy, &s3_request_for("alice")).unwrap(),
+            Decision::NotApplicable
+        );
+    }
+
+    #[test]
+    fn test_deny_with_not_principal_still_denies_other_principals() {
+        let policy = not_principal_policy(IAMEffect::Deny);
+
+        assert_eq!(
+            evaluate_policy(&policy, &s3_request_for("bob")).unwrap(),
+            Decision::Deny
+        );
+    }
+
+    #[test]
+    fn test_deny_with_not_principal_does_not_match_the_listed_principal() {
+        let policy = not_principal_policy(IAMEffect::Deny);
+
+        assert_eq!(
+            evaluate_policy(&policy, &s3_request_for("alice")).unwrap(),
+            Decision::NotApplicable
+        );
     }
 
     // A wildcard is not a valid request principal. `evaluate` rejects it before
