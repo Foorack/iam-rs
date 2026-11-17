@@ -151,6 +151,15 @@ for pattern in patterns {
 }
 ```
 
+An incomplete ARN in a policy `Resource` is completed with wildcards, as AWS does:
+`"Resource": "arn:aws:sqs"` means `arn:aws:sqs:*:*:*`, likewise
+`arn:aws:sqs:*` and `arn:aws:sqs:us-east-1`. Only the missing fields are filled in —
+the partition and the service always come from the policy, so the pattern still names
+one service. Fewer than three fields (`arn:aws`) is rejected: with no service there is
+no resource type for the wildcards to scope. `Arn::complete_resource_pattern` performs
+the completion. It is not applied to a request resource or to a principal, which name a
+real ARN.
+
 #### Action Wildcards
 
 ```rust

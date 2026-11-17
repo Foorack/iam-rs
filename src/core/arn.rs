@@ -139,6 +139,51 @@ impl Arn {
         })
     }
 
+    /// Complete an incomplete ARN that appears as a policy `Resource` with `*`
+    ///
+    /// AWS: "When you specify an incomplete ARN (one with fewer than the standard
+    /// six fields) in an identity-based policy, AWS automatically completes the ARN
+    /// by adding wildcard characters (`*`) to all missing fields. For example,
+    /// specifying `arn:aws:sqs` is equivalent to `arn:aws:sqs:*:*:*`." — IAM User
+    /// Guide, *Grammar of the IAM JSON policy language*.
+    ///
+    /// Only the trailing fields that are absent are added: a field that is present,
+    /// including one that is present but empty (`arn:aws:s3:::`), is left alone.
+    ///
+    /// This applies to a policy resource pattern, never to a request resource or a
+    /// principal, which name a real ARN. A pattern with fewer than three fields
+    /// (`arn:aws`) is rejected: the partition and the service are never wildcarded,
+    /// so such a pattern names no resource type for the remaining `*`s to restrict.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ArnError::InvalidPrefix`] if the pattern does not start with
+    /// `arn:`, and [`ArnError::InvalidFormat`] if it has fewer than three fields
+    /// or more than the six an ARN has.
+    pub fn complete_resource_pattern(pattern: &str) -> Result<String, ArnError> {
+        let parts: Vec<&str> = pattern.split(':').collect();
+
+        if parts.len() >= 6 {
+            return Arn::parse(pattern).map(|_| pattern.to_string());
+        }
+
+        if parts[0] != "arn" {
+            return Arn::parse(pattern).map(|_| pattern.to_string());
+        }
+
+        if parts.len() < 3 {
+            return Err(ArnError::InvalidFormat);
+        }
+
+        let mut completed = String::with_capacity(pattern.len() + 6);
+        completed.push_str(pattern);
+        for _ in parts.len()..6 {
+            completed.push_str(":*");
+        }
+        Arn::parse(&completed)?;
+        Ok(completed)
+    }
+
     /// Check if this ARN matches another ARN or pattern
     /// Supports wildcards (* and ?) in any component except service
     ///
@@ -500,6 +545,47 @@ mod tests {
     fn test_invalid_arn_format() {
         let result = Arn::parse("arn:aws:s3");
         assert_eq!(result, Err(ArnError::InvalidFormat));
+    }
+
+    #[test]
+    fn test_complete_resource_pattern_adds_missing_fields() {
+        assert_eq!(
+            Arn::complete_resource_pattern("arn:aws:sqs").unwrap(),
+            "arn:aws:sqs:*:*:*"
+        );
+        assert_eq!(
+            Arn::complete_resource_pattern("arn:aws:sqs:*").unwrap(),
+            "arn:aws:sqs:*:*:*"
+        );
+        assert_eq!(
+            Arn::complete_resource_pattern("arn:aws:sqs:us-east-1").unwrap(),
+            "arn:aws:sqs:us-east-1:*:*"
+        );
+
+        // Complete patterns come back untouched, including one with fields that are
+        // present but empty: only the absent fields gain a wildcard.
+        for already_complete in [
+            "arn:aws:s3:::my-bucket/*",
+            "arn:aws:s3:::",
+            "arn:aws:iam::123456789012:user/username",
+        ] {
+            assert_eq!(
+                Arn::complete_resource_pattern(already_complete).unwrap(),
+                already_complete
+            );
+        }
+
+        // Two fields name no service, so nothing remains for the wildcards to scope.
+        assert_eq!(
+            Arn::complete_resource_pattern("arn:aws"),
+            Err(ArnError::InvalidFormat)
+        );
+        // Not an ARN at all is still an error.
+        assert!(Arn::complete_resource_pattern("not-an-arn").is_err());
+        assert_eq!(
+            Arn::complete_resource_pattern("other:aws:s3"),
+            Err(ArnError::InvalidFormat)
+        );
     }
 
     #[test]

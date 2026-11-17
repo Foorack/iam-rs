@@ -210,8 +210,9 @@ pub(crate) mod helpers {
 
         // Resources should be ARNs, but may contain wildcards
         if resource.starts_with("arn:") {
-            // Use lenient parsing for resources with wildcards
-            match Arn::parse(resource) {
+            // An incomplete ARN is completed with wildcards by AWS, so `arn:aws:sqs`
+            // is the pattern `arn:aws:sqs:*:*:*`.
+            match Arn::complete_resource_pattern(resource) {
                 Ok(_) => Ok(()),
                 Err(e) => Err(ValidationError::InvalidResource {
                     resource: resource.to_string(),
