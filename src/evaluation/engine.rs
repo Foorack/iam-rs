@@ -6,9 +6,10 @@ use crate::{
         operator_eval::{evaluate_condition, wildcard_match},
         variable::interpolate_variables,
     },
-    policy::{ConditionBlock, IAMPolicy, IAMStatement},
+    policy::{ConditionBlock, ConditionValue, IAMPolicy, IAMStatement},
 };
 use serde::{Deserialize, Serialize};
+use std::borrow::Cow;
 
 /// Result of policy evaluation
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -786,12 +787,46 @@ impl PolicyEvaluator {
         // All conditions in a block must be satisfied (AND logic)
         for (operator, condition_map) in &condition_block.conditions {
             for (key, value) in condition_map {
-                if !evaluate_condition(context, operator, key, value)? {
+                // A condition value may be a policy variable, as in
+                // `"aws:ResourceTag/Owner": "${aws:username}"`. AWS resolves it
+                // against the request context before comparing, for the string
+                // and ARN operators — the same set this crate reports through
+                // `supports_policy_variables`.
+                let value = if operator.supports_policy_variables() {
+                    interpolate_condition_value(value, context)?
+                } else {
+                    Cow::Borrowed(value)
+                };
+                if !evaluate_condition(context, operator, key, &value)? {
                     return Ok(false);
                 }
             }
         }
         Ok(true)
+    }
+}
+
+/// Resolve policy variables in a condition value against the request context.
+///
+/// Returns the value unchanged, without allocating, when it holds no `${...}`.
+/// Only the string forms can carry a variable, so `Boolean` and `Number` are
+/// always returned as they are.
+fn interpolate_condition_value<'a>(
+    value: &'a ConditionValue,
+    context: &Context,
+) -> Result<Cow<'a, ConditionValue>, EvaluationError> {
+    match value {
+        ConditionValue::String(text) if text.contains("${") => Ok(Cow::Owned(
+            ConditionValue::String(interpolate_variables(text, context)?),
+        )),
+        ConditionValue::StringList(list) if list.iter().any(|item| item.contains("${")) => {
+            let resolved = list
+                .iter()
+                .map(|item| interpolate_variables(item, context))
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Cow::Owned(ConditionValue::StringList(resolved)))
+        }
+        _ => Ok(Cow::Borrowed(value)),
     }
 }
 
@@ -2119,5 +2154,234 @@ mod tests {
             let result = evaluate_policy(&test.policy, &test.request).unwrap();
             assert_eq!(result, test.result);
         }
+    }
+
+    fn request_with_context(action: &str, resource: &str, entries: &[(&str, &str)]) -> IAMRequest {
+        let mut request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/alice".into(),
+            )),
+            action,
+            Arn::parse(resource).unwrap(),
+        );
+        for (key, value) in entries {
+            request.context.insert(
+                (*key).to_string(),
+                ContextValue::String((*value).to_string()),
+            );
+        }
+        request
+    }
+
+    fn owner_tag_policy(operator: IAMOperator) -> IAMPolicy {
+        // The shape AWS documents for "let users manage their own resources":
+        // the condition value is a policy variable, resolved per request.
+        IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("ec2:StartInstances".to_string()))
+                .with_resource(IAMResource::Single(
+                    "arn:aws:ec2:*:*:instance/*".to_string(),
+                ))
+                .with_condition(
+                    operator,
+                    "aws:ResourceTag/Owner".to_string(),
+                    ConditionValue::String("${aws:username}".to_string()),
+                ),
+        )
+    }
+
+    #[test]
+    fn test_condition_value_variable_resolves_against_the_request() {
+        let policy = owner_tag_policy(IAMOperator::StringEquals);
+        let resource = "arn:aws:ec2:us-east-1:123456789012:instance/i-1";
+
+        // The tag names the caller, so the variable resolves to a match.
+        let own = request_with_context(
+            "ec2:StartInstances",
+            resource,
+            &[
+                ("aws:ResourceTag/Owner", "alice"),
+                ("aws:username", "alice"),
+            ],
+        );
+        assert_eq!(evaluate_policy(&policy, &own).unwrap(), Decision::Allow);
+
+        // Someone else's tag must not match: the variable is not a wildcard.
+        let other = request_with_context(
+            "ec2:StartInstances",
+            resource,
+            &[("aws:ResourceTag/Owner", "bob"), ("aws:username", "alice")],
+        );
+        assert_eq!(
+            evaluate_policy(&policy, &other).unwrap(),
+            Decision::NotApplicable
+        );
+    }
+
+    #[test]
+    fn test_condition_value_variable_is_interpolated_before_wildcard_matching() {
+        // `home/${aws:username}/*` must become a pattern anchored on the caller,
+        // not be compared as the literal text `home/${aws:username}/*`.
+        let policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("s3:ListBucket".to_string()))
+                .with_resource(IAMResource::Single("arn:aws:s3:::bucket".to_string()))
+                .with_condition(
+                    IAMOperator::StringLike,
+                    "s3:prefix".to_string(),
+                    ConditionValue::String("home/${aws:username}/*".to_string()),
+                ),
+        );
+
+        let own = request_with_context(
+            "s3:ListBucket",
+            "arn:aws:s3:::bucket",
+            &[("s3:prefix", "home/alice/docs"), ("aws:username", "alice")],
+        );
+        assert_eq!(evaluate_policy(&policy, &own).unwrap(), Decision::Allow);
+
+        let other = request_with_context(
+            "s3:ListBucket",
+            "arn:aws:s3:::bucket",
+            &[("s3:prefix", "home/bob/docs"), ("aws:username", "alice")],
+        );
+        assert_eq!(
+            evaluate_policy(&policy, &other).unwrap(),
+            Decision::NotApplicable
+        );
+    }
+
+    #[test]
+    fn test_negated_condition_value_variable_stops_the_deny() {
+        // `StringNotEquals` against `${aws:userid}` is how AWS documents
+        // "deny everyone except the creator". Comparing the variable literally
+        // would deny the creator too.
+        let policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Deny)
+                .with_action(IAMAction::Single(
+                    "datapipeline:ActivatePipeline".to_string(),
+                ))
+                .with_resource(IAMResource::Single("*".to_string()))
+                .with_condition(
+                    IAMOperator::StringNotEquals,
+                    "datapipeline:PipelineCreator".to_string(),
+                    ConditionValue::String("${aws:userid}".to_string()),
+                ),
+        );
+        let resource = "arn:aws:datapipeline:us-east-1:123456789012:pipeline/df-1";
+
+        let creator = request_with_context(
+            "datapipeline:ActivatePipeline",
+            resource,
+            &[
+                ("datapipeline:PipelineCreator", "AIDAEXAMPLE:alice"),
+                ("aws:userid", "AIDAEXAMPLE:alice"),
+            ],
+        );
+        assert_eq!(
+            evaluate_policy(&policy, &creator).unwrap(),
+            Decision::NotApplicable,
+            "the creator must not be denied"
+        );
+
+        let stranger = request_with_context(
+            "datapipeline:ActivatePipeline",
+            resource,
+            &[
+                ("datapipeline:PipelineCreator", "AIDAOTHER:bob"),
+                ("aws:userid", "AIDAEXAMPLE:alice"),
+            ],
+        );
+        assert_eq!(evaluate_policy(&policy, &stranger).unwrap(), Decision::Deny);
+    }
+
+    #[test]
+    fn test_condition_value_variable_in_a_list_and_with_a_default() {
+        let policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("s3:ListBucket".to_string()))
+                .with_resource(IAMResource::Single("arn:aws:s3:::bucket".to_string()))
+                .with_condition(
+                    IAMOperator::StringLike,
+                    "s3:prefix".to_string(),
+                    ConditionValue::StringList(vec![
+                        "shared/".to_string(),
+                        "home/${aws:username}/*".to_string(),
+                    ]),
+                ),
+        );
+        let own = request_with_context(
+            "s3:ListBucket",
+            "arn:aws:s3:::bucket",
+            &[("s3:prefix", "home/alice/"), ("aws:username", "alice")],
+        );
+        assert_eq!(evaluate_policy(&policy, &own).unwrap(), Decision::Allow);
+
+        // A policy-authored default is used when the context key is absent.
+        let with_default = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("ec2:StartInstances".to_string()))
+                .with_resource(IAMResource::Single(
+                    "arn:aws:ec2:*:*:instance/*".to_string(),
+                ))
+                .with_condition(
+                    IAMOperator::StringEquals,
+                    "aws:ResourceTag/Owner".to_string(),
+                    ConditionValue::String("${aws:username, 'anonymous'}".to_string()),
+                ),
+        );
+        let anonymous = request_with_context(
+            "ec2:StartInstances",
+            "arn:aws:ec2:us-east-1:123456789012:instance/i-1",
+            &[("aws:ResourceTag/Owner", "anonymous")],
+        );
+        assert_eq!(
+            evaluate_policy(&with_default, &anonymous).unwrap(),
+            Decision::Allow
+        );
+    }
+
+    #[test]
+    fn test_condition_value_variable_refuses_a_wildcard_from_context() {
+        // Same reasoning as for resource patterns: a context value of `*` must
+        // not be spliced into a condition pattern.
+        let policy = owner_tag_policy(IAMOperator::StringLike);
+        let request = request_with_context(
+            "ec2:StartInstances",
+            "arn:aws:ec2:us-east-1:123456789012:instance/i-1",
+            &[("aws:ResourceTag/Owner", "anything"), ("aws:username", "*")],
+        );
+        let error = evaluate_policy(&policy, &request).unwrap_err();
+        assert!(
+            matches!(error, EvaluationError::InvalidVariable(_)),
+            "expected InvalidVariable, got {error:?}"
+        );
+    }
+
+    #[test]
+    fn test_condition_value_without_a_variable_is_untouched() {
+        // No `${...}` anywhere: the value must be compared exactly as written,
+        // including text that looks vaguely variable-like.
+        let policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("ec2:StartInstances".to_string()))
+                .with_resource(IAMResource::Single(
+                    "arn:aws:ec2:*:*:instance/*".to_string(),
+                ))
+                .with_condition(
+                    IAMOperator::StringEquals,
+                    "aws:ResourceTag/Owner".to_string(),
+                    ConditionValue::String("team alice".to_string()),
+                ),
+        );
+        let request = request_with_context(
+            "ec2:StartInstances",
+            "arn:aws:ec2:us-east-1:123456789012:instance/i-1",
+            &[
+                ("aws:ResourceTag/Owner", "team alice"),
+                ("aws:username", "alice"),
+            ],
+        );
+        assert_eq!(evaluate_policy(&policy, &request).unwrap(), Decision::Allow);
     }
 }

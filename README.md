@@ -199,8 +199,10 @@ error as "do not allow".
 Defaults written by the policy author are exempt — `${aws:PrincipalTag/team, '*'}` is
 allowed, because that is the author's intent rather than caller input.
 
-Variables are resolved in `Resource` patterns only. `Action` and condition values are
-compared literally.
+Variables are resolved in `Resource` patterns and in condition values — the same variable
+used in `"aws:ResourceTag/Owner": "${aws:username}"` resolves per request, which is how
+AWS documents "let users manage their own resources". `Action` is compared literally, and
+a condition *key* is never interpolated.
 
 ### Variables with Default Values
 
