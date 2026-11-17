@@ -26,7 +26,8 @@ pub struct Arn {
     pub service: String,
     /// The region (e.g., "us-east-1", can be empty for global services)
     pub region: String,
-    /// The account ID (12-digit number, can be empty for some services)
+    /// The account ID (12-digit number, `aws` for AWS-owned resources, or empty
+    /// for some services)
     pub account_id: String,
     /// The resource specification (format varies by service)
     pub resource: String,
@@ -71,7 +72,7 @@ pub enum ArnError {
     InvalidPartition(String),
     /// Service is empty or invalid
     InvalidService(String),
-    /// Account ID format is invalid (should be 12 digits or empty)
+    /// Account ID format is invalid (should be 12 digits, `aws`, or empty)
     InvalidAccountId(String),
     /// Resource format is invalid
     InvalidResource(String),
@@ -101,6 +102,10 @@ impl std::error::Error for ArnError {}
 /// value can produce one by accident: the escape is only ever written by
 /// interpolation, never by a policy author.
 pub(crate) const LITERAL_ESCAPE: char = '\u{e000}';
+
+/// The account component AWS uses for the resources it owns, most notably its
+/// managed policies (`arn:aws:iam::aws:policy/AdministratorAccess`).
+const AWS_OWNED_ACCOUNT: &str = "aws";
 
 impl Arn {
     /// Parse an ARN string into an Arn struct
@@ -318,10 +323,17 @@ impl Arn {
         true
     }
 
-    /// Validate if a string is a valid account ID (12 digits) or a wildcard pattern
+    /// Validate if a string is a valid account ID (12 digits, or the reserved
+    /// `aws` pseudo-account) or a wildcard pattern
     fn is_valid_account_id(account_id: &str) -> bool {
         // Allow empty
         if account_id.is_empty() {
+            return true;
+        }
+
+        // Resources AWS itself owns carry the reserved account `aws` instead of a
+        // real account ID, e.g. `arn:aws:iam::aws:policy/AdministratorAccess`.
+        if account_id == AWS_OWNED_ACCOUNT {
             return true;
         }
 
@@ -622,6 +634,36 @@ mod tests {
         assert!(!invalid_service.is_valid());
         let invalid_account_id = Arn::parse("arn:aws:s3:abc:12345:*").unwrap();
         assert!(!invalid_account_id.is_valid());
+    }
+
+    #[test]
+    fn test_aws_owned_resources_use_the_reserved_aws_account() {
+        // AWS managed policies are owned by AWS itself and carry the reserved
+        // account `aws`, in every partition.
+        for arn in [
+            "arn:aws:iam::aws:policy/AdministratorAccess",
+            "arn:aws:iam::aws:policy/aws-service-role/AWSServiceRoleForAutoScaling",
+            "arn:aws-us-gov:iam::aws:policy/AdministratorAccess",
+            "arn:aws-cn:iam::aws:policy/AdministratorAccess",
+        ] {
+            assert!(
+                Arn::parse(arn).unwrap().is_valid(),
+                "'{arn}' is a well-formed ARN owned by AWS"
+            );
+        }
+
+        // Only the exact reserved account is accepted; anything else that is not
+        // twelve digits stays invalid.
+        for arn in [
+            "arn:aws:iam::awss:policy/AdministratorAccess",
+            "arn:aws:iam::AWS:policy/AdministratorAccess",
+            "arn:aws:iam::12345678901a:policy/AdministratorAccess",
+        ] {
+            assert!(
+                !Arn::parse(arn).unwrap().is_valid(),
+                "'{arn}' has a malformed account and must stay invalid"
+            );
+        }
     }
 
     #[test]

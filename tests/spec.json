@@ -67,14 +67,14 @@
           },
           {
             "type": "object",
-            "description": "Account ID format is invalid (should be 12 digits or empty)",
+            "description": "Account ID format is invalid (should be 12 digits, `aws`, or empty)",
             "required": [
               "InvalidAccountId"
             ],
             "properties": {
               "InvalidAccountId": {
                 "type": "string",
-                "description": "Account ID format is invalid (should be 12 digits or empty)"
+                "description": "Account ID format is invalid (should be 12 digits, `aws`, or empty)"
               }
             }
           },

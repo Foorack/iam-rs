@@ -1,6 +1,7 @@
 [
   "arn:aws:elasticbeanstalk:us-east-1:123456789012:environment/My App/MyEnvironment",
   "arn:aws:iam::123456789012:user/David",
+  "arn:aws:iam::aws:policy/AdministratorAccess",
   "arn:aws:rds:eu-west-1:123456789012:db:mysql-db",
   "arn:aws:s3:::my_corporate_bucket/exampleobject.png",
   "arn:aws:artifact:::report-package/Certifications and Attestations/SOC/*",
