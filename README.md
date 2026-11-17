@@ -484,6 +484,11 @@ let policy = IAMPolicy::from_json(json_policy)?;
 println!("Loaded policy with {} statements", policy.statement.len());
 ```
 
+Parsing is strict where AWS's grammar is closed. An unknown element (`Conditon` instead of
+`Condition`) and an explicit `null` for an element are parse errors rather than silently
+ignored, because either would change what the statement means — AWS rejects both with
+`MalformedPolicyDocument` as well.
+
 ### Generating JSON
 
 ```rust

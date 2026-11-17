@@ -111,7 +111,12 @@ impl ConditionValue {
 }
 
 /// Represents a single condition in an IAM policy
+///
+/// The operator, key and value are the only fields an entry can have, so an
+/// unknown one is rejected rather than ignored, matching the rest of the
+/// document model.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct Condition {
     /// The condition operator (e.g., `StringEquals`, `DateGreaterThan`)
@@ -133,6 +138,11 @@ pub struct Condition {
 /// `serde_json::from_value`, or any conversion via `Value` — has already dropped
 /// duplicates before this type sees them, so prefer [`crate::IAMPolicy::from_json`]
 /// for untrusted input.
+///
+/// An unknown operator name is rejected as well: the block's only entries are
+/// operator names, and [`IAMOperator`] has a closed set of variants. AWS's
+/// condition grammar has no other element, so there is nothing else a
+/// `deny_unknown_fields` would have to cover here.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct ConditionBlock {
@@ -654,6 +664,29 @@ mod tests {
         let error = serde_json::from_str::<ConditionBlock>(json).unwrap_err();
         assert!(
             error.to_string().contains("duplicate condition key"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn test_unknown_condition_operator_is_rejected() {
+        // `ConditionBlock` cannot carry `deny_unknown_fields`: its only field is a
+        // map of operators, flattened against the document. Its keys are therefore
+        // operator names, and an unknown one is rejected by `IAMOperator`.
+        let json = r#"{"StringEqual": {"aws:a": "x"}}"#;
+        let error = serde_json::from_str::<ConditionBlock>(json).unwrap_err();
+        assert!(
+            error.to_string().contains("unknown variant `StringEqual`"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn test_condition_rejects_unknown_field() {
+        let json = r#"{"operator": "StringEquals", "key": "aws:a", "value": "x", "extra": 1}"#;
+        let error = serde_json::from_str::<Condition>(json).unwrap_err();
+        assert!(
+            error.to_string().contains("unknown field `extra`"),
             "unexpected error: {error}"
         );
     }
