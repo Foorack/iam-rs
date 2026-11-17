@@ -296,7 +296,7 @@ IAMOperator::IpAddress            // IP within CIDR range
 IAMOperator::NotIpAddress         // IP not in CIDR range
 
 // ARN conditions
-IAMOperator::ArnEquals            // Exact ARN match
+IAMOperator::ArnEquals            // ARN match, wildcards per component
 IAMOperator::ArnLike              // ARN wildcard matching
 IAMOperator::ArnNotEquals
 IAMOperator::ArnNotLike
