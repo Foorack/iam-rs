@@ -146,7 +146,12 @@ impl utoipa::ToSchema for Context {
 
 // Impl serialization and deserialization for Context (hide the data internal structure)
 impl Serialize for Context {
-    /// Writes the context as a flat map of key to value.
+    /// Writes the context as a flat map of key to value, **in key order**.
+    ///
+    /// The backing store is a `HashMap`, whose iteration order varies per process,
+    /// so writing it directly produced JSON that differed run to run for the same
+    /// request. Sorting makes the output stable, which is what lets a caller
+    /// compare or checksum a serialised `EvaluationResult`.
     ///
     /// A non-finite number (`NaN`, an infinity) is rejected here rather than
     /// written: JSON has no representation for one, so `serde_json` would emit
@@ -159,8 +164,11 @@ impl Serialize for Context {
     {
         use serde::ser::Error as _;
 
-        let mut map = serializer.serialize_map(Some(self.data.len()))?;
-        for (key, value) in &self.data {
+        let mut entries: Vec<(&String, &ContextValue)> = self.data.iter().collect();
+        entries.sort_unstable_by_key(|(key, _)| *key);
+
+        let mut map = serializer.serialize_map(Some(entries.len()))?;
+        for (key, value) in entries {
             if let ContextValue::Number(number) = value
                 && !number.is_finite()
             {
@@ -534,5 +542,29 @@ mod tests {
         )
         .unwrap();
         assert!(matched, "a typed DateTime must still compare as a date");
+    }
+
+    #[test]
+    fn test_context_serialises_in_key_order() {
+        // The backing `HashMap` iterates in a per-process random order, so writing
+        // it directly gave JSON that differed run to run for the same request.
+        // Sorting makes the output comparable and checksummable.
+        let mut context = Context::new();
+        for key in ["z", "a", "m", "b", "y", "aws:username", "aws:SourceIp"] {
+            context.insert(key.to_string(), ContextValue::String("v".to_string()));
+        }
+
+        let first = serde_json::to_string(&context).unwrap();
+        assert_eq!(
+            first,
+            r#"{"a":"v","aws:SourceIp":"v","aws:username":"v","b":"v","m":"v","y":"v","z":"v"}"#
+        );
+        // Repeated serialisation of the same value is byte-identical.
+        for _ in 0..20 {
+            assert_eq!(serde_json::to_string(&context).unwrap(), first);
+        }
+        // ... and the guard from the non-finite rule still applies.
+        context.insert("nonfinite".to_string(), ContextValue::Number(f64::INFINITY));
+        assert!(serde_json::to_string(&context).is_err());
     }
 }
