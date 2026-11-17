@@ -145,8 +145,8 @@
             "description": "A boolean value (e.g., `true`, `false`)"
           },
           {
-            "$ref": "#/components/schemas/JsonNumber",
-            "description": "A numeric value (e.g., `42`, `3.14`)"
+            "type": "number",
+            "description": "A numeric value (e.g., `42`, `3.14`). A JSON number: an integer or a decimal, kept exactly — do not assume double precision, an integer larger than 2^53 is preserved."
           },
           {
             "type": "string",
@@ -159,8 +159,7 @@
             },
             "description": "Multiple string values (e.g., `[\"us-east-1\", \"us-west-2\"]`)"
           }
-        ],
-        "description": "Represents a condition value that can be a boolean, number, string, or list of strings"
+        ]
       },
       "Context": {
         "type": "object",
@@ -641,10 +640,6 @@
           "2012-10-17",
           "2008-10-17"
         ]
-      },
-      "JsonNumber": {
-        "type": "number",
-        "description": "A JSON number: an integer or a decimal, kept exactly. Do not assume double precision — an integer larger than 2^53 is preserved."
       },
       "OperatorType": {
         "type": "string",

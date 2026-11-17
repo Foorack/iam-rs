@@ -8,57 +8,74 @@ use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};
 
-/// Schema carrier for a JSON number.
-///
-/// `ConditionValue::Number` holds a `serde_json::Number`, which keeps integers
-/// exactly — `9007199254740993` stays that value, and the engine compares
-/// numerics as exact decimals. utoipa has no schema for that type, and the usual
-/// stand-in `f64` would publish `format: double`, telling a generated client to
-/// hold the value as a float and round it. This publishes a plain JSON number
-/// instead, which is what the wire actually carries.
-#[allow(dead_code)]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-struct JsonNumber(serde_json::Number);
-
-#[cfg(feature = "utoipa")]
-impl utoipa::PartialSchema for JsonNumber {
-    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
-        use utoipa::openapi::schema::{ObjectBuilder, SchemaType, Type};
-
-        utoipa::openapi::RefOr::T(
-            ObjectBuilder::new()
-                .schema_type(SchemaType::Type(Type::Number))
-                .description(Some(
-                    "A JSON number: an integer or a decimal, kept exactly. Do not assume double \
-                     precision — an integer larger than 2^53 is preserved.",
-                ))
-                .build()
-                .into(),
-        )
-    }
-}
-
-#[cfg(feature = "utoipa")]
-impl utoipa::ToSchema for JsonNumber {
-    fn name() -> std::borrow::Cow<'static, str> {
-        std::borrow::Cow::Borrowed("JsonNumber")
-    }
-}
-
 /// Represents a condition value that can be a boolean, number, string, or list of strings
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
-#[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub enum ConditionValue {
     /// A boolean value (e.g., `true`, `false`)
     Boolean(bool),
     /// A numeric value (e.g., `42`, `3.14`)
-    #[cfg_attr(feature = "utoipa", schema(value_type = JsonNumber))]
+    ///
+    /// Held as a `serde_json::Number`, which keeps an integer exact —
+    /// `9007199254740993` stays that value — and compared as an exact decimal.
     Number(serde_json::Number),
     /// A single string value (e.g., `"us-east-1"`)
     String(String),
     /// Multiple string values (e.g., `["us-east-1", "us-west-2"]`)
     StringList(Vec<String>),
+}
+
+// The schema is written by hand because one variant holds a `serde_json::Number`,
+// which utoipa cannot describe natively and whose usual stand-in `f64` would
+// publish `format: double` — telling a generated client to hold the value as a
+// float and round it, when the wire keeps integers exact.
+#[cfg(feature = "utoipa")]
+impl utoipa::PartialSchema for ConditionValue {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        use utoipa::openapi::{
+            RefOr,
+            schema::{ArrayBuilder, ObjectBuilder, OneOfBuilder, Schema, SchemaType, Type},
+        };
+
+        let boolean = ObjectBuilder::new()
+            .schema_type(SchemaType::Type(Type::Boolean))
+            .description(Some("A boolean value (e.g., `true`, `false`)"))
+            .build();
+        let number = ObjectBuilder::new()
+            .schema_type(SchemaType::Type(Type::Number))
+            .description(Some(
+                "A numeric value (e.g., `42`, `3.14`). A JSON number: an integer or a decimal, \
+                 kept exactly — do not assume double precision, an integer larger than 2^53 is \
+                 preserved.",
+            ))
+            .build();
+        let string = ObjectBuilder::new()
+            .schema_type(SchemaType::Type(Type::String))
+            .description(Some("A single string value (e.g., `\"us-east-1\"`)"))
+            .build();
+        let string_list = ArrayBuilder::new()
+            .items(ObjectBuilder::new().schema_type(SchemaType::Type(Type::String)))
+            .description(Some(
+                "Multiple string values (e.g., `[\"us-east-1\", \"us-west-2\"]`)",
+            ))
+            .build();
+
+        RefOr::T(Schema::OneOf(
+            OneOfBuilder::new()
+                .item(boolean)
+                .item(number)
+                .item(string)
+                .item(string_list)
+                .build(),
+        ))
+    }
+}
+
+#[cfg(feature = "utoipa")]
+impl utoipa::ToSchema for ConditionValue {
+    fn name() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed("ConditionValue")
+    }
 }
 
 impl ConditionValue {
