@@ -62,6 +62,20 @@ impl Principal {
             _ => false,
         }
     }
+
+    /// Returns `true` when this principal matches every request principal.
+    ///
+    /// AWS documents `{"AWS": "*"}` as a valid synonym of `"Principal": "*"`,
+    /// so both spellings have to validate and match identically.
+    #[must_use]
+    pub(crate) fn is_wildcard(&self) -> bool {
+        match self {
+            Principal::Wildcard => true,
+            Principal::Aws(PrincipalId::String(id)) => id == "*",
+            Principal::Aws(PrincipalId::Array(ids)) => ids.iter().any(|id| id == "*"),
+            _ => false,
+        }
+    }
 }
 
 fn validate_domain(domain: &str) -> ValidationResult {
@@ -116,8 +130,13 @@ impl Validate for Principal {
             // "Single" cases
             //
 
-            // AWS means it is either account number or ARN
+            // AWS means it is either "*", account number or ARN
             Principal::Aws(PrincipalId::String(id)) => {
+                // `{"AWS": "*"}` is an accepted spelling of `"Principal": "*"`,
+                // so the bare wildcard is not parsed as an ARN.
+                if id == "*" {
+                    return Ok(());
+                }
                 if id.len() == 12 && id.chars().all(|c| c.is_ascii_digit()) {
                     // Account ID
                     return Ok(());
@@ -189,6 +208,12 @@ mod tests {
         // Account ID as a valid principal
         assert!(Principal::Aws(PrincipalId::String("123456789012".into())).is_valid());
 
+        // `{"AWS": "*"}` is an accepted spelling of the wildcard principal
+        assert!(Principal::Aws(PrincipalId::String("*".into())).is_valid());
+        assert!(Principal::Aws(PrincipalId::Array(vec!["*".into()])).is_valid());
+        // ... but only the bare "*" is exempt from ARN validation
+        assert!(!Principal::Aws(PrincipalId::String("arn:*".into())).is_valid());
+
         // Valid service principal
         assert!(Principal::Service(PrincipalId::String("ec2.amazonaws.com".into())).is_valid());
         // Invalid service principal
@@ -216,6 +241,31 @@ mod tests {
         // Invalid canonical user principal (wrong length)
         assert!(
             !Principal::CanonicalUser(PrincipalId::String("invalid-canonical".into())).is_valid()
+        );
+    }
+
+    #[test]
+    fn test_wildcard_principal_spellings_are_equivalent() {
+        assert!(Principal::Wildcard.is_wildcard());
+        assert!(Principal::Aws(PrincipalId::String("*".into())).is_wildcard());
+        assert!(Principal::Aws(PrincipalId::Array(vec!["*".into()])).is_wildcard());
+        assert!(
+            Principal::Aws(PrincipalId::Array(vec![
+                "*".into(),
+                "arn:aws:iam::123456789012:user/alice".into()
+            ]))
+            .is_wildcard()
+        );
+
+        // A wildcard in another principal type, or an ARN-shaped id, is not the
+        // wildcard principal.
+        assert!(!Principal::Service(PrincipalId::String("*".into())).is_wildcard());
+        assert!(!Principal::Federated(PrincipalId::String("*".into())).is_wildcard());
+        assert!(
+            !Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/alice".into()
+            ))
+            .is_wildcard()
         );
     }
 }

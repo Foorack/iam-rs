@@ -370,6 +370,13 @@ impl PolicyEvaluator {
                 "Request principal must be a single entity".to_string(),
             ));
         }
+        // A wildcard is not an authenticated identity. `{"AWS": "*"}` validates
+        // as a policy principal, so reject it here rather than let it match.
+        if request.principal.is_wildcard() {
+            return Err(EvaluationError::InvalidRequest(
+                "Request principal cannot be a wildcard".to_string(),
+            ));
+        }
         if !request.principal.is_valid() {
             return Err(EvaluationError::InvalidRequest(
                 "Invalid principal".to_string(),
@@ -572,12 +579,15 @@ impl PolicyEvaluator {
             ));
         }
 
-        match (principal, request_principal) {
-            // A policy wildcard matches any single request principal. The request
-            // side can never be a wildcard here: both `evaluate` and this function
-            // reject non-single principals before matching.
-            (Principal::Wildcard, _) => Ok(true),
+        // A policy wildcard — `"Principal": "*"` or the equivalent
+        // `"Principal": {"AWS": "*"}` — matches any single request principal.
+        // `decide` rejects wildcard and non-single request principals before
+        // they reach this function.
+        if principal.is_wildcard() {
+            return Ok(true);
+        }
 
+        match (principal, request_principal) {
             //
             // Check: AWS
             //
@@ -2095,6 +2105,110 @@ mod tests {
         );
     }
 
+    fn principal_type_requests() -> Vec<Principal> {
+        vec![
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/alice".into(),
+            )),
+            Principal::Service(PrincipalId::String("lambda.amazonaws.com".into())),
+            Principal::Federated(PrincipalId::String("example.com".into())),
+            Principal::CanonicalUser(PrincipalId::String(
+                "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef".into(),
+            )),
+        ]
+    }
+
+    // AWS documents `{"AWS": "*"}` as another spelling of `"Principal": "*"`, so
+    // the two must match exactly the same requests.
+    #[test]
+    fn test_aws_wildcard_principal_matches_every_principal_type() {
+        let policy = IAMPolicy::from_json(
+            r#"{
+                "Version": "2012-10-17",
+                "Statement": [{
+                    "Effect": "Allow",
+                    "Principal": {"AWS": "*"},
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::my-bucket/*"
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        for principal in principal_type_requests() {
+            let request = IAMRequest::new(
+                principal.clone(),
+                "s3:GetObject",
+                Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+            );
+            assert_eq!(
+                evaluate_policy(&policy, &request).unwrap(),
+                Decision::Allow,
+                "{{\"AWS\": \"*\"}} must allow {principal:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_bare_wildcard_principal_still_matches_every_principal_type() {
+        let policy = IAMPolicy::from_json(
+            r#"{
+                "Version": "2012-10-17",
+                "Statement": [{
+                    "Effect": "Allow",
+                    "Principal": "*",
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::my-bucket/*"
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        for principal in principal_type_requests() {
+            let request = IAMRequest::new(
+                principal.clone(),
+                "s3:GetObject",
+                Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+            );
+            assert_eq!(
+                evaluate_policy(&policy, &request).unwrap(),
+                Decision::Allow,
+                "\"Principal\": \"*\" must allow {principal:?}"
+            );
+        }
+    }
+
+    // `NotPrincipal: {"AWS": "*"}` excludes everyone, so a Deny statement
+    // carrying it never applies.
+    #[test]
+    fn test_deny_with_aws_wildcard_not_principal_excludes_everyone() {
+        let policy = IAMPolicy::from_json(
+            r#"{
+                "Version": "2012-10-17",
+                "Statement": [{
+                    "Effect": "Deny",
+                    "NotPrincipal": {"AWS": "*"},
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::my-bucket/*"
+                }]
+            }"#,
+        )
+        .unwrap();
+
+        for principal in principal_type_requests() {
+            let request = IAMRequest::new(
+                principal.clone(),
+                "s3:GetObject",
+                Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+            );
+            assert_eq!(
+                evaluate_policy(&policy, &request).unwrap(),
+                Decision::NotApplicable,
+                "NotPrincipal {{\"AWS\": \"*\"}} must exclude {principal:?}"
+            );
+        }
+    }
+
     // A wildcard is not a valid request principal. `evaluate` rejects it before
     // any statement is matched, which is what makes the missing request-side
     // wildcard arm in `principal_matches` safe.
@@ -2105,16 +2219,26 @@ mod tests {
                 .with_action(IAMAction::Single("s3:GetObject".to_string()))
                 .with_resource(IAMResource::Single("*".to_string())),
         )]);
-        let request = IAMRequest::new(
+        // `{"AWS": "*"}` validates as a policy principal, so the request side has
+        // to reject it explicitly as well.
+        for principal in [
             Principal::Wildcard,
-            "s3:GetObject",
-            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
-        );
+            Principal::Aws(PrincipalId::String("*".into())),
+        ] {
+            let request = IAMRequest::new(
+                principal.clone(),
+                "s3:GetObject",
+                Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+            );
 
-        assert!(matches!(
-            evaluator.evaluate(&request),
-            Err(EvaluationError::InvalidRequest(_))
-        ));
+            assert!(
+                matches!(
+                    evaluator.evaluate(&request),
+                    Err(EvaluationError::InvalidRequest(_))
+                ),
+                "{principal:?} must not be accepted as a request principal"
+            );
+        }
     }
 
     #[test]
