@@ -476,6 +476,7 @@ fn ev_numeric(
     // A JSON number is already numeric. Every other variant keeps the
     // historical text conversion, which is what makes a numeric string such as
     // `"42.5"` acceptable while `true` is rejected.
+    let raw_value = value;
     let value = match value {
         ValueRef::Number(n) => n.as_f64().ok_or_else(|| {
             EvaluationError::ConditionError(format!(
@@ -492,6 +493,16 @@ fn ev_numeric(
                 ))
             })?,
     };
+    // AWS numeric condition values are integers or decimals. `f64::from_str`
+    // additionally accepts "inf"/"NaN", and an overflowing decimal such as
+    // "1e400" saturates to infinity, none of which is an IAM numeric value.
+    // Left alone they compare as "always greater/less" or "never equal", which
+    // turns an invalid policy into a wrong Allow.
+    if !value.is_finite() {
+        return Err(EvaluationError::ConditionError(format!(
+            "Numeric condition value must be a finite number, was {raw_value}"
+        )));
+    }
 
     let context_value = match ctx.get(key) {
         Some(ContextValue::Number(n)) => *n,
@@ -507,6 +518,12 @@ fn ev_numeric(
         // Missing context: true for IfExists and negated operators
         None => return Ok(if_exists || is_negated),
     };
+    // A non-finite context value is not a comparable number either: it behaves
+    // like an unparseable one rather than poisoning the comparison (NaN makes
+    // `!=` true for every policy value, an infinity wins every ordering).
+    if !context_value.is_finite() {
+        return Ok(is_negated);
+    }
     Ok(predicate(context_value, value))
 }
 
@@ -1364,6 +1381,137 @@ mod tests {
         )
         .unwrap();
         assert!(result);
+    }
+
+    #[test]
+    fn test_numeric_operator_rejects_non_finite_policy_values() {
+        // `f64::from_str` accepts "inf"/"NaN" and saturates an overflowing
+        // decimal to infinity, but AWS numeric condition values are integers or
+        // decimals only. Accepting them made e.g. NumericLessThan "inf" match
+        // every request, so they must be a condition error.
+        let ctx = Context::new().with_number("k", 42.0);
+
+        for operator in [
+            IAMOperator::NumericEquals,
+            IAMOperator::NumericNotEquals,
+            IAMOperator::NumericLessThan,
+        ] {
+            for value in ["inf", "-inf", "Infinity", "NaN", "1e400"] {
+                let result = evaluate_condition_json(
+                    &ctx,
+                    &operator,
+                    "k",
+                    &serde_json::Value::String(value.to_string()),
+                );
+                assert!(
+                    matches!(result, Err(EvaluationError::ConditionError(_))),
+                    "{operator:?} with {value:?} must be a ConditionError, got {result:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_numeric_operator_accepts_plain_numeric_strings() {
+        // Guard: rejecting non-finite values must not narrow the set of plain
+        // numeric strings that have always been accepted.
+        for (value, expected) in [
+            ("42", 42.0),
+            ("+42", 42.0),
+            ("-42", -42.0),
+            ("42.5", 42.5),
+            ("1e3", 1000.0),
+            (".5", 0.5),
+            ("5.", 5.0),
+        ] {
+            let ctx = Context::new().with_number("k", expected);
+            assert!(
+                evaluate_condition_json(
+                    &ctx,
+                    &IAMOperator::NumericEquals,
+                    "k",
+                    &serde_json::Value::String(value.to_string()),
+                )
+                .unwrap(),
+                "{value:?} should compare as the number {expected}"
+            );
+        }
+
+        // Exotic or decorated forms stay rejected.
+        let ctx = Context::new().with_number("k", 42.0);
+        for value in [" 42 ", "0x10", "42_000"] {
+            assert!(
+                evaluate_condition_json(
+                    &ctx,
+                    &IAMOperator::NumericEquals,
+                    "k",
+                    &serde_json::Value::String(value.to_string()),
+                )
+                .is_err(),
+                "{value:?} must stay rejected"
+            );
+        }
+
+        // A finite very large decimal still works: only non-finite values are
+        // rejected.
+        let ctx = Context::new().with_number("k", 1e308);
+        assert!(
+            evaluate_condition_json(
+                &ctx,
+                &IAMOperator::NumericEquals,
+                "k",
+                &serde_json::json!(1e308),
+            )
+            .unwrap()
+        );
+        assert!(
+            evaluate_condition_json(
+                &ctx,
+                &IAMOperator::NumericLessThan,
+                "k",
+                &serde_json::Value::String("1.7976931348623157e308".to_string()),
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn test_non_finite_context_value_is_no_match() {
+        // A policy can only compute a decision from a real number, so a
+        // non-finite context value is treated like an unparseable one: false
+        // for a plain operator, true for a negated one. It must never act as a
+        // number, because NaN makes `!=` true for every policy value and an
+        // infinity wins every ordering.
+        for ctx in [
+            Context::new().with_number("k", f64::INFINITY),
+            Context::new().with_number("k", f64::NAN),
+            Context::new().with_string("k", "inf"),
+            Context::new().with_string("k", "NaN"),
+        ] {
+            for operator in [
+                IAMOperator::NumericEquals,
+                IAMOperator::NumericLessThan,
+                IAMOperator::NumericGreaterThan,
+                IAMOperator::NumericLessThanEquals,
+            ] {
+                assert!(
+                    !evaluate_condition_json(&ctx, &operator, "k", &serde_json::json!(42)).unwrap(),
+                    "{operator:?} must not match a non-finite context value"
+                );
+            }
+
+            // NumericNotEquals is negated, so it stays true, exactly as for any
+            // other non-comparable context value.
+            assert!(
+                evaluate_condition_json(
+                    &ctx,
+                    &IAMOperator::NumericNotEquals,
+                    "k",
+                    &serde_json::json!(42),
+                )
+                .unwrap()
+            );
+        }
     }
 
     #[test]
