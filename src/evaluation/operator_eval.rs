@@ -26,10 +26,20 @@ impl<'a> ValueRef<'a> {
         }
     }
 
-    const fn as_bool(self) -> Option<bool> {
+    /// The accepted boolean forms of a policy value: a JSON boolean, or the
+    /// string forms `"true"` / `"false"` that AWS documents for `Bool`.
+    fn as_bool(self) -> Result<bool, EvaluationError> {
         match self {
-            ValueRef::Boolean(b) => Some(b),
-            ValueRef::String(_) | ValueRef::Number(_) => None,
+            ValueRef::Boolean(b) => Ok(b),
+            other => other
+                .to_string()
+                .trim_matches('"') // Remove quotes if present
+                .parse::<bool>()
+                .map_err(|err| {
+                    EvaluationError::ConditionError(format!(
+                        "Boolean condition value must be a boolean, got {other}. Error: {err}",
+                    ))
+                }),
         }
     }
 }
@@ -381,15 +391,11 @@ fn evaluate_set_operator(
             }
         }
         OperatorType::Boolean => {
+            // Same accepted forms as the plain `Bool` operator: a JSON boolean
+            // or the AWS-documented strings "true"/"false".
             let policy_values: Vec<bool> = values
                 .iter()
-                .map(|v| {
-                    v.as_bool().ok_or_else(|| {
-                        EvaluationError::ConditionError(format!(
-                            "Boolean condition value must be a boolean, got {v}"
-                        ))
-                    })
-                })
+                .map(|v| v.as_bool())
                 .collect::<Result<_, _>>()?;
 
             let satisfies = |&context_value: &bool| {
@@ -582,19 +588,7 @@ fn ev_bool(
     predicate: &Predicate<bool>,
     if_exists: bool,
 ) -> Result<bool, EvaluationError> {
-    let value = match value {
-        ValueRef::Boolean(b) => b,
-        // The string forms "true"/"false" are accepted, as AWS documents them.
-        other => other
-            .to_string()
-            .trim_matches('"') // Remove quotes if present
-            .parse::<bool>()
-            .map_err(|err| {
-                EvaluationError::ConditionError(format!(
-                    "Boolean condition value must be a boolean, got {other}. Error: {err}",
-                ))
-            })?,
-    };
+    let value = value.as_bool()?;
 
     match ctx.get(key) {
         Some(ContextValue::Boolean(b)) => Ok(predicate(*b, value)),
@@ -1480,6 +1474,59 @@ mod tests {
         )
         .unwrap();
         assert!(!result);
+    }
+
+    /// AWS documents `Bool` values as the strings "true"/"false", and the
+    /// set-qualified forms must accept exactly the same policy value forms.
+    #[test]
+    fn test_set_operator_bool_accepts_boolean_strings() {
+        let ctx = Context::new().with_boolean("mfa_present", true);
+
+        for operator in [IAMOperator::ForAnyValueBool, IAMOperator::ForAllValuesBool] {
+            assert!(
+                evaluate_condition_json(&ctx, &operator, "mfa_present", &serde_json::json!("true"))
+                    .unwrap(),
+                "{operator:?} must accept the string \"true\""
+            );
+            assert!(
+                evaluate_condition_json(
+                    &ctx,
+                    &operator,
+                    "mfa_present",
+                    &serde_json::Value::Bool(true),
+                )
+                .unwrap(),
+                "{operator:?} must keep accepting the JSON boolean true"
+            );
+            // "false" is a valid policy value that simply does not match.
+            assert!(
+                !evaluate_condition_json(
+                    &ctx,
+                    &operator,
+                    "mfa_present",
+                    &serde_json::json!("false"),
+                )
+                .unwrap(),
+                "{operator:?} must not match \"false\" against a true context value"
+            );
+        }
+    }
+
+    /// A policy value that is neither a boolean nor "true"/"false" is an error,
+    /// not a silent mismatch.
+    #[test]
+    fn test_set_operator_bool_rejects_non_boolean_value() {
+        let ctx = Context::new().with_boolean("mfa_present", true);
+
+        for operator in [IAMOperator::ForAnyValueBool, IAMOperator::ForAllValuesBool] {
+            let err =
+                evaluate_condition_json(&ctx, &operator, "mfa_present", &serde_json::json!("yes"))
+                    .expect_err("a non-boolean policy value must be rejected");
+            assert!(
+                matches!(err, EvaluationError::ConditionError(_)),
+                "{operator:?} must raise a ConditionError, got {err:?}"
+            );
+        }
     }
 
     #[test]
