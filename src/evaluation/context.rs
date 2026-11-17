@@ -172,12 +172,22 @@ impl Context {
     /// AWS treats context key names as case-insensitive (e.g. `aws:SourceIP`
     /// and `AWS:sourceip` are the same key), so lookup falls back to a
     /// case-insensitive scan if the exact key is not present.
+    ///
+    /// If the exact spelling is not present but several stored keys match
+    /// case-insensitively (e.g. `aws:PrincipalTag/team` and
+    /// `aws:PrincipalTag/TEAM` both exist), the lexicographically smallest
+    /// matching key wins. This is a total order chosen purely so the lookup is
+    /// deterministic: a policy decision must never depend on `HashMap` iteration
+    /// order. AWS documents no rule for such duplicates, only that they can lead
+    /// to unexpected condition failures.
     #[must_use]
     pub fn get(&self, key: &str) -> Option<&ContextValue> {
         self.data.get(key).or_else(|| {
             self.data
                 .iter()
-                .find_map(|(k, v)| k.eq_ignore_ascii_case(key).then_some(v))
+                .filter(|(k, _)| k.eq_ignore_ascii_case(key))
+                .min_by(|(a, _), (b, _)| a.cmp(b))
+                .map(|(_, value)| value)
         })
     }
 
@@ -208,10 +218,13 @@ impl Context {
         self
     }
 
-    /// Checks if a context key exists
+    /// Checks if a context key exists.
+    ///
+    /// Uses the same case-insensitive lookup as [`Context::get`], so
+    /// `has_key(k)` is exactly `get(k).is_some()`.
     #[must_use]
     pub fn has_key(&self, key: &str) -> bool {
-        self.data.contains_key(key)
+        self.get(key).is_some()
     }
 
     /// Gets all context keys
@@ -294,5 +307,125 @@ mod tests {
         );
         // Missing keys stay missing.
         assert!(context.get("aws:nonexistent").is_none());
+    }
+
+    #[test]
+    fn test_has_key_is_case_insensitive() {
+        let context = Context::new()
+            .with_string("aws:SourceIp", "10.0.0.1")
+            .with_boolean("aws:SecureTransport", true);
+
+        assert!(context.has_key("aws:SourceIp"));
+        assert!(context.has_key("aws:sourceip"));
+        assert!(context.has_key("AWS:SOURCEIP"));
+        assert!(context.has_key("aws:securetransport"));
+
+        // Genuinely absent keys stay absent.
+        assert!(!context.has_key("aws:nonexistent"));
+        assert!(!context.has_key("aws:SourceIP2"));
+        assert!(!context.has_key(""));
+
+        // `has_key` must answer exactly like `get` for every spelling.
+        for key in [
+            "aws:SourceIp",
+            "aws:sourceip",
+            "AWS:SOURCEIP",
+            "aws:SourceIp ",
+            " aws:sourceip",
+            "aws:securetransport",
+            "aws:nonexistent",
+            "",
+        ] {
+            assert_eq!(context.has_key(key), context.get(key).is_some(), "{key}");
+        }
+    }
+
+    /// The documented tie-break: with duplicate case-variants and no exact match,
+    /// the lexicographically smallest key wins. `aws:PrincipalTag/TEAM` sorts
+    /// before `aws:PrincipalTag/team` (uppercase `T` < lowercase `t`).
+    #[test]
+    fn test_duplicate_case_variants_resolve_to_smallest_key() {
+        let blocked = ContextValue::String("blocked".into());
+        let alice = ContextValue::String("alice".into());
+
+        let mut context = Context::new();
+        context.insert("aws:PrincipalTag/team".into(), blocked.clone());
+        let mut other = Context::new();
+        other.insert("aws:PrincipalTag/TEAM".into(), alice.clone());
+        context.extend(other);
+
+        // Exact spellings still win over the case-insensitive tie-break.
+        assert_eq!(context.get("aws:PrincipalTag/team"), Some(&blocked));
+        assert_eq!(context.get("aws:PrincipalTag/TEAM"), Some(&alice));
+
+        // Any spelling that is not stored verbatim resolves by the total order.
+        assert_eq!(context.get("aws:PrincipalTag/Team"), Some(&alice));
+        assert_eq!(context.get("AWS:PRINCIPALTAG/team"), Some(&alice));
+        assert_eq!(context.get("aws:principaltag/Team"), Some(&alice));
+    }
+
+    /// Whatever the insertion order and however the map was built, a lookup that
+    /// matches several case-variants must return the same value every time.
+    #[test]
+    fn test_duplicate_case_variants_are_deterministic_across_copies() {
+        let blocked = ContextValue::String("blocked".into());
+        let alice = ContextValue::String("alice".into());
+        let expected = Some(&alice);
+
+        let build = || {
+            let mut context = Context::new();
+            context.insert("aws:PrincipalTag/team".into(), blocked.clone());
+            let mut other = Context::new();
+            other.insert("aws:PrincipalTag/TEAM".into(), alice.clone());
+            context.extend(other);
+            context
+        };
+
+        // Same map, different construction order.
+        let mut reversed = Context::new();
+        reversed.insert("aws:PrincipalTag/TEAM".into(), alice.clone());
+        reversed.insert("aws:PrincipalTag/team".into(), blocked.clone());
+
+        let base = build();
+        let json = serde_json::to_string(&base).unwrap();
+
+        // Every fresh `HashMap` gets a fresh `RandomState`, so rebuilding and
+        // re-deserializing in-process exercises many different iteration orders.
+        for _ in 0..100 {
+            let mut fresh_reversed = Context::new();
+            fresh_reversed.insert("aws:PrincipalTag/TEAM".into(), alice.clone());
+            fresh_reversed.insert("aws:PrincipalTag/team".into(), blocked.clone());
+            let decoded: Context = serde_json::from_str(&json).unwrap();
+            let from_data = Context::with_data(base.data.clone());
+
+            for context in [
+                build(),
+                fresh_reversed,
+                decoded,
+                from_data,
+                base.clone(),
+                reversed.clone(),
+            ] {
+                assert_eq!(context.get("aws:PrincipalTag/Team"), expected);
+                assert_eq!(context.get("aws:principaltag/team"), expected);
+                assert!(context.has_key("aws:PrincipalTag/Team"));
+            }
+        }
+    }
+
+    /// Guards the pre-existing precedence rule: an exact spelling beats a
+    /// case-variant duplicate, even when the duplicate sorts first.
+    #[test]
+    fn test_get_exact_spelling_wins_over_case_variant_duplicate() {
+        let blocked = ContextValue::String("blocked".into());
+        let alice = ContextValue::String("alice".into());
+
+        let mut context = Context::new();
+        context.insert("aws:PrincipalTag/team".into(), blocked.clone());
+        context.insert("aws:PrincipalTag/TEAM".into(), alice.clone());
+
+        assert_eq!(context.get("aws:PrincipalTag/team"), Some(&blocked));
+        assert_eq!(context.get("aws:PrincipalTag/TEAM"), Some(&alice));
+        assert_eq!(context.get("aws:PrincipalTag/Team"), Some(&alice));
     }
 }
