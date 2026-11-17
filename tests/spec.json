@@ -317,7 +317,7 @@
           },
           "max_statements": {
             "type": "integer",
-            "description": "Maximum number of statements to evaluate (for safety)",
+            "description": "Maximum number of statements a single policy document may declare\n(safety limit). A policy with more statements than this makes\nevaluation return [`EvaluationError::InternalError`]; the limit applies\nto each policy on its own, not to the sum across policies.",
             "default": 1000,
             "minimum": 0
           },
