@@ -8,6 +8,43 @@ use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};
 
+/// Schema carrier for a JSON number.
+///
+/// `ConditionValue::Number` holds a `serde_json::Number`, which keeps integers
+/// exactly — `9007199254740993` stays that value, and the engine compares
+/// numerics as exact decimals. utoipa has no schema for that type, and the usual
+/// stand-in `f64` would publish `format: double`, telling a generated client to
+/// hold the value as a float and round it. This publishes a plain JSON number
+/// instead, which is what the wire actually carries.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+struct JsonNumber(serde_json::Number);
+
+#[cfg(feature = "utoipa")]
+impl utoipa::PartialSchema for JsonNumber {
+    fn schema() -> utoipa::openapi::RefOr<utoipa::openapi::schema::Schema> {
+        use utoipa::openapi::schema::{ObjectBuilder, SchemaType, Type};
+
+        utoipa::openapi::RefOr::T(
+            ObjectBuilder::new()
+                .schema_type(SchemaType::Type(Type::Number))
+                .description(Some(
+                    "A JSON number: an integer or a decimal, kept exactly. Do not assume double \
+                     precision — an integer larger than 2^53 is preserved.",
+                ))
+                .build()
+                .into(),
+        )
+    }
+}
+
+#[cfg(feature = "utoipa")]
+impl utoipa::ToSchema for JsonNumber {
+    fn name() -> std::borrow::Cow<'static, str> {
+        std::borrow::Cow::Borrowed("JsonNumber")
+    }
+}
+
 /// Represents a condition value that can be a boolean, number, string, or list of strings
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -16,7 +53,7 @@ pub enum ConditionValue {
     /// A boolean value (e.g., `true`, `false`)
     Boolean(bool),
     /// A numeric value (e.g., `42`, `3.14`)
-    #[cfg_attr(feature = "utoipa", schema(value_type = f64))]
+    #[cfg_attr(feature = "utoipa", schema(value_type = JsonNumber))]
     Number(serde_json::Number),
     /// A single string value (e.g., `"us-east-1"`)
     String(String),

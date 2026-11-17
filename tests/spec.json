@@ -145,8 +145,7 @@
             "description": "A boolean value (e.g., `true`, `false`)"
           },
           {
-            "type": "number",
-            "format": "double",
+            "$ref": "#/components/schemas/JsonNumber",
             "description": "A numeric value (e.g., `42`, `3.14`)"
           },
           {
@@ -642,6 +641,10 @@
           "2012-10-17",
           "2008-10-17"
         ]
+      },
+      "JsonNumber": {
+        "type": "number",
+        "description": "A JSON number: an integer or a decimal, kept exactly. Do not assume double precision — an integer larger than 2^53 is preserved."
       },
       "OperatorType": {
         "type": "string",
