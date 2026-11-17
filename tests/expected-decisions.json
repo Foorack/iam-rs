@@ -156,5 +156,2443 @@
                 "result": "NotApplicable"
             }
         ]
+    },
+    {
+        "policy_file": "1.json",
+        "cases": [
+            {
+                "reason": "an action matching the iam:Get* prefix is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:GetUser",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "an action outside the Get*/List*/Generate* prefixes is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:CreateUser",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {}
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "2.json",
+        "cases": [
+            {
+                "reason": "a read action from the ViewGroups statement is allowed on any resource",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:ListUsers",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "a group management action on the MarketingTeam group is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:AddUserToGroup",
+                    "Resource": "arn:aws:iam::123456789012:group/MarketingTeam",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "the same group management action on another group is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:AddUserToGroup",
+                    "Resource": "arn:aws:iam::123456789012:group/EngineeringTeam",
+                    "Context": {}
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "3.json",
+        "cases": [
+            {
+                "reason": "a user management action listed in the first statement is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:GetUserPolicy",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "an account dashboard action matches the GetAccount* prefix of the second statement",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:GetAccountSummary",
+                    "Resource": "arn:aws:iam::123456789012:root",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "a group management action is not covered by either statement",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:CreateGroup",
+                    "Resource": "arn:aws:iam::123456789012:group/NewTeam",
+                    "Context": {}
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "5.json",
+        "cases": [
+            {
+                "reason": "updating the account password policy is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:UpdateAccountPasswordPolicy",
+                    "Resource": "arn:aws:iam::123456789012:root",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "an unrelated IAM action is not covered",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:CreateUser",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {}
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "6.json",
+        "cases": [
+            {
+                "reason": "any IAM action matches iam:*",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:CreateUser",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "an action from another service does not match iam:*",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::amzn-s3-demo-bucket1/object",
+                    "Context": {}
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "7.json",
+        "cases": [
+            {
+                "reason": "the action inside the date window satisfies both date conditions",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "service-prefix:action-name",
+                    "Resource": "arn:aws:s3:::amzn-s3-demo-bucket1/object",
+                    "Context": {
+                        "aws:CurrentTime": "2020-05-01T00:00:00Z"
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "the same action requested after the window does not match",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "service-prefix:action-name",
+                    "Resource": "arn:aws:s3:::amzn-s3-demo-bucket1/object",
+                    "Context": {
+                        "aws:CurrentTime": "2020-07-01T00:00:00Z"
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "8.json",
+        "cases": [
+            {
+                "reason": "enabling the ap-east-1 target region is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "account:EnableRegion",
+                    "Resource": "arn:aws:account:us-east-1:123456789012:region/ap-east-1",
+                    "Context": {
+                        "account:TargetRegion": "ap-east-1"
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "changing a different target region fails the condition",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "account:DisableRegion",
+                    "Resource": "arn:aws:account:us-east-1:123456789012:region/ap-east-1",
+                    "Context": {
+                        "account:TargetRegion": "us-east-1"
+                    }
+                },
+                "result": "NotApplicable"
+            },
+            {
+                "reason": "listing account regions is allowed without conditions",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "account:ListRegions",
+                    "Resource": "arn:aws:account:us-east-1:123456789012:region",
+                    "Context": {}
+                },
+                "result": "Allow"
+            }
+        ]
+    },
+    {
+        "policy_file": "9.json",
+        "cases": [
+            {
+                "reason": "changing your own password with MFA present is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:ChangePassword",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {
+                        "aws:username": "martha",
+                        "aws:MultiFactorAuthPresent": true
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "the same request without MFA is denied by the NotAction guard",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:ChangePassword",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {
+                        "aws:username": "martha",
+                        "aws:MultiFactorAuthPresent": false
+                    }
+                },
+                "result": "Deny"
+            },
+            {
+                "reason": "listing your own MFA devices is exempt from the MFA guard",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:ListMFADevices",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {
+                        "aws:username": "martha",
+                        "aws:MultiFactorAuthPresent": false
+                    }
+                },
+                "result": "Allow"
+            }
+        ]
+    },
+    {
+        "policy_file": "10.json",
+        "cases": [
+            {
+                "reason": "an action in the prefix list with MFA inside the date window is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "service-prefix-1:list-things",
+                    "Resource": "arn:aws:s3:::amzn-s3-demo-bucket1/object",
+                    "Context": {
+                        "aws:MultiFactorAuthPresent": true,
+                        "aws:CurrentTime": "2017-08-01T00:00:00Z"
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "the same request without MFA does not match the Bool condition",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "service-prefix-1:list-things",
+                    "Resource": "arn:aws:s3:::amzn-s3-demo-bucket1/object",
+                    "Context": {
+                        "aws:CurrentTime": "2017-08-01T00:00:00Z"
+                    }
+                },
+                "result": "NotApplicable"
+            },
+            {
+                "reason": "the same request outside the date window is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "service-prefix-2:action-name-b",
+                    "Resource": "arn:aws:s3:::amzn-s3-demo-bucket1/object",
+                    "Context": {
+                        "aws:MultiFactorAuthPresent": true,
+                        "aws:CurrentTime": "2018-01-01T00:00:00Z"
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "11.json",
+        "cases": [
+            {
+                "reason": "viewing the account password policy is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:GetAccountPasswordPolicy",
+                    "Resource": "arn:aws:iam::123456789012:root",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "listing your own access keys is allowed through the username variable",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:ListAccessKeys",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {
+                        "aws:username": "martha"
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "listing another user's access keys is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:ListAccessKeys",
+                    "Resource": "arn:aws:iam::123456789012:user/bob",
+                    "Context": {
+                        "aws:username": "martha"
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "12.json",
+        "cases": [
+            {
+                "reason": "enabling your own MFA device is exempt from the MFA guard",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:EnableMFADevice",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {
+                        "aws:username": "martha",
+                        "aws:MultiFactorAuthPresent": false
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "an action outside the exemption list without MFA is denied",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:ChangePassword",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {
+                        "aws:username": "martha",
+                        "aws:MultiFactorAuthPresent": false
+                    }
+                },
+                "result": "Deny"
+            },
+            {
+                "reason": "listing your own MFA devices with MFA present is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:ListMFADevices",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {
+                        "aws:username": "martha",
+                        "aws:MultiFactorAuthPresent": true
+                    }
+                },
+                "result": "Allow"
+            }
+        ]
+    },
+    {
+        "policy_file": "13.json",
+        "cases": [
+            {
+                "reason": "reading the account password policy is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:GetAccountPasswordPolicy",
+                    "Resource": "arn:aws:iam::123456789012:root",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "changing your own password is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:ChangePassword",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {
+                        "aws:username": "martha"
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "changing another user's password is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:ChangePassword",
+                    "Resource": "arn:aws:iam::123456789012:user/bob",
+                    "Context": {
+                        "aws:username": "martha"
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "14.json",
+        "cases": [
+            {
+                "reason": "viewing the account summary is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:GetAccountSummary",
+                    "Resource": "arn:aws:iam::123456789012:root",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "deleting your own SSH public key is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:DeleteSSHPublicKey",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {
+                        "aws:username": "martha"
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "managing signing certificates is not covered by this policy",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:ListSigningCertificates",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {
+                        "aws:username": "martha"
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "16.json",
+        "cases": [
+            {
+                "reason": "a request from an address outside the allowed ranges is denied",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::amzn-s3-demo-bucket1/object",
+                    "Context": {
+                        "aws:SourceIp": "198.51.100.9"
+                    }
+                },
+                "result": "Deny"
+            },
+            {
+                "reason": "a request from an allowed address range is not denied",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::amzn-s3-demo-bucket1/object",
+                    "Context": {
+                        "aws:SourceIp": "192.0.2.44"
+                    }
+                },
+                "result": "NotApplicable"
+            },
+            {
+                "reason": "NotIpAddress matches when aws:SourceIp is absent from the request",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::amzn-s3-demo-bucket1/object",
+                    "Context": {}
+                },
+                "result": "Deny"
+            }
+        ]
+    },
+    {
+        "policy_file": "17.json",
+        "cases": [
+            {
+                "reason": "a non-S3 action on another account's resource is denied",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:DescribeInstances",
+                    "Resource": "arn:aws:ec2:us-east-1:999988887777:instance/i-0123456789abcdef0",
+                    "Context": {
+                        "aws:ResourceAccount": "999988887777"
+                    }
+                },
+                "result": "Deny"
+            },
+            {
+                "reason": "the same action on an in-account resource is not denied",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:DescribeInstances",
+                    "Resource": "arn:aws:ec2:us-east-1:123456789012:instance/i-0123456789abcdef0",
+                    "Context": {
+                        "aws:ResourceAccount": "111122223333"
+                    }
+                },
+                "result": "NotApplicable"
+            },
+            {
+                "reason": "an S3 action called through Data Exchange is exempt from the second deny",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::other-account-bucket/object",
+                    "Context": {
+                        "aws:ResourceAccount": "999988887777",
+                        "aws:CalledVia": [
+                            "dataexchange.amazonaws.com"
+                        ]
+                    }
+                },
+                "result": "NotApplicable"
+            },
+            {
+                "reason": "the same S3 action not called through Data Exchange is denied",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::other-account-bucket/object",
+                    "Context": {
+                        "aws:ResourceAccount": "999988887777",
+                        "aws:CalledVia": [
+                            "ec2.amazonaws.com"
+                        ]
+                    }
+                },
+                "result": "Deny"
+            }
+        ]
+    },
+    {
+        "policy_file": "18.json",
+        "cases": [
+            {
+                "reason": "a datapipeline action on a pipeline created by another principal is denied",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "datapipeline:ActivatePipeline",
+                    "Resource": "arn:aws:datapipeline:us-east-1:123456789012:pipeline/df-0123456789ABCDEFGHIJ",
+                    "Context": {
+                        "datapipeline:PipelineCreator": "AIDAIOSFODNN7EXAMPLE",
+                        "aws:userid": "AIDAEXAMPLEUSER:martha"
+                    }
+                },
+                "result": "Deny"
+            },
+            {
+                "reason": "a datapipeline action outside the list is not covered",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "datapipeline:ListPipelines",
+                    "Resource": "arn:aws:datapipeline:us-east-1:123456789012:pipeline/df-0123456789ABCDEFGHIJ",
+                    "Context": {
+                        "aws:userid": "AIDAEXAMPLEUSER:martha"
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "19.json",
+        "cases": [
+            {
+                "reason": "listing tables is allowed on any resource",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "dynamodb:ListTables",
+                    "Resource": "arn:aws:dynamodb:us-east-1:123456789012:table/MyTable",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "reading an item from MyTable is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "dynamodb:GetItem",
+                    "Resource": "arn:aws:dynamodb:us-east-1:123456789012:table/MyTable",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "reading an item from another table is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "dynamodb:GetItem",
+                    "Resource": "arn:aws:dynamodb:us-east-1:123456789012:table/OtherTable",
+                    "Context": {}
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "20.json",
+        "cases": [
+            {
+                "reason": "querying only allowed attributes with a specific Select is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "dynamodb:Query",
+                    "Resource": "arn:aws:dynamodb:us-east-1:123456789012:table/table-name",
+                    "Context": {
+                        "dynamodb:Attributes": [
+                            "column-name-1",
+                            "column-name-3"
+                        ],
+                        "dynamodb:Select": "SPECIFIC_ATTRIBUTES"
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "an attribute outside the policy list fails ForAllValues",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "dynamodb:Query",
+                    "Resource": "arn:aws:dynamodb:us-east-1:123456789012:table/table-name",
+                    "Context": {
+                        "dynamodb:Attributes": [
+                            "column-name-1",
+                            "column-name-9"
+                        ],
+                        "dynamodb:Select": "SPECIFIC_ATTRIBUTES"
+                    }
+                },
+                "result": "NotApplicable"
+            },
+            {
+                "reason": "a non-specific Select fails the StringEqualsIfExists condition",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "dynamodb:GetItem",
+                    "Resource": "arn:aws:dynamodb:us-east-1:123456789012:table/table-name",
+                    "Context": {
+                        "dynamodb:Attributes": [
+                            "column-name-2"
+                        ],
+                        "dynamodb:Select": "ALL_ATTRIBUTES"
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "21.json",
+        "cases": [
+            {
+                "reason": "ForAllValues is true when the request carries no leading keys",
+                "request": {
+                    "Principal": {
+                        "Federated": "cognito-identity.amazonaws.com"
+                    },
+                    "Action": "dynamodb:PutItem",
+                    "Resource": "arn:aws:dynamodb:us-east-1:123456789012:table/MyTable",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "another identity's leading key does not match the policy value",
+                "request": {
+                    "Principal": {
+                        "Federated": "cognito-identity.amazonaws.com"
+                    },
+                    "Action": "dynamodb:Query",
+                    "Resource": "arn:aws:dynamodb:us-east-1:123456789012:table/MyTable",
+                    "Context": {
+                        "dynamodb:LeadingKeys": [
+                            "us-east-1:other-identity"
+                        ]
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "22.json",
+        "cases": [
+            {
+                "reason": "attaching a volume to an instance tagged for Development is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:AttachVolume",
+                    "Resource": "arn:aws:ec2:us-east-1:123456789012:instance/i-0123456789abcdef0",
+                    "Context": {
+                        "aws:ResourceTag/Department": "Development"
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "an instance tagged for another department is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:AttachVolume",
+                    "Resource": "arn:aws:ec2:us-east-1:123456789012:instance/i-0123456789abcdef0",
+                    "Context": {
+                        "aws:ResourceTag/Department": "Finance"
+                    }
+                },
+                "result": "NotApplicable"
+            },
+            {
+                "reason": "a volume whose VolumeUser tag is another user is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:AttachVolume",
+                    "Resource": "arn:aws:ec2:us-east-1:123456789012:volume/vol-0123456789abcdef0",
+                    "Context": {
+                        "aws:username": "martha",
+                        "aws:ResourceTag/VolumeUser": "bob"
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "23.json",
+        "cases": [
+            {
+                "reason": "a describe action is allowed on any resource",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:DescribeInstances",
+                    "Resource": "arn:aws:ec2:us-east-1:123456789012:instance/i-0123456789abcdef0",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "RunInstances on an instance resource is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:RunInstances",
+                    "Resource": "arn:aws:ec2:us-east-1:123456789012:instance/i-0123456789abcdef0",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "RunInstances on a resource type the statement does not list is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:RunInstances",
+                    "Resource": "arn:aws:ec2:us-east-1:123456789012:vpc/vpc-0123456789abcdef0",
+                    "Context": {}
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "24.json",
+        "cases": [
+            {
+                "reason": "authorizing ingress on a security group tagged Test is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:AuthorizeSecurityGroupIngress",
+                    "Resource": "arn:aws:ec2:region:111122223333:security-group/sg-0123456789abcdef0",
+                    "Context": {
+                        "aws:ResourceTag/Department": "Test"
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "a security group with another department tag is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:AuthorizeSecurityGroupIngress",
+                    "Resource": "arn:aws:ec2:region:111122223333:security-group/sg-0123456789abcdef0",
+                    "Context": {
+                        "aws:ResourceTag/Department": "Prod"
+                    }
+                },
+                "result": "NotApplicable"
+            },
+            {
+                "reason": "ModifySecurityGroupRules on a rule resource needs no tag",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:ModifySecurityGroupRules",
+                    "Resource": "arn:aws:ec2:region:111122223333:security-group-rule/sgr-0123456789abcdef0",
+                    "Context": {}
+                },
+                "result": "Allow"
+            }
+        ]
+    },
+    {
+        "policy_file": "25.json",
+        "cases": [
+            {
+                "reason": "describing instances is allowed unconditionally",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:DescribeInstances",
+                    "Resource": "arn:aws:ec2:us-east-1:123456789012:instance/i-0123456789abcdef0",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "starting an instance owned by another user is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:StartInstances",
+                    "Resource": "arn:aws:ec2:us-east-1:123456789012:instance/i-0123456789abcdef0",
+                    "Context": {
+                        "aws:username": "martha",
+                        "aws:ResourceTag/Owner": "bob"
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "27.json",
+        "cases": [
+            {
+                "reason": "stopping an instance whose cost centre differs from the principal's is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:StopInstances",
+                    "Resource": "arn:aws:ec2:us-east-1:123456789012:instance/i-0123456789abcdef0",
+                    "Context": {
+                        "aws:ResourceTag/CostCenter": "Data",
+                        "aws:PrincipalTag/CostCenter": "Finance"
+                    }
+                },
+                "result": "NotApplicable"
+            },
+            {
+                "reason": "an EC2 action outside the statement is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:TerminateInstances",
+                    "Resource": "arn:aws:ec2:us-east-1:123456789012:instance/i-0123456789abcdef0",
+                    "Context": {
+                        "aws:ResourceTag/CostCenter": "Data",
+                        "aws:PrincipalTag/CostCenter": "Data"
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "28.json",
+        "cases": [
+            {
+                "reason": "an EC2 action in us-east-2 is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:DescribeInstances",
+                    "Resource": "arn:aws:ec2:us-east-2:123456789012:instance/i-0123456789abcdef0",
+                    "Context": {
+                        "ec2:Region": "us-east-2"
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "an EC2 action in another region is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:DescribeInstances",
+                    "Resource": "arn:aws:ec2:us-east-1:123456789012:instance/i-0123456789abcdef0",
+                    "Context": {
+                        "ec2:Region": "us-east-1"
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "29.json",
+        "cases": [
+            {
+                "reason": "a describe action is allowed on any resource",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:DescribeSecurityGroups",
+                    "Resource": "arn:aws:ec2:us-east-1:123456789012:security-group/sg-0123456789abcdef0",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "starting the named instance is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:StartInstances",
+                    "Resource": "arn:aws:ec2:us-east-1:123456789012:instance/i-instance-id",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "stopping a different instance is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:StopInstances",
+                    "Resource": "arn:aws:ec2:us-east-1:123456789012:instance/i-0123456789abcdef0",
+                    "Context": {}
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "30.json",
+        "cases": [
+            {
+                "reason": "an EC2 action that is not MFA guarded is allowed without MFA",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:StartInstances",
+                    "Resource": "arn:aws:ec2:us-east-1:123456789012:instance/i-0123456789abcdef0",
+                    "Context": {
+                        "aws:MultiFactorAuthPresent": false
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "stopping an instance without MFA is denied",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:StopInstances",
+                    "Resource": "arn:aws:ec2:us-east-1:123456789012:instance/i-0123456789abcdef0",
+                    "Context": {
+                        "aws:MultiFactorAuthPresent": false
+                    }
+                },
+                "result": "Deny"
+            },
+            {
+                "reason": "terminating an instance with MFA present is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:TerminateInstances",
+                    "Resource": "arn:aws:ec2:us-east-1:123456789012:instance/i-0123456789abcdef0",
+                    "Context": {
+                        "aws:MultiFactorAuthPresent": true
+                    }
+                },
+                "result": "Allow"
+            }
+        ]
+    },
+    {
+        "policy_file": "31.json",
+        "cases": [
+            {
+                "reason": "terminating from an allowed address range is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:TerminateInstances",
+                    "Resource": "arn:aws:ec2:us-east-1:123456789012:instance/i-0123456789abcdef0",
+                    "Context": {
+                        "aws:SourceIp": "192.0.2.10"
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "terminating from outside the allowed ranges is denied",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:TerminateInstances",
+                    "Resource": "arn:aws:ec2:us-east-1:123456789012:instance/i-0123456789abcdef0",
+                    "Context": {
+                        "aws:SourceIp": "198.51.100.9"
+                    }
+                },
+                "result": "Deny"
+            }
+        ]
+    },
+    {
+        "policy_file": "32.json",
+        "cases": [
+            {
+                "reason": "simulating a custom policy is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:SimulateCustomPolicy",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "creating a user is not covered",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:CreateUser",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {}
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "33.json",
+        "cases": [
+            {
+                "reason": "listing roles is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:ListRoles",
+                    "Resource": "arn:aws:iam::123456789012:root",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "creating a role is not covered",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:CreateRole",
+                    "Resource": "arn:aws:iam::123456789012:role/NewRole",
+                    "Context": {}
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "34.json",
+        "cases": [
+            {
+                "reason": "assuming a role tagged for the project is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "sts:AssumeRole",
+                    "Resource": "arn:aws:iam::123456789012:role/ExampleCorpRole",
+                    "Context": {
+                        "iam:ResourceTag/Project": "ExampleCorpABC"
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "a role tagged for another project is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "sts:AssumeRole",
+                    "Resource": "arn:aws:iam::123456789012:role/OtherRole",
+                    "Context": {
+                        "iam:ResourceTag/Project": "OtherProject"
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "35.json",
+        "cases": [
+            {
+                "reason": "reading an object in the application bucket is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::amzn-s3-demo-bucket/object",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "the DenyS3Logs statement overrides the S3 allow for the logs bucket",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "s3:PutObject",
+                    "Resource": "arn:aws:s3:::logs/app.log",
+                    "Context": {}
+                },
+                "result": "Deny"
+            },
+            {
+                "reason": "the DenyEC2Production statement overrides the EC2 allow for the production instance",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "ec2:StopInstances",
+                    "Resource": "arn:aws:ec2:us-east-1:123456789012:instance/i-1234567890abcdef0",
+                    "Context": {}
+                },
+                "result": "Deny"
+            }
+        ]
+    },
+    {
+        "policy_file": "36.json",
+        "cases": [
+            {
+                "reason": "tagging a managed user with only the Department tag is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:TagUser",
+                    "Resource": "arn:aws:iam::123456789012:user/bob",
+                    "Context": {
+                        "aws:TagKeys": [
+                            "Department"
+                        ],
+                        "aws:RequestTag/Department": "Marketing",
+                        "iam:ResourceTag/JobFunction": "Manager"
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "an extra tag key fails ForAllValues",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:TagUser",
+                    "Resource": "arn:aws:iam::123456789012:user/bob",
+                    "Context": {
+                        "aws:TagKeys": [
+                            "Department",
+                            "Project"
+                        ],
+                        "aws:RequestTag/Department": "Marketing",
+                        "iam:ResourceTag/JobFunction": "Manager"
+                    }
+                },
+                "result": "NotApplicable"
+            },
+            {
+                "reason": "a target user who is not a manager does not match",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:TagUser",
+                    "Resource": "arn:aws:iam::123456789012:user/bob",
+                    "Context": {
+                        "aws:TagKeys": [
+                            "Department"
+                        ],
+                        "aws:RequestTag/Department": "Development",
+                        "iam:ResourceTag/JobFunction": "Employee"
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "37.json",
+        "cases": [
+            {
+                "reason": "tagging with an allowed cost centre is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:TagUser",
+                    "Resource": "arn:aws:iam::123456789012:user/bob",
+                    "Context": {
+                        "aws:TagKeys": [
+                            "CostCenter"
+                        ],
+                        "aws:RequestTag/CostCenter": "A-123"
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "a cost centre outside the list is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:TagUser",
+                    "Resource": "arn:aws:iam::123456789012:user/bob",
+                    "Context": {
+                        "aws:TagKeys": [
+                            "CostCenter"
+                        ],
+                        "aws:RequestTag/CostCenter": "C-789"
+                    }
+                },
+                "result": "NotApplicable"
+            },
+            {
+                "reason": "an extra tag key fails ForAllValues",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:TagRole",
+                    "Resource": "arn:aws:iam::123456789012:role/ExampleRole",
+                    "Context": {
+                        "aws:TagKeys": [
+                            "CostCenter",
+                            "Project"
+                        ],
+                        "aws:RequestTag/CostCenter": "A-123"
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "38.json",
+        "cases": [
+            {
+                "reason": "creating a user with the allowed tag pair is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:CreateUser",
+                    "Resource": "arn:aws:iam::123456789012:user/newuser",
+                    "Context": {
+                        "aws:TagKeys": [
+                            "Department",
+                            "JobFunction"
+                        ],
+                        "aws:RequestTag/Department": "Development",
+                        "aws:RequestTag/JobFunction": "Employee"
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "a department outside the allowed list is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:CreateUser",
+                    "Resource": "arn:aws:iam::123456789012:user/newuser",
+                    "Context": {
+                        "aws:TagKeys": [
+                            "Department",
+                            "JobFunction"
+                        ],
+                        "aws:RequestTag/Department": "Marketing",
+                        "aws:RequestTag/JobFunction": "Employee"
+                    }
+                },
+                "result": "NotApplicable"
+            },
+            {
+                "reason": "an extra tag key fails ForAllValues",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:TagUser",
+                    "Resource": "arn:aws:iam::123456789012:user/newuser",
+                    "Context": {
+                        "aws:TagKeys": [
+                            "Department",
+                            "JobFunction",
+                            "Project"
+                        ],
+                        "aws:RequestTag/Department": "Development",
+                        "aws:RequestTag/JobFunction": "Employee"
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "39.json",
+        "cases": [
+            {
+                "reason": "requesting the credential report is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:GetCredentialReport",
+                    "Resource": "arn:aws:iam::123456789012:root",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "listing users is not covered",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:ListUsers",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {}
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "40.json",
+        "cases": [
+            {
+                "reason": "removing a user from the MarketingTeam group is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:RemoveUserFromGroup",
+                    "Resource": "arn:aws:iam::123456789012:group/MarketingTeam",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "the same action on another group is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:RemoveUserFromGroup",
+                    "Resource": "arn:aws:iam::123456789012:group/EngineeringTeam",
+                    "Context": {}
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "41.json",
+        "cases": [
+            {
+                "reason": "tagging with only the Department key is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:TagUser",
+                    "Resource": "arn:aws:iam::123456789012:user/bob",
+                    "Context": {
+                        "aws:TagKeys": [
+                            "Department"
+                        ]
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "tagging with an additional key fails ForAllValues",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:UntagUser",
+                    "Resource": "arn:aws:iam::123456789012:user/bob",
+                    "Context": {
+                        "aws:TagKeys": [
+                            "Department",
+                            "CostCenter"
+                        ]
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "42.json",
+        "cases": [
+            {
+                "reason": "passing a role to CloudWatch is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:PassRole",
+                    "Resource": "arn:aws:iam::123456789012:role/CloudWatchRole",
+                    "Context": {
+                        "iam:PassedToService": "cloudwatch.amazonaws.com"
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "passing a role to another service is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:PassRole",
+                    "Resource": "arn:aws:iam::123456789012:role/CloudWatchRole",
+                    "Context": {
+                        "iam:PassedToService": "ec2.amazonaws.com"
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "43.json",
+        "cases": [
+            {
+                "reason": "a Get action is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:GetRole",
+                    "Resource": "arn:aws:iam::123456789012:role/ExampleRole",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "a Generate action is not covered because Generate* is absent",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:GenerateCredentialReport",
+                    "Resource": "arn:aws:iam::123456789012:root",
+                    "Context": {}
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "44.json",
+        "cases": [
+            {
+                "reason": "a Generate action is allowed by the Generate* prefix",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:GenerateCredentialReport",
+                    "Resource": "arn:aws:iam::123456789012:root",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "creating a user is not covered",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:CreateUser",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {}
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "45.json",
+        "cases": [
+            {
+                "reason": "a group management action by an unlisted user is denied",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:AddUserToGroup",
+                    "Resource": "arn:aws:iam::123456789012:group/AllUsers",
+                    "Context": {
+                        "aws:username": "martha"
+                    }
+                },
+                "result": "Deny"
+            },
+            {
+                "reason": "a listed user may manage the AllUsers group",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:AddUserToGroup",
+                    "Resource": "arn:aws:iam::123456789012:group/AllUsers",
+                    "Context": {
+                        "aws:username": "srodriguez"
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "a group management action on another group is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:DeleteGroup",
+                    "Resource": "arn:aws:iam::123456789012:group/EngineeringTeam",
+                    "Context": {
+                        "aws:username": "martha"
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "46.json",
+        "cases": [
+            {
+                "reason": "updating the account password policy is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:UpdateAccountPasswordPolicy",
+                    "Resource": "arn:aws:iam::123456789012:root",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "reading the account summary is not covered",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:GetAccountSummary",
+                    "Resource": "arn:aws:iam::123456789012:root",
+                    "Context": {}
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "47.json",
+        "cases": [
+            {
+                "reason": "simulating a principal policy for a Development user is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:SimulatePrincipalPolicy",
+                    "Resource": "arn:aws:iam::123456789012:user/Department/Development/martha",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "a user outside the Development path is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:SimulatePrincipalPolicy",
+                    "Resource": "arn:aws:iam::123456789012:user/Department/Finance/bob",
+                    "Context": {}
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "48.json",
+        "cases": [
+            {
+                "reason": "reading any policy is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:GetPolicy",
+                    "Resource": "arn:aws:iam::123456789012:policy/ExamplePolicy",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "listing attached policies for a Development user is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:ListAttachedUserPolicies",
+                    "Resource": "arn:aws:iam::123456789012:user/Department/Development/martha",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "the same action for a Finance user is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:ListAttachedUserPolicies",
+                    "Resource": "arn:aws:iam::123456789012:user/Department/Finance/bob",
+                    "Context": {}
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "49.json",
+        "cases": [
+            {
+                "reason": "enabling an MFA device without MFA is allowed by the exemption list",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:EnableMFADevice",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {
+                        "aws:username": "martha",
+                        "aws:MultiFactorAuthPresent": false
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "deactivating an MFA device without MFA is denied",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:DeactivateMFADevice",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {
+                        "aws:username": "martha",
+                        "aws:MultiFactorAuthPresent": false
+                    }
+                },
+                "result": "Deny"
+            },
+            {
+                "reason": "deactivating an MFA device with MFA present is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:DeactivateMFADevice",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {
+                        "aws:username": "martha",
+                        "aws:MultiFactorAuthPresent": true
+                    }
+                },
+                "result": "Allow"
+            }
+        ]
+    },
+    {
+        "policy_file": "50.json",
+        "cases": [
+            {
+                "reason": "reading the account password policy is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:GetAccountPasswordPolicy",
+                    "Resource": "arn:aws:iam::123456789012:root",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "listing your own access keys is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:ListAccessKeys",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {
+                        "aws:username": "martha"
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "listing another user's access keys is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:ListAccessKeys",
+                    "Resource": "arn:aws:iam::123456789012:user/bob",
+                    "Context": {
+                        "aws:username": "martha"
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "51.json",
+        "cases": [
+            {
+                "reason": "reading the organizations access report is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:GetOrganizationsAccessReport",
+                    "Resource": "arn:aws:iam::123456789012:root",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "generating a report for the allowed policy is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:GenerateOrganizationsAccessReport",
+                    "Resource": "arn:aws:iam::123456789012:root",
+                    "Context": {
+                        "iam:OrganizationsPolicyId": "p-policy123"
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "generating a report for another policy is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:GenerateOrganizationsAccessReport",
+                    "Resource": "arn:aws:iam::123456789012:root",
+                    "Context": {
+                        "iam:OrganizationsPolicyId": "p-otherpolicy"
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "52.json",
+        "cases": [
+            {
+                "reason": "attaching a policy whose name is not listed is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:AttachUserPolicy",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {
+                        "iam:PolicyARN": "arn:aws:iam::123456789012:policy/policy-name-3"
+                    }
+                },
+                "result": "NotApplicable"
+            },
+            {
+                "reason": "an action outside the statement is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:CreateUser",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {
+                        "iam:PolicyARN": "arn:aws:iam::123456789012:policy/policy-name-1"
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "54.json",
+        "cases": [
+            {
+                "reason": "reading an item from SampleTable is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "dynamodb:GetItem",
+                    "Resource": "arn:aws:dynamodb:us-east-1:123456789012:table/SampleTable",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "reading from another table is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "dynamodb:GetItem",
+                    "Resource": "arn:aws:dynamodb:us-east-1:123456789012:table/OtherTable",
+                    "Context": {}
+                },
+                "result": "NotApplicable"
+            },
+            {
+                "reason": "writing log events is allowed on any resource",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "logs:PutLogEvents",
+                    "Resource": "arn:aws:logs:us-east-1:123456789012:log-group:app-logs:*",
+                    "Context": {}
+                },
+                "result": "Allow"
+            }
+        ]
+    },
+    {
+        "policy_file": "55.json",
+        "cases": [
+            {
+                "reason": "creating a snapshot in the pinned region is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "rds:CreateDBSnapshot",
+                    "Resource": "arn:aws:rds:region:123456789012:snapshot:my-snapshot",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "a describe action is allowed in any region",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "rds:DescribeDBInstances",
+                    "Resource": "arn:aws:rds:us-east-1:123456789012:db:mydb",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "a non-describe action outside the pinned region is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "rds:DeleteDBInstance",
+                    "Resource": "arn:aws:rds:us-east-1:123456789012:db:mydb",
+                    "Context": {}
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "56.json",
+        "cases": [
+            {
+                "reason": "creating a DB snapshot is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "rds:CreateDBSnapshot",
+                    "Resource": "arn:aws:rds:us-east-1:123456789012:snapshot:my-snapshot",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "tagging a resource is not covered",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "rds:AddTagsToResource",
+                    "Resource": "arn:aws:rds:us-east-1:123456789012:db:mydb",
+                    "Context": {}
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "57.json",
+        "cases": [
+            {
+                "reason": "describing DB instances is allowed unconditionally",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "rds:DescribeDBInstances",
+                    "Resource": "arn:aws:rds:us-east-1:123456789012:db:mydb",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "deleting a DB instance owned by another user is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "rds:DeleteDBInstance",
+                    "Resource": "arn:aws:rds:us-east-1:123456789012:db:mydb",
+                    "Context": {
+                        "aws:username": "martha",
+                        "rds:db-tag/Owner": "bob"
+                    }
+                },
+                "result": "NotApplicable"
+            },
+            {
+                "reason": "an RDS action the policy does not list is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "rds:AddTagsToResource",
+                    "Resource": "arn:aws:rds:us-east-1:123456789012:db:mydb",
+                    "Context": {
+                        "aws:username": "martha"
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "58.json",
+        "cases": [
+            {
+                "reason": "reading an object under your own cognito identity prefix is allowed",
+                "request": {
+                    "Principal": {
+                        "Federated": "cognito-identity.amazonaws.com"
+                    },
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::bucket-name/cognito/application-name/us-east-1:1234abcd/photo.jpg",
+                    "Context": {
+                        "cognito-identity.amazonaws.com:sub": "us-east-1:1234abcd"
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "reading another identity's prefix is not matched",
+                "request": {
+                    "Principal": {
+                        "Federated": "cognito-identity.amazonaws.com"
+                    },
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::bucket-name/cognito/application-name/us-east-1:1234abcd/photo.jpg",
+                    "Context": {
+                        "cognito-identity.amazonaws.com:sub": "us-east-1:9999ffff"
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "59.json",
+        "cases": [
+            {
+                "reason": "listing the bucket root with an empty prefix is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "s3:ListBucket",
+                    "Resource": "arn:aws:s3:::amzn-s3-demo-bucket",
+                    "Context": {
+                        "aws:userid": "AIDAEXAMPLEUSER:martha",
+                        "s3:prefix": ""
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "reading an object under your home prefix is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::amzn-s3-demo-bucket/home/AIDAEXAMPLEUSER:martha/report.csv",
+                    "Context": {
+                        "aws:userid": "AIDAEXAMPLEUSER:martha"
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "reading an object under another user's home prefix is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::amzn-s3-demo-bucket/home/AIDAOTHERUSER:bob/report.csv",
+                    "Context": {
+                        "aws:userid": "AIDAEXAMPLEUSER:martha"
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "60.json",
+        "cases": [
+            {
+                "reason": "an object in a non-production bucket is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::amzn-s3-demo-bucket/object",
+                    "Context": {
+                        "aws:MultiFactorAuthAge": 600
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "an object in the production bucket with an old MFA session is denied",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::amzn-s3-demo-bucket-production/object",
+                    "Context": {
+                        "aws:MultiFactorAuthAge": 3600
+                    }
+                },
+                "result": "Deny"
+            },
+            {
+                "reason": "the same object with a fresh MFA session is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::amzn-s3-demo-bucket-production/object",
+                    "Context": {
+                        "aws:MultiFactorAuthAge": 600
+                    }
+                },
+                "result": "Allow"
+            }
+        ]
+    },
+    {
+        "policy_file": "61.json",
+        "cases": [
+            {
+                "reason": "listing the bucket root with an empty prefix is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "s3:ListBucket",
+                    "Resource": "arn:aws:s3:::amzn-s3-demo-bucket",
+                    "Context": {
+                        "aws:username": "martha",
+                        "s3:prefix": ""
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "reading an object under your home prefix is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::amzn-s3-demo-bucket/home/martha/report.csv",
+                    "Context": {
+                        "aws:username": "martha"
+                    }
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "reading an object under another user's home prefix is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::amzn-s3-demo-bucket/home/bob/report.csv",
+                    "Context": {
+                        "aws:username": "martha"
+                    }
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "62.json",
+        "cases": [
+            {
+                "reason": "reading an object in the bucket is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::bucket-name/object",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "reading an object in another bucket is not matched and not denied",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::other-bucket/object",
+                    "Context": {}
+                },
+                "result": "NotApplicable"
+            },
+            {
+                "reason": "a non-S3 action outside the bucket is denied by NotAction/NotResource",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "iam:CreateUser",
+                    "Resource": "arn:aws:iam::123456789012:user/martha",
+                    "Context": {}
+                },
+                "result": "Deny"
+            }
+        ]
+    },
+    {
+        "policy_file": "63.json",
+        "cases": [
+            {
+                "reason": "listing the bucket is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "s3:ListBucket",
+                    "Resource": "arn:aws:s3:::bucket-name",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "an object action matches the s3:*Object wildcard",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::bucket-name/object",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "an object action in another bucket is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::other-bucket/object",
+                    "Context": {}
+                },
+                "result": "NotApplicable"
+            }
+        ]
+    },
+    {
+        "policy_file": "64.json",
+        "cases": [
+            {
+                "reason": "reading bucket metadata is allowed",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "s3:GetBucketLocation",
+                    "Resource": "arn:aws:s3:::amzn-s3-demo-bucket",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "an object action matches the s3:*Object wildcard",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::amzn-s3-demo-bucket/object",
+                    "Context": {}
+                },
+                "result": "Allow"
+            },
+            {
+                "reason": "an object action in another bucket is not matched",
+                "request": {
+                    "Principal": {
+                        "AWS": "arn:aws:iam::123456789012:user/martha"
+                    },
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::other-bucket/object",
+                    "Context": {}
+                },
+                "result": "NotApplicable"
+            }
+        ]
     }
 ]
