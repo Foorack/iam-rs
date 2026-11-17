@@ -57,6 +57,24 @@ impl ArnMatcher {
         Self::new(vec![pattern.to_string()])
     }
 
+    /// Create a matcher from a policy `Resource` pattern
+    ///
+    /// AWS completes an incomplete ARN in a policy `Resource` with wildcards, so
+    /// `arn:aws:sqs` matches what `arn:aws:sqs:*:*:*` matches. That completion is
+    /// applied here and nowhere else: a request resource and a principal name a
+    /// real ARN, so [`Arn::parse`] stays strict for them.
+    ///
+    /// # Errors
+    ///
+    /// Returns `ArnError` if the pattern is not an ARN that
+    /// [`Arn::complete_resource_pattern`] can complete. The matcher holds the
+    /// completed pattern, so [`Self::patterns`] reports `arn:aws:sqs:*:*:*` for an
+    /// authored `arn:aws:sqs`.
+    pub fn from_resource_pattern(pattern: &str) -> Result<Self, ArnError> {
+        let completed = Arn::complete_resource_pattern(pattern)?;
+        Self::new(vec![completed])
+    }
+
     /// Check if any pattern matches the given ARN
     ///
     /// # Errors
@@ -495,6 +513,42 @@ mod tests {
                 )
                 .unwrap()
         );
+    }
+
+    #[test]
+    fn test_arn_matcher_completes_a_resource_pattern() {
+        // AWS completes an incomplete `Resource` ARN with wildcards, so all three
+        // forms below are the same pattern as `arn:aws:sqs:*:*:*`.
+        for pattern in ["arn:aws:sqs", "arn:aws:sqs:*", "arn:aws:sqs:us-east-1"] {
+            let matcher = ArnMatcher::from_resource_pattern(pattern).unwrap();
+
+            assert!(
+                matcher
+                    .matches(&Arn::parse("arn:aws:sqs:us-east-1:111122223333:queue-name").unwrap())
+                    .unwrap(),
+                "'{pattern}' should match a queue"
+            );
+            assert!(
+                !matcher
+                    .matches(&Arn::parse("arn:aws:sns:us-east-1:111122223333:topic").unwrap())
+                    .unwrap(),
+                "'{pattern}' must not match another service"
+            );
+        }
+
+        // The completed pattern is what the matcher holds.
+        assert_eq!(
+            ArnMatcher::from_resource_pattern("arn:aws:sqs")
+                .unwrap()
+                .patterns(),
+            vec!["arn:aws:sqs:*:*:*"]
+        );
+
+        // A principal or request ARN is parsed strictly, so a pattern compiled from
+        // one is still rejected when it is incomplete.
+        assert!(ArnMatcher::from_pattern("arn:aws:sqs").is_err());
+        assert!(ArnMatcher::from_resource_pattern("arn:aws").is_err());
+        assert!(ArnMatcher::from_resource_pattern("not-an-arn").is_err());
     }
 
     #[test]
