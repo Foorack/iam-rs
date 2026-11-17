@@ -125,7 +125,10 @@ pub struct EvaluationOptions {
     pub stop_on_explicit_deny: bool,
     /// Whether to collect detailed match information
     pub collect_match_details: bool,
-    /// Maximum number of statements to evaluate (for safety)
+    /// Maximum number of statements a single policy document may declare
+    /// (safety limit). A policy with more statements than this makes
+    /// evaluation return [`EvaluationError::InternalError`]; the limit applies
+    /// to each policy on its own, not to the sum across policies.
     pub max_statements: usize,
     /// Whether to ignore resource constraints
     pub ignore_resource_constraints: bool,
@@ -139,6 +142,79 @@ impl Default for EvaluationOptions {
             max_statements: 1000,
             ignore_resource_constraints: false,
         }
+    }
+}
+
+/// A policy principal that delegates to a whole AWS account.
+///
+/// AWS treats a bare 12-digit account ID and the account root ARN
+/// (`arn:<partition>:iam::<account>:root`) the same way: both delegate
+/// permissions to the account, so they match every principal in it — users,
+/// roles, assumed-role sessions and the root user itself — rather than only the
+/// account root.
+///
+/// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_principal.html>
+#[derive(Debug, Clone)]
+struct AccountLevelPrincipal {
+    /// `None` for a bare account ID, which carries no partition and so matches
+    /// the account in any partition.
+    partition: Option<String>,
+    /// Account ID, possibly with wildcards when it came from a root ARN.
+    account: String,
+}
+
+impl AccountLevelPrincipal {
+    /// Parse `principal` as an account-level AWS principal, if it is one.
+    fn parse(principal: &str) -> Option<Self> {
+        if Self::is_account_id(principal) {
+            return Some(Self {
+                partition: None,
+                account: principal.to_string(),
+            });
+        }
+
+        let arn = Arn::parse(principal).ok()?;
+        if arn.service == "iam" && arn.resource == "root" && !arn.account_id.is_empty() {
+            return Some(Self {
+                partition: Some(arn.partition),
+                account: arn.account_id,
+            });
+        }
+        None
+    }
+
+    /// Does this account delegation cover `request_principal`?
+    fn matches(&self, request_principal: &str) -> bool {
+        // A bare request account ID stands for that account's root and carries
+        // no partition to compare.
+        if Self::is_account_id(request_principal) {
+            return Arn::wildcard_match(request_principal, &self.account);
+        }
+
+        let Ok(request_arn) = Arn::parse(request_principal) else {
+            return false;
+        };
+        // Only IAM and STS ARNs identify an AWS principal; other ARNs either
+        // carry no account or one that does not scope an identity.
+        if (request_arn.service != "iam" && request_arn.service != "sts")
+            || request_arn.account_id.is_empty()
+        {
+            return false;
+        }
+
+        // The partition is compared only when the policy states one: a bare
+        // account ID says nothing about partitions, while `aws-cn` must not
+        // match `aws`.
+        let partition_matches = self
+            .partition
+            .as_deref()
+            .is_none_or(|partition| Arn::wildcard_match(&request_arn.partition, partition));
+
+        partition_matches && Arn::wildcard_match(&request_arn.account_id, &self.account)
+    }
+
+    fn is_account_id(candidate: &str) -> bool {
+        candidate.len() == 12 && candidate.bytes().all(|byte| byte.is_ascii_digit())
     }
 }
 
@@ -297,9 +373,9 @@ impl PolicyEvaluator {
     /// that come from a user or a file.
     ///
     /// Unlike [`try_add_policy`](Self::try_add_policy), a policy whose `Version` is
-    /// not `2012-10-17` is accepted here: evaluation then treats `${...}` as
-    /// literal text, as AWS does for the policy language versions that predate
-    /// policy variables.
+    /// not `2012-10-17` — including one with no `Version` element at all — is
+    /// accepted here: evaluation then treats `${...}` as literal text, as AWS
+    /// does for the policy language versions that predate policy variables.
     pub fn add_policy(&mut self, policy: IAMPolicy) {
         self.resource_patterns
             .push(PolicyPatternCache::build(&policy));
@@ -352,7 +428,8 @@ impl PolicyEvaluator {
     /// - ARN format errors occur during evaluation
     /// - Variable interpolation fails
     /// - Condition evaluation fails
-    /// - Maximum statement evaluation limit is exceeded
+    /// - A policy declares more statements than
+    ///   [`EvaluationOptions::max_statements`] allows
     pub fn evaluate(&self, request: &IAMRequest) -> Result<EvaluationResult, EvaluationError> {
         let (decision, statement_details) = self.decide(request)?;
         Ok(EvaluationResult {
@@ -416,20 +493,25 @@ impl PolicyEvaluator {
         let mut statement_details = Vec::new();
         let mut has_explicit_allow = false;
         let mut has_explicit_deny = false;
-        let mut statement_count = 0;
 
         // Evaluate each policy
         for (policy_index, policy) in self.policies.iter().enumerate() {
+            // The limit is a per-document safety valve: it counts every
+            // statement the policy declares and is checked before any of them
+            // runs, so a short-circuit cannot hide an over-limit policy and the
+            // outcome never depends on `stop_on_explicit_deny`. AWS itself has
+            // no statement-count limit, only document-size limits, so summing
+            // the count across the whole evaluation would reject ordinary
+            // policy sets.
+            if policy.statement.len() > self.options.max_statements {
+                return Err(EvaluationError::InternalError(
+                    "Maximum statement evaluation limit exceeded".to_string(),
+                ));
+            }
+
             let policy_patterns = self.resource_patterns.get(policy_index);
             let policy_variables = policy.version.supports_policy_variables();
             for (statement_index, statement) in policy.statement.iter().enumerate() {
-                statement_count += 1;
-                if statement_count > self.options.max_statements {
-                    return Err(EvaluationError::InternalError(
-                        "Maximum statement evaluation limit exceeded".to_string(),
-                    ));
-                }
-
                 let patterns = policy_patterns.and_then(|p| p.statement(statement_index));
                 let statement_result = Self::evaluate_statement(
                     statement,
@@ -602,6 +684,12 @@ impl PolicyEvaluator {
     }
 
     /// Check if a principal matches the request principal
+    ///
+    /// AWS principal matching is not string equality: a bare account ID and the
+    /// account root ARN delegate to every principal in that account, and a role
+    /// ARN also authorises requests made with the role, whose principal is the
+    /// role's `assumed-role` session ARN. `Principal` and `NotPrincipal` share
+    /// this function, so both directions follow the same equivalences.
     fn principal_matches(
         principal: &Principal,
         request_principal: &Principal,
@@ -634,26 +722,19 @@ impl PolicyEvaluator {
                 if id == "*" || id == request_principal_id {
                     return Ok(true);
                 }
-                // Account ID (e.g., "123456789012")
-                if id.len() == 12 && id.chars().all(|c| c.is_ascii_digit()) {
-                    // Accept either the raw account ID or the root ARN. The
-                    // root ARN's partition varies by region (aws, aws-cn,
-                    // aws-us-gov, ...), so parse the request principal instead
-                    // of hardcoding a single partition.
-                    if request_principal_id == id {
-                        return Ok(true);
-                    }
-                    if let Ok(request_arn) = Arn::parse(request_principal_id)
-                        && request_arn.service == "iam"
-                        && request_arn.account_id == id
-                        && request_arn.resource == "root"
-                    {
-                        return Ok(true);
-                    }
+                // A bare account ID or an account root ARN delegates to every
+                // principal in that account, not just to the account root.
+                if let Some(account) = AccountLevelPrincipal::parse(id) {
+                    return Ok(account.matches(request_principal_id));
                 }
                 // If it's an ARN, match directly or with wildcard
                 if id.starts_with("arn:") {
-                    return Self::principal_string_matches(id, request_principal_id);
+                    if Self::principal_string_matches(id, request_principal_id)? {
+                        return Ok(true);
+                    }
+                    // A role ARN authorises requests made with that role, whose
+                    // principal is the role's STS session ARN.
+                    return Self::role_arn_matches_session(id, request_principal_id);
                 }
                 Ok(false)
             }),
@@ -772,6 +853,60 @@ impl PolicyEvaluator {
         } else {
             Ok(false)
         }
+    }
+
+    /// Check whether an IAM role ARN principal authorises a request made with
+    /// that role.
+    ///
+    /// A resource policy naming `arn:<partition>:iam::<account>:role/<name>`
+    /// authorises the role, and requests made with it carry the STS session ARN
+    /// `arn:<partition>:sts::<account>:assumed-role/<name>/<session>`; the role
+    /// ARN itself never appears as a request principal. Path-qualified roles
+    /// keep the path in both ARNs (`role/path/Name` and
+    /// `assumed-role/path/Name/session`).
+    fn role_arn_matches_session(
+        role_arn: &str,
+        request_principal: &str,
+    ) -> Result<bool, EvaluationError> {
+        let Ok(role_pattern) = Arn::parse(role_arn) else {
+            return Ok(false);
+        };
+        if role_pattern.service != "iam" || !role_pattern.resource.starts_with("role/") {
+            return Ok(false);
+        }
+
+        let Ok(session_arn) = Arn::parse(request_principal) else {
+            return Ok(false);
+        };
+        if session_arn.service != "sts" {
+            return Ok(false);
+        }
+
+        // `assumed-role/<role-path>/<role-name>/<session-name>`: the session
+        // name is a single segment, so everything before it is the role path
+        // and name.
+        let Some(role_and_session) = session_arn.resource.strip_prefix("assumed-role/") else {
+            return Ok(false);
+        };
+        let Some((role_path_and_name, _session_name)) = role_and_session.rsplit_once('/') else {
+            return Ok(false);
+        };
+        if role_path_and_name.is_empty() {
+            return Ok(false);
+        }
+
+        // Rebuild the role ARN the session was created from, then compare it to
+        // the policy principal with the same wildcard rules as any other ARN.
+        let role = Arn {
+            partition: session_arn.partition.clone(),
+            service: "iam".to_string(),
+            region: String::new(),
+            account_id: session_arn.account_id,
+            resource: format!("role/{role_path_and_name}"),
+        };
+
+        role.matches(role_arn)
+            .map_err(|e| EvaluationError::InvalidArn(e.to_string()))
     }
 
     /// Check if a request action falls outside a `NotAction` list
@@ -1695,6 +1830,222 @@ mod tests {
         assert_eq!(result, Decision::NotApplicable);
     }
 
+    // An account ID delegates to the whole account, so every principal in it
+    // matches, not only the root user.
+    #[test]
+    fn test_account_id_principal_matches_every_principal_in_the_account() {
+        let policy = allow_for_aws_principal("123456789012");
+
+        for principal in [
+            "arn:aws:iam::123456789012:user/alice",
+            "arn:aws:iam::123456789012:role/MyRole",
+            "arn:aws:sts::123456789012:assumed-role/MyRole/session",
+            "arn:aws:iam::123456789012:root",
+            "123456789012",
+            // A bare account ID carries no partition, so it delegates to the
+            // account in every partition.
+            "arn:aws-cn:iam::123456789012:user/alice",
+        ] {
+            assert_eq!(
+                evaluate_policy(&policy, &s3_request_by(principal)).unwrap(),
+                Decision::Allow,
+                "account ID principal must authorise {principal}"
+            );
+        }
+
+        for principal in [
+            "arn:aws:iam::999999999999:user/alice",
+            "arn:aws:sts::999999999999:assumed-role/MyRole/session",
+            "999999999999",
+        ] {
+            assert_eq!(
+                evaluate_policy(&policy, &s3_request_by(principal)).unwrap(),
+                Decision::NotApplicable,
+                "account ID principal must not authorise {principal}"
+            );
+        }
+    }
+
+    // The account root ARN behaves like the account ID: it delegates to the
+    // account instead of naming only the root user.
+    #[test]
+    fn test_root_arn_principal_matches_every_principal_in_the_account() {
+        let policy = allow_for_aws_principal("arn:aws:iam::123456789012:root");
+
+        for principal in [
+            "arn:aws:iam::123456789012:user/alice",
+            "arn:aws:iam::123456789012:role/MyRole",
+            "arn:aws:sts::123456789012:assumed-role/MyRole/session",
+            "arn:aws:iam::123456789012:root",
+        ] {
+            assert_eq!(
+                evaluate_policy(&policy, &s3_request_by(principal)).unwrap(),
+                Decision::Allow,
+                "root ARN principal must authorise {principal}"
+            );
+        }
+
+        for principal in [
+            "arn:aws:iam::999999999999:user/alice",
+            "arn:aws:sts::999999999999:assumed-role/MyRole/session",
+            // The root ARN states a partition, and `aws-cn` is not `aws`.
+            "arn:aws-cn:iam::123456789012:user/alice",
+        ] {
+            assert_eq!(
+                evaluate_policy(&policy, &s3_request_by(principal)).unwrap(),
+                Decision::NotApplicable,
+                "root ARN principal must not authorise {principal}"
+            );
+        }
+    }
+
+    // A role ARN authorises requests made with that role, whose principal is
+    // the role's STS session ARN.
+    #[test]
+    fn test_role_arn_principal_matches_its_assumed_role_session() {
+        let policy = allow_for_aws_principal("arn:aws:iam::123456789012:role/MyRole");
+
+        assert_eq!(
+            evaluate_policy(
+                &policy,
+                &s3_request_by("arn:aws:sts::123456789012:assumed-role/MyRole/session")
+            )
+            .unwrap(),
+            Decision::Allow
+        );
+        assert_eq!(
+            evaluate_policy(
+                &policy,
+                &s3_request_by("arn:aws:iam::123456789012:role/MyRole")
+            )
+            .unwrap(),
+            Decision::Allow
+        );
+
+        for principal in [
+            // A different role, a different account, a user and a session in
+            // another partition must not match.
+            "arn:aws:sts::123456789012:assumed-role/OtherRole/session",
+            "arn:aws:sts::999999999999:assumed-role/MyRole/session",
+            "arn:aws:iam::123456789012:user/alice",
+            "arn:aws-cn:sts::123456789012:assumed-role/MyRole/session",
+        ] {
+            assert_eq!(
+                evaluate_policy(&policy, &s3_request_by(principal)).unwrap(),
+                Decision::NotApplicable,
+                "role ARN principal must not authorise {principal}"
+            );
+        }
+    }
+
+    // Path-qualified roles keep the path in the session ARN.
+    #[test]
+    fn test_path_qualified_role_arn_principal_matches_its_session() {
+        let policy = allow_for_aws_principal("arn:aws:iam::123456789012:role/path/to/MyRole");
+
+        assert_eq!(
+            evaluate_policy(
+                &policy,
+                &s3_request_by("arn:aws:sts::123456789012:assumed-role/path/to/MyRole/session")
+            )
+            .unwrap(),
+            Decision::Allow
+        );
+
+        // The same role name without the path is a different role.
+        assert_eq!(
+            evaluate_policy(
+                &policy,
+                &s3_request_by("arn:aws:sts::123456789012:assumed-role/MyRole/session")
+            )
+            .unwrap(),
+            Decision::NotApplicable
+        );
+    }
+
+    // NotPrincipal goes through the same matcher, so an account-level exclusion
+    // exempts the whole account instead of denying it.
+    #[test]
+    fn test_deny_with_not_principal_account_does_not_deny_that_account() {
+        let policy = deny_with_not_principal("123456789012");
+
+        for principal in [
+            "arn:aws:iam::123456789012:user/alice",
+            "arn:aws:iam::123456789012:role/MyRole",
+            "arn:aws:sts::123456789012:assumed-role/MyRole/session",
+            "arn:aws:iam::123456789012:root",
+        ] {
+            assert_eq!(
+                evaluate_policy(&policy, &s3_request_by(principal)).unwrap(),
+                Decision::NotApplicable,
+                "NotPrincipal account exclusion must exempt {principal}"
+            );
+        }
+
+        for principal in [
+            "arn:aws:iam::999999999999:user/bob",
+            "arn:aws:sts::999999999999:assumed-role/MyRole/session",
+        ] {
+            assert_eq!(
+                evaluate_policy(&policy, &s3_request_by(principal)).unwrap(),
+                Decision::Deny,
+                "NotPrincipal account exclusion must still deny {principal}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_deny_with_not_principal_role_exempts_its_sessions() {
+        let policy = deny_with_not_principal("arn:aws:iam::123456789012:role/MyRole");
+
+        assert_eq!(
+            evaluate_policy(
+                &policy,
+                &s3_request_by("arn:aws:sts::123456789012:assumed-role/MyRole/session")
+            )
+            .unwrap(),
+            Decision::NotApplicable
+        );
+
+        for principal in [
+            "arn:aws:sts::123456789012:assumed-role/OtherRole/session",
+            "arn:aws:iam::123456789012:user/alice",
+        ] {
+            assert_eq!(
+                evaluate_policy(&policy, &s3_request_by(principal)).unwrap(),
+                Decision::Deny,
+                "role NotPrincipal exclusion must not exempt {principal}"
+            );
+        }
+    }
+
+    /// An `Allow` resource policy whose `Principal` element names `principal`.
+    fn allow_for_aws_principal(principal: &str) -> IAMPolicy {
+        IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_principal(Principal::Aws(PrincipalId::String(principal.to_string())))
+                .with_action(IAMAction::Single("s3:GetObject".to_string()))
+                .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string())),
+        )
+    }
+
+    /// A `Deny` resource policy excluding `principal` through `NotPrincipal`.
+    fn deny_with_not_principal(principal: &str) -> IAMPolicy {
+        let mut statement = IAMStatement::new(IAMEffect::Deny)
+            .with_action(IAMAction::Single("s3:GetObject".to_string()))
+            .with_resource(IAMResource::Single("arn:aws:s3:::my-bucket/*".to_string()));
+        statement.not_principal = Some(Principal::Aws(PrincipalId::String(principal.to_string())));
+        IAMPolicy::new().add_statement(statement)
+    }
+
+    fn s3_request_by(principal: &str) -> IAMRequest {
+        IAMRequest::new(
+            Principal::Aws(PrincipalId::String(principal.to_string())),
+            "s3:GetObject",
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        )
+    }
+
     #[test]
     fn test_numeric_condition() {
         let mut context = Context::new();
@@ -2407,6 +2758,147 @@ mod tests {
         );
     }
 
+    fn s3_request(action: &str) -> IAMRequest {
+        IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
+            action,
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        )
+    }
+
+    /// A policy with `count` non-matching statements followed by `last`.
+    fn policy_with_trailing(count: usize, last: IAMStatement) -> IAMPolicy {
+        let policy = (0..count).fold(IAMPolicy::new(), |policy, index| {
+            policy.add_statement(
+                IAMStatement::new(IAMEffect::Allow)
+                    .with_sid(format!("Filler{index}"))
+                    .with_action(IAMAction::Single("sts:GetCallerIdentity".to_string()))
+                    .with_resource(IAMResource::Single("*".to_string())),
+            )
+        });
+        policy.add_statement(last)
+    }
+
+    fn allow_get_object() -> IAMStatement {
+        IAMStatement::new(IAMEffect::Allow)
+            .with_action(IAMAction::Single("s3:GetObject".to_string()))
+            .with_resource(IAMResource::Single("*".to_string()))
+    }
+
+    #[test]
+    fn test_policy_at_statement_limit_evaluates() {
+        let policy = policy_with_trailing(3, allow_get_object());
+        assert_eq!(policy.statement.len(), 4);
+        let evaluator =
+            PolicyEvaluator::with_policies(vec![policy]).with_options(EvaluationOptions {
+                max_statements: 4,
+                ..Default::default()
+            });
+
+        let result = evaluator.evaluate(&s3_request("s3:GetObject")).unwrap();
+        assert_eq!(result.decision, Decision::Allow);
+    }
+
+    #[test]
+    fn test_policy_exceeding_statement_limit_is_an_error() {
+        let policy = policy_with_trailing(4, allow_get_object());
+        assert_eq!(policy.statement.len(), 5);
+        let evaluator =
+            PolicyEvaluator::with_policies(vec![policy]).with_options(EvaluationOptions {
+                max_statements: 4,
+                ..Default::default()
+            });
+
+        let error = evaluator
+            .evaluate(&s3_request("s3:GetObject"))
+            .expect_err("an over-limit policy must not be evaluated");
+        assert!(
+            matches!(error, EvaluationError::InternalError(_)),
+            "unexpected error: {error}"
+        );
+    }
+
+    // The limit is per policy, so a policy set whose total statement count
+    // exceeds it stays evaluable.
+    #[test]
+    fn test_statement_limit_is_per_policy_not_per_evaluation() {
+        let policies = vec![
+            policy_with_trailing(3, allow_get_object()),
+            policy_with_trailing(3, allow_get_object()),
+        ];
+        let evaluator = PolicyEvaluator::with_policies(policies).with_options(EvaluationOptions {
+            max_statements: 4,
+            ..Default::default()
+        });
+
+        let result = evaluator.evaluate(&s3_request("s3:GetObject")).unwrap();
+        assert_eq!(result.decision, Decision::Allow);
+    }
+
+    // `EvaluationOptions` documents that `stop_on_explicit_deny` does not change
+    // the decision, and reaching the statement limit must not change that.
+    #[test]
+    fn test_decision_at_statement_limit_ignores_stop_on_explicit_deny() {
+        let policy = policy_with_trailing(
+            2,
+            IAMStatement::new(IAMEffect::Deny)
+                .with_action(IAMAction::Single("s3:*".to_string()))
+                .with_resource(IAMResource::Single("*".to_string())),
+        );
+        assert_eq!(policy.statement.len(), 3);
+        let request = s3_request("s3:GetObject");
+
+        let decisions: Vec<Decision> = [true, false]
+            .into_iter()
+            .map(|stop_on_explicit_deny| {
+                PolicyEvaluator::with_policies(vec![policy.clone()])
+                    .with_options(EvaluationOptions {
+                        stop_on_explicit_deny,
+                        max_statements: 3,
+                        ..Default::default()
+                    })
+                    .evaluate(&request)
+                    .unwrap()
+                    .decision
+            })
+            .collect();
+
+        assert_eq!(decisions, vec![Decision::Deny, Decision::Deny]);
+    }
+
+    // A deny is never silently skipped: when the policy cannot be evaluated
+    // because it is over the limit the caller gets an error, not a decision.
+    #[test]
+    fn test_deny_beyond_statement_limit_is_not_ignored() {
+        let policy = policy_with_trailing(
+            3,
+            IAMStatement::new(IAMEffect::Deny)
+                .with_action(IAMAction::Single("s3:*".to_string()))
+                .with_resource(IAMResource::Single("*".to_string())),
+        );
+        assert_eq!(policy.statement.len(), 4);
+
+        for stop_on_explicit_deny in [true, false] {
+            let evaluator = PolicyEvaluator::with_policies(vec![policy.clone()]).with_options(
+                EvaluationOptions {
+                    stop_on_explicit_deny,
+                    max_statements: 3,
+                    ..Default::default()
+                },
+            );
+
+            let error = evaluator.evaluate(&s3_request("s3:GetObject")).expect_err(
+                "the deny beyond the limit must not be dropped in favour of a decision",
+            );
+            assert!(
+                matches!(error, EvaluationError::InternalError(_)),
+                "unexpected error with stop_on_explicit_deny={stop_on_explicit_deny}: {error}"
+            );
+        }
+    }
+
     #[test]
     fn test_evaluation_options_accept_partial_json() {
         let options: EvaluationOptions =
@@ -2938,6 +3430,34 @@ mod tests {
         // Same policy and request as the 2012 case, but the pattern stays the
         // literal text `arn:aws:s3:::b/${aws:username}` and matches nothing.
         let policy = username_resource_policy(version_without_policy_variables());
+        let request = request_with_context(
+            "s3:GetObject",
+            "arn:aws:s3:::b/test",
+            &[("aws:username", "test")],
+        );
+        assert_eq!(
+            evaluate_policy(&policy, &request).unwrap(),
+            Decision::NotApplicable
+        );
+    }
+
+    #[test]
+    fn test_policy_variables_are_literal_when_version_is_absent() {
+        // AWS's grammar marks the `Version` block optional and describes a
+        // document without it as behaving like the older policy language, so
+        // the pattern must stay literal exactly as in the 2008 case above.
+        let policy = IAMPolicy::from_json(
+            r#"{
+                "Statement": [{
+                    "Effect": "Allow",
+                    "Action": "s3:*",
+                    "Resource": "arn:aws:s3:::b/${aws:username}"
+                }]
+            }"#,
+        )
+        .expect("a policy without a Version element is valid AWS JSON");
+        assert_eq!(policy.version, IAMVersion::Unspecified);
+
         let request = request_with_context(
             "s3:GetObject",
             "arn:aws:s3:::b/test",

@@ -123,7 +123,7 @@ pub(super) fn evaluate_condition(
 
     let mut predicate_str: Predicate<String> =
         Box::new(|_a, _b| unreachable!("predicate_str invoked for non-string operator category"));
-    let mut predicate_num: Predicate<f64> =
+    let mut predicate_num: Predicate<Decimal> =
         Box::new(|_a, _b| unreachable!("predicate_num invoked for non-numeric operator category"));
     let mut predicate_date: DatePredicate<DateTime<Utc>> =
         Box::new(|_a, _b| unreachable!("predicate_date invoked for non-date operator category"));
@@ -185,20 +185,22 @@ pub(super) fn evaluate_condition(
         // Numeric conditions
         // AWS compares numeric values exactly (decimal), so equality is exact.
         O::NumericEquals | O::NumericEqualsIfExists => {
-            predicate_num = Box::new(|a, b| a == b);
+            predicate_num = Box::new(|a, b| a.cmp(&b).is_eq());
         }
         O::NumericNotEquals | O::NumericNotEqualsIfExists => {
-            predicate_num = Box::new(|a, b| a != b);
+            predicate_num = Box::new(|a, b| a.cmp(&b).is_ne());
         }
-        O::NumericLessThan | O::NumericLessThanIfExists => predicate_num = Box::new(|a, b| a < b),
+        O::NumericLessThan | O::NumericLessThanIfExists => {
+            predicate_num = Box::new(|a, b| a.cmp(&b).is_lt());
+        }
         O::NumericLessThanEquals | O::NumericLessThanEqualsIfExists => {
-            predicate_num = Box::new(|a, b| a <= b);
+            predicate_num = Box::new(|a, b| a.cmp(&b).is_le());
         }
         O::NumericGreaterThan | O::NumericGreaterThanIfExists => {
-            predicate_num = Box::new(|a, b| a > b);
+            predicate_num = Box::new(|a, b| a.cmp(&b).is_gt());
         }
         O::NumericGreaterThanEquals | O::NumericGreaterThanEqualsIfExists => {
-            predicate_num = Box::new(|a, b| a >= b);
+            predicate_num = Box::new(|a, b| a.cmp(&b).is_ge());
         }
 
         // Date conditions
@@ -464,11 +466,167 @@ fn ev_str(
 /// Helper for single numeric condition evaluation
 ///
 /// Numeric condition operators let you construct Condition elements that restrict access based on comparing a key to an integer or decimal value.
+/// An exact decimal value, used to compare numeric condition values.
+///
+/// AWS compares numeric condition values as integers or decimals, not as
+/// floating point. Comparing `f64` rounded both operands to the nearest double,
+/// so a policy asking for exactly `9007199254740993` matched a request of
+/// `9007199254740992`, and `179769313486231570000000000000000000000000` style
+/// values silently lost digits.
+///
+/// The policy side is kept exactly as written. The request side arrives as an
+/// `f64` (that is what [`ContextValue::Number`] holds), so it is rendered with
+/// Rust's shortest round-tripping representation and treated as that exact
+/// decimal; a request value that needs more precision than an `f64` can hold is
+/// a limitation of the input type, not of this comparison.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Decimal {
+    /// Whether the value is below zero. Zero is never negative.
+    negative: bool,
+    /// Digits of the integer part, without leading zeros ("0" for zero).
+    integer: String,
+    /// Digits of the fraction part, without trailing zeros. Empty when integral.
+    fraction: String,
+}
+
+impl Decimal {
+    /// Parses an integer or decimal, as AWS defines a numeric condition value.
+    ///
+    /// Accepts exactly the forms `f64::from_str` accepts that are also finite,
+    /// so the set of values a policy may use is unchanged: the difference is
+    /// that the value is then kept exactly rather than rounded.
+    fn parse(text: &str) -> Option<Self> {
+        // `f64` parsing is the gate for "is this a number": it already rejects
+        // whitespace, hex, underscores and digit separators, and an overflowing
+        // decimal such as "1e400" becomes an infinity, which AWS would not
+        // accept as a numeric condition value either.
+        let finite: f64 = text.parse().ok().filter(|value: &f64| value.is_finite())?;
+
+        let (negative, digits) = match text.strip_prefix('-') {
+            Some(rest) => (true, rest),
+            None => (false, text.strip_prefix('+').unwrap_or(text)),
+        };
+
+        // Split off the exponent, if any.
+        let (mantissa, exponent) = match digits.find(['e', 'E']) {
+            Some(index) => {
+                let exponent: i32 = digits[index + 1..].parse().ok()?;
+                (&digits[..index], exponent)
+            }
+            None => (digits, 0),
+        };
+
+        let (integer_part, fraction_part) = match mantissa.split_once('.') {
+            Some((integer, fraction)) => (integer, fraction),
+            None => (mantissa, ""),
+        };
+        if integer_part.is_empty() && fraction_part.is_empty() {
+            return None;
+        }
+
+        // Work on the significant digits only, then place the decimal point.
+        let mut significant = String::with_capacity(integer_part.len() + fraction_part.len());
+        significant.push_str(integer_part);
+        significant.push_str(fraction_part);
+        let point = i32::try_from(integer_part.len()).ok()? + exponent;
+
+        let trimmed = significant.trim_start_matches('0');
+        if trimmed.is_empty() {
+            return Some(Self {
+                negative: false,
+                integer: "0".to_string(),
+                fraction: String::new(),
+            });
+        }
+        // Bound the expansion so an absurd exponent cannot allocate unboundedly;
+        // anything this large is far outside `f64` range and so was rejected
+        // above.
+        // Position of the decimal point relative to the first significant digit.
+        let shift = point
+            - i32::try_from(significant.len() - trimmed.len()).ok()?
+            - i32::try_from(trimmed.len()).ok()?;
+        let mut integer = String::new();
+        let mut fraction = String::new();
+        if shift >= 0 {
+            integer.push_str(trimmed);
+            for _ in 0..shift {
+                integer.push('0');
+            }
+        } else {
+            let split = i32::try_from(trimmed.len()).ok()? + shift;
+            if split <= 0 {
+                fraction.push_str(&"0".repeat(usize::try_from(-split).ok()?));
+                fraction.push_str(trimmed);
+            } else {
+                let split = usize::try_from(split).ok()?;
+                integer.push_str(&trimmed[..split]);
+                fraction.push_str(&trimmed[split..]);
+            }
+        }
+        while fraction.ends_with('0') {
+            fraction.pop();
+        }
+        let integer = integer.trim_start_matches('0');
+        let integer = if integer.is_empty() { "0" } else { integer };
+
+        let decimal = Self {
+            negative,
+            integer: integer.to_string(),
+            fraction,
+        };
+        // `-0.0` and `0.0` are the same number.
+        if decimal.integer == "0" && decimal.fraction.is_empty() {
+            return Some(Self {
+                negative: false,
+                integer: "0".to_string(),
+                fraction: String::new(),
+            });
+        }
+        // Keep the value consistent with the `f64` gate above.
+        finite.is_finite().then_some(decimal)
+    }
+
+    /// Renders an `f64` as the exact decimal it represents.
+    fn from_f64(value: f64) -> Self {
+        // `Display` produces the shortest representation that round-trips, which
+        // is the decimal the caller meant; `parse` then canonicalises it.
+        Self::parse(&value.to_string()).unwrap_or(Self {
+            negative: false,
+            integer: "0".to_string(),
+            fraction: String::new(),
+        })
+    }
+
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        use std::cmp::Ordering;
+        if self.negative != other.negative {
+            return if self.negative {
+                Ordering::Less
+            } else {
+                Ordering::Greater
+            };
+        }
+        let magnitude = self
+            .integer
+            .len()
+            .cmp(&other.integer.len())
+            .then_with(|| self.integer.cmp(&other.integer))
+            // Equal integer parts: both fractions are zero-padded to the right,
+            // so a plain lexicographic comparison is the numeric one.
+            .then_with(|| self.fraction.cmp(&other.fraction));
+        if self.negative {
+            magnitude.reverse()
+        } else {
+            magnitude
+        }
+    }
+}
+
 fn ev_numeric(
     ctx: &Context,
     key: &str,
     value: ValueRef<'_>,
-    predicate: &Predicate<f64>,
+    predicate: &Predicate<Decimal>,
     if_exists: bool,
     is_negated: bool,
 ) -> Result<bool, EvaluationError> {
@@ -476,53 +634,38 @@ fn ev_numeric(
     // historical text conversion, which is what makes a numeric string such as
     // `"42.5"` acceptable while `true` is rejected.
     let raw_value = value;
-    let value = match value {
-        ValueRef::Number(n) => n.as_f64().ok_or_else(|| {
-            EvaluationError::ConditionError(format!(
-                "Numeric condition value must be a number, was {n}"
-            ))
-        })?,
-        other => other
-            .to_string()
-            .trim_matches('"') // Remove quotes if present
-            .parse::<f64>()
-            .map_err(|err| {
-                EvaluationError::ConditionError(format!(
-                    "Numeric condition value must be a number, was {other}. ParseFloatError: {err}",
-                ))
-            })?,
+    let text = match value {
+        ValueRef::Number(n) => n.to_string(),
+        other => other.to_string().trim_matches('"').to_string(),
     };
-    // AWS numeric condition values are integers or decimals. `f64::from_str`
-    // additionally accepts "inf"/"NaN", and an overflowing decimal such as
-    // "1e400" saturates to infinity, none of which is an IAM numeric value.
-    // Left alone they compare as "always greater/less" or "never equal", which
-    // turns an invalid policy into a wrong Allow.
-    if !value.is_finite() {
-        return Err(EvaluationError::ConditionError(format!(
+    let value = Decimal::parse(&text).ok_or_else(|| {
+        EvaluationError::ConditionError(format!(
             "Numeric condition value must be a finite number, was {raw_value}"
-        )));
-    }
+        ))
+    })?;
 
     let context_value = match ctx.get(key) {
-        Some(ContextValue::Number(n)) => *n,
-        Some(ContextValue::String(s)) => match s.parse::<f64>() {
-            Ok(n) => n,
+        // A string request value is kept exactly, like the policy value: it is
+        // the caller's own text, not something an `f64` has already rounded.
+        Some(ContextValue::String(s)) => match Decimal::parse(s) {
+            Some(value) => value,
             // Present but not a parseable number: the value can't match under
             // the operator, so the condition is false (true for a negated
             // operator, which is the negation of "no match").
-            Err(_) => return Ok(is_negated),
+            None => return Ok(is_negated),
         },
-        // Present but a non-numeric type: same as unparseable.
+        // An `f64` request value is rendered as the decimal it represents. A
+        // value needing more precision than an `f64` holds was already rounded
+        // by whatever built the `Context`, which this comparison cannot undo.
+        Some(ContextValue::Number(n)) if n.is_finite() => Decimal::from_f64(*n),
+        // A non-finite number, or a present value of a non-numeric type, is not
+        // comparable: it behaves like an unparseable one rather than poisoning
+        // the comparison (NaN makes `!=` true for every policy value, an
+        // infinity wins every ordering).
         Some(_) => return Ok(is_negated),
         // Missing context: true for IfExists and negated operators
         None => return Ok(if_exists || is_negated),
     };
-    // A non-finite context value is not a comparable number either: it behaves
-    // like an unparseable one rather than poisoning the comparison (NaN makes
-    // `!=` true for every policy value, an infinity wins every ordering).
-    if !context_value.is_finite() {
-        return Ok(is_negated);
-    }
     Ok(predicate(context_value, value))
 }
 
@@ -2846,5 +2989,136 @@ mod tests {
                 "{value:?} should equal the context date"
             );
         }
+    }
+
+    #[test]
+    fn test_decimal_parses_the_numeric_forms_aws_allows() {
+        // Canonical form: sign, integer digits with no leading zeros, fraction
+        // digits with no trailing zeros.
+        let cases = [
+            ("0", "0", ""),
+            ("-0", "0", ""),
+            ("-0.0", "0", ""),
+            ("42", "42", ""),
+            ("+42", "42", ""),
+            ("-42", "42", ""),
+            ("42.5", "42", "5"),
+            (".5", "0", "5"),
+            ("5.", "5", ""),
+            ("1e3", "1000", ""),
+            ("1E3", "1000", ""),
+            ("1.5e2", "150", ""),
+            ("1.5e-2", "0", "015"),
+            ("0.10", "0", "1"),
+            ("00042", "42", ""),
+        ];
+        for (text, integer, fraction) in cases {
+            let parsed = Decimal::parse(text).unwrap_or_else(|| panic!("{text} should parse"));
+            assert_eq!(
+                (&parsed.integer[..], &parsed.fraction[..]),
+                (integer, fraction),
+                "{text} canonicalised to {parsed:?}"
+            );
+            let negative = text.starts_with('-') && (integer != "0" || !fraction.is_empty());
+            assert_eq!(parsed.negative, negative, "{text} sign");
+        }
+    }
+
+    #[test]
+    fn test_decimal_rejects_what_is_not_a_numeric_condition_value() {
+        for text in [
+            "", " ", " 42", "42 ", "0x10", "42_000", "inf", "-inf", "Infinity", "NaN", "1e400",
+            "1.2.3", "e3", "--1", "1e", "abc",
+        ] {
+            assert!(
+                Decimal::parse(text).is_none(),
+                "{text:?} must not parse as a numeric condition value"
+            );
+        }
+    }
+
+    #[test]
+    fn test_decimal_ordering_against_f64_for_representable_values() {
+        // For values an `f64` holds exactly, exact decimal comparison must agree
+        // with floating point comparison — this is the guard against a broken
+        // ordering rather than a restatement of the implementation.
+        let values = [
+            "0",
+            "-0",
+            "1",
+            "-1",
+            "0.5",
+            "-0.5",
+            "2",
+            "-2",
+            "10",
+            "0.1",
+            "3.25",
+            "100",
+            "-100",
+            "123456789",
+            "-123456789",
+        ];
+        for a in values {
+            for b in values {
+                let (da, db) = (Decimal::parse(a).unwrap(), Decimal::parse(b).unwrap());
+                let (fa, fb) = (a.parse::<f64>().unwrap(), b.parse::<f64>().unwrap());
+                assert_eq!(
+                    da.cmp(&db),
+                    fa.partial_cmp(&fb).unwrap(),
+                    "comparison of {a} and {b} disagrees with f64"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_numeric_comparison_keeps_precision_beyond_f64() {
+        // Both of these round to the same `f64`, so the old comparison reported
+        // them equal. AWS compares the decimal values.
+        let ctx = Context::new().with_string("k", "9007199254740993");
+        let equals = evaluate_condition_json(
+            &ctx,
+            &IAMOperator::NumericEquals,
+            "k",
+            &serde_json::json!("9007199254740993"),
+        )
+        .unwrap();
+        assert!(equals);
+
+        let not_equals = evaluate_condition_json(
+            &ctx,
+            &IAMOperator::NumericEquals,
+            "k",
+            &serde_json::json!("9007199254740992"),
+        )
+        .unwrap();
+        assert!(!not_equals);
+
+        // A decimal with more significant digits than an `f64` holds.
+        let ctx = Context::new().with_string("k", "0.1");
+        let equals = evaluate_condition_json(
+            &ctx,
+            &IAMOperator::NumericEquals,
+            "k",
+            &serde_json::json!("0.1000000000000000055511151231257827"),
+        )
+        .unwrap();
+        assert!(!equals);
+    }
+
+    #[test]
+    fn test_numeric_comparison_accepts_json_numbers_exactly() {
+        // A JSON integer is held exactly by `serde_json::Number`, so keeping the
+        // value as text rather than round-tripping it through `f64` preserves it.
+        let ctx = Context::new().with_string("k", "9007199254740992");
+        let equals = evaluate_condition_json(
+            &ctx,
+            &IAMOperator::NumericEquals,
+            "k",
+            &serde_json::json!(9_007_199_254_740_992_u64),
+        )
+        .unwrap();
+        assert!(equals);
     }
 }
