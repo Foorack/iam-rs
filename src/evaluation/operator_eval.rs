@@ -132,18 +132,18 @@ pub(super) fn evaluate_condition(
         | O::ForAllValuesStringNotEquals
         | O::ForAnyValueStringNotEquals
         | O::StringNotEqualsIfExists => predicate_str = Box::new(|a, b| a != b),
-        // AWS documents `ArnEquals` and `ArnNotEquals` as behaving identically to
-        // `ArnLike` and `ArnNotLike`: each of the six colon-delimited ARN
-        // components may contain `*` or `?`. Comparing them as plain strings made
-        // any ARN condition written with a wildcard unmatchable.
+        // AWS: `ArnEquals` and `ArnNotEquals` behave identically to `ArnLike`
+        // and `ArnNotLike`, and "each of the six colon-delimited components of
+        // the ARN is checked separately and each can include multi-character
+        // match wildcards (*) or single-character match wildcards (?)".
         O::ArnEquals
         | O::ForAllValuesArnEquals
         | O::ForAnyValueArnEquals
-        | O::ArnEqualsIfExists => predicate_str = Box::new(|a, b| wildcard_match(&a, &b)),
+        | O::ArnEqualsIfExists => predicate_str = Box::new(|a, b| arn_matches(&a, &b)),
         O::ArnNotEquals
         | O::ForAllValuesArnNotEquals
         | O::ForAnyValueArnNotEquals
-        | O::ArnNotEqualsIfExists => predicate_str = Box::new(|a, b| !wildcard_match(&a, &b)),
+        | O::ArnNotEqualsIfExists => predicate_str = Box::new(|a, b| !arn_matches(&a, &b)),
         O::StringEqualsIgnoreCase
         | O::ForAllValuesStringEqualsIgnoreCase
         | O::ForAnyValueStringEqualsIgnoreCase
@@ -159,19 +159,18 @@ pub(super) fn evaluate_condition(
         O::StringLike
         | O::ForAllValuesStringLike
         | O::ForAnyValueStringLike
-        | O::StringLikeIfExists
-        | O::ArnLike
-        | O::ForAllValuesArnLike
-        | O::ForAnyValueArnLike
-        | O::ArnLikeIfExists => predicate_str = Box::new(|a, b| wildcard_match(&a, &b)),
+        | O::StringLikeIfExists => predicate_str = Box::new(|a, b| wildcard_match(&a, &b)),
         O::StringNotLike
         | O::ForAllValuesStringNotLike
         | O::ForAnyValueStringNotLike
-        | O::StringNotLikeIfExists
-        | O::ArnNotLike
+        | O::StringNotLikeIfExists => predicate_str = Box::new(|a, b| !wildcard_match(&a, &b)),
+        O::ArnLike | O::ForAllValuesArnLike | O::ForAnyValueArnLike | O::ArnLikeIfExists => {
+            predicate_str = Box::new(|a, b| arn_matches(&a, &b))
+        }
+        O::ArnNotLike
         | O::ForAllValuesArnNotLike
         | O::ForAnyValueArnNotLike
-        | O::ArnNotLikeIfExists => predicate_str = Box::new(|a, b| !wildcard_match(&a, &b)),
+        | O::ArnNotLikeIfExists => predicate_str = Box::new(|a, b| !arn_matches(&a, &b)),
 
         // Numeric conditions
         // AWS compares numeric values exactly (decimal), so equality is exact.
@@ -658,6 +657,26 @@ fn ev_ip(
 pub(super) fn wildcard_match(text: &str, pattern: &str) -> bool {
     // Use the ARN wildcard matching logic
     Arn::wildcard_match(text, pattern)
+}
+
+/// Matches an ARN condition value the way AWS's ARN operators do.
+///
+/// AWS checks each of the six colon-delimited components of the ARN separately,
+/// so a `*` cannot cross a `:` separator. Matching the whole string instead let
+/// a pattern like `arn:aws:s3:us*1234:5678:bucket/key` match
+/// `arn:aws:s3:us-east-1:1234:5678:bucket/key`, because the `*` swallowed
+/// `-east-1:` — which could both grant access and, under `ArnNotLike`, prevent a
+/// `Deny` from firing.
+///
+/// When either side is not a well-formed ARN the comparison falls back to whole
+/// string wildcard matching: such a policy would be rejected by AWS at save time,
+/// and refusing to evaluate it here would turn a document error into a decision
+/// error for every request that reaches the statement.
+fn arn_matches(value: &str, pattern: &str) -> bool {
+    match Arn::parse(value).and_then(|arn| arn.matches(pattern)) {
+        Ok(matched) => matched,
+        Err(_) => wildcard_match(value, pattern),
+    }
 }
 
 /// Verifies that every policy value of a binary condition is valid base64.
@@ -2263,6 +2282,69 @@ mod tests {
         )
         .unwrap();
         assert!(result);
+    }
+
+    #[test]
+    fn test_arn_operators_match_each_component_separately() {
+        // AWS: "Each of the six colon-delimited components of the ARN is checked
+        // separately". A `*` must not be able to swallow a `:` and cross into the
+        // next component.
+        let ctx = Context::new()
+            .with_string("aws:SourceArn", "arn:aws:s3:us-east-1:1234:5678:bucket/key");
+
+        let matches = |operator: &IAMOperator, pattern: &str| {
+            evaluate_condition_json(
+                &ctx,
+                operator,
+                "aws:SourceArn",
+                &serde_json::Value::String(pattern.to_string()),
+            )
+            .unwrap()
+        };
+
+        for operator in [IAMOperator::ArnLike, IAMOperator::ArnEquals] {
+            // `us*1234` would match `us-east-1:1234` if the whole string were
+            // matched at once, because the `*` could consume `-east-1:`.
+            assert!(
+                !matches(&operator, "arn:aws:s3:us*1234:5678:bucket/key"),
+                "{operator:?} must not let a wildcard cross a component boundary"
+            );
+            assert!(
+                !matches(&operator, "arn:aws:s3:us-east-1?1234:5678:bucket/key"),
+                "{operator:?} must not let `?` match a different component"
+            );
+            // Wildcards inside a component still work.
+            assert!(
+                matches(&operator, "arn:aws:s3:us-east-*:1234:5678:bucket/*"),
+                "{operator:?} must still match within each component"
+            );
+        }
+
+        // The deny direction: `ArnNotLike` must be able to fire, which it could
+        // not while the whole-string match reported a spurious match.
+        assert!(matches(
+            &IAMOperator::ArnNotLike,
+            "arn:aws:s3:us*1234:5678:bucket/key"
+        ));
+        assert!(!matches(
+            &IAMOperator::ArnNotLike,
+            "arn:aws:s3:us-east-*:1234:5678:bucket/*"
+        ));
+    }
+
+    #[test]
+    fn test_arn_operators_fall_back_for_a_non_arn_value() {
+        // AWS would reject such a policy at save time; matching it leniently is
+        // better than turning it into a decision error.
+        let ctx = Context::new().with_string("aws:SourceArn", "not-an-arn");
+        let matched = evaluate_condition_json(
+            &ctx,
+            &IAMOperator::ArnLike,
+            "aws:SourceArn",
+            &serde_json::Value::String("not-*".to_string()),
+        )
+        .unwrap();
+        assert!(matched);
     }
 
     #[test]
