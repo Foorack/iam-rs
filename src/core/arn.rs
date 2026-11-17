@@ -92,6 +92,16 @@ impl fmt::Display for ArnError {
 
 impl std::error::Error for ArnError {}
 
+/// Marks the character after it as a literal in a wildcard pattern.
+///
+/// Policy-variable interpolation needs to put a literal `*`, `?` or `$` into a
+/// pattern, but a bare `*` or `?` in a pattern is a wildcard. Prefixing the
+/// character with this one makes [`Arn::wildcard_match`] compare it exactly.
+/// A private-use code point is used so that no policy document and no request
+/// value can produce one by accident: the escape is only ever written by
+/// interpolation, never by a policy author.
+pub(crate) const LITERAL_ESCAPE: char = '\u{e000}';
+
 impl Arn {
     /// Parse an ARN string into an Arn struct
     /// This method is extremely lenient and only validates bare format requirements.
@@ -161,6 +171,11 @@ impl Arn {
     /// * matches any sequence of characters
     ///   ? matches any single character
     ///
+    /// A character preceded by the private-use escape code point `U+E000` is
+    /// compared exactly instead of acting as a wildcard. Policy-variable
+    /// interpolation emits it for the predefined variables `${*}` and `${?}`,
+    /// which AWS defines as the literal characters.
+    ///
     /// Uses an iterative greedy matcher with backtracking on the last `*`, so
     /// it never recurses (no stack overflow) and avoids the exponential worst
     /// case of a naive matcher; O(n·m) worst case, near-linear in practice.
@@ -171,12 +186,19 @@ impl Arn {
         // comparison. Non-ASCII input keeps the char path, because `?` has to
         // match one character rather than one byte.
         if text.is_ascii() && pattern.is_ascii() {
-            return Self::wildcard_match_slice(text.as_bytes(), pattern.as_bytes(), b'*', b'?');
+            // `LITERAL_ESCAPE` is not ASCII, so this path cannot hold one.
+            return Self::wildcard_match_slice(
+                text.as_bytes(),
+                pattern.as_bytes(),
+                b'*',
+                b'?',
+                None,
+            );
         }
 
         let text_chars: Vec<char> = text.chars().collect();
         let pattern_chars: Vec<char> = pattern.chars().collect();
-        Self::wildcard_match_slice(&text_chars, &pattern_chars, '*', '?')
+        Self::wildcard_match_slice(&text_chars, &pattern_chars, '*', '?', Some(LITERAL_ESCAPE))
     }
 
     /// Greedy wildcard match over a slice of comparable items
@@ -189,6 +211,7 @@ impl Arn {
         pattern: &[T],
         star: T,
         single: T,
+        escape: Option<T>,
     ) -> bool {
         let mut t = 0; // current position in text
         let mut p = 0; // current position in pattern
@@ -208,6 +231,19 @@ impl Arn {
                 star_t = t;
                 star_p = p;
                 p += 1;
+            } else if p + 1 < pattern.len() && Some(pattern[p]) == escape {
+                // An escaped literal has to equal the next text element. A
+                // trailing escape is not an escape at all and is compared below.
+                if pattern[p + 1] == text[t] {
+                    t += 1;
+                    p += 2;
+                } else if has_star {
+                    star_t += 1;
+                    t = star_t;
+                    p = star_p + 1;
+                } else {
+                    return false;
+                }
             } else if p < pattern.len() && (pattern[p] == single || pattern[p] == text[t]) {
                 // `?` or an exact element matches.
                 t += 1;
@@ -396,6 +432,29 @@ mod tests {
         // schema carries `properties` and `required`, so neither may come back.
         assert!(json.get("properties").is_none());
         assert!(json.get("required").is_none());
+    }
+
+    #[test]
+    fn test_wildcard_match_treats_an_escaped_character_as_literal() {
+        // Interpolation writes `LITERAL_ESCAPE` before the character a predefined
+        // policy variable stands for.
+        assert!(Arn::wildcard_match("*", &format!("{LITERAL_ESCAPE}*")));
+        assert!(!Arn::wildcard_match(
+            "anything",
+            &format!("{LITERAL_ESCAPE}*")
+        ));
+        assert!(Arn::wildcard_match("a*b", &format!("a{LITERAL_ESCAPE}*b")));
+        assert!(!Arn::wildcard_match("axb", &format!("a{LITERAL_ESCAPE}*b")));
+
+        // Wildcards next to an escaped character keep their meaning.
+        assert!(Arn::wildcard_match(
+            "*admin/y",
+            &format!("{LITERAL_ESCAPE}*admin/*")
+        ));
+        assert!(!Arn::wildcard_match(
+            "admin/y",
+            &format!("{LITERAL_ESCAPE}*admin/*")
+        ));
     }
 
     #[test]

@@ -15,3 +15,7 @@ pub use operator::{IAMOperator, OperatorType};
 pub use principal::{Principal, PrincipalId};
 pub use resource::IAMResource;
 pub use version::IAMVersion;
+
+// Shared by the wildcard matcher and by policy-variable interpolation, which
+// emits it to keep a predefined `*` or `?` literal.
+pub(crate) use arn::LITERAL_ESCAPE;
