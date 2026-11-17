@@ -127,19 +127,23 @@ pub(super) fn evaluate_condition(
         O::StringEquals
         | O::ForAllValuesStringEquals
         | O::ForAnyValueStringEquals
-        | O::StringEqualsIfExists
-        | O::ArnEquals
-        | O::ForAllValuesArnEquals
-        | O::ForAnyValueArnEquals
-        | O::ArnEqualsIfExists => predicate_str = Box::new(|a, b| a == b),
+        | O::StringEqualsIfExists => predicate_str = Box::new(|a, b| a == b),
         O::StringNotEquals
         | O::ForAllValuesStringNotEquals
         | O::ForAnyValueStringNotEquals
-        | O::StringNotEqualsIfExists
-        | O::ArnNotEquals
+        | O::StringNotEqualsIfExists => predicate_str = Box::new(|a, b| a != b),
+        // AWS documents `ArnEquals` and `ArnNotEquals` as behaving identically to
+        // `ArnLike` and `ArnNotLike`: each of the six colon-delimited ARN
+        // components may contain `*` or `?`. Comparing them as plain strings made
+        // any ARN condition written with a wildcard unmatchable.
+        O::ArnEquals
+        | O::ForAllValuesArnEquals
+        | O::ForAnyValueArnEquals
+        | O::ArnEqualsIfExists => predicate_str = Box::new(|a, b| wildcard_match(&a, &b)),
+        O::ArnNotEquals
         | O::ForAllValuesArnNotEquals
         | O::ForAnyValueArnNotEquals
-        | O::ArnNotEqualsIfExists => predicate_str = Box::new(|a, b| a != b),
+        | O::ArnNotEqualsIfExists => predicate_str = Box::new(|a, b| !wildcard_match(&a, &b)),
         O::StringEqualsIgnoreCase
         | O::ForAllValuesStringEqualsIgnoreCase
         | O::ForAnyValueStringEqualsIgnoreCase
@@ -2002,6 +2006,52 @@ mod tests {
         )
         .unwrap();
         assert!(result);
+    }
+
+    #[test]
+    fn test_arn_equals_matches_like_arn_like() {
+        // AWS documents `ArnEquals` and `ArnNotEquals` as behaving identically to
+        // `ArnLike` and `ArnNotLike`: each ARN component may contain `*` or `?`.
+        let ctx = Context::new().with_string(
+            "iam:PolicyARN",
+            "arn:aws:iam::123456789012:policy/policy-name-1",
+        );
+
+        let evaluate = |operator: &IAMOperator, pattern: &str| {
+            evaluate_condition_json(
+                &ctx,
+                operator,
+                "iam:PolicyARN",
+                &serde_json::Value::String(pattern.to_string()),
+            )
+            .unwrap()
+        };
+
+        // A wildcard account component, exactly as `tests/policies/52.json` writes it.
+        assert!(evaluate(
+            &IAMOperator::ArnEquals,
+            "arn:aws:iam::*:policy/policy-name-1"
+        ));
+        // A single-character wildcard.
+        assert!(evaluate(
+            &IAMOperator::ArnEquals,
+            "arn:aws:iam::123456789012:policy/policy-name-?"
+        ));
+        // Still an equality check: a different policy name does not match.
+        assert!(!evaluate(
+            &IAMOperator::ArnEquals,
+            "arn:aws:iam::*:policy/other-name"
+        ));
+
+        // `ArnNotEquals` is the exact negation of the same matching.
+        assert!(!evaluate(
+            &IAMOperator::ArnNotEquals,
+            "arn:aws:iam::*:policy/policy-name-1"
+        ));
+        assert!(evaluate(
+            &IAMOperator::ArnNotEquals,
+            "arn:aws:iam::*:policy/other-name"
+        ));
     }
 
     #[test]
