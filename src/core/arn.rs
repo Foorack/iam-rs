@@ -26,7 +26,8 @@ pub struct Arn {
     pub service: String,
     /// The region (e.g., "us-east-1", can be empty for global services)
     pub region: String,
-    /// The account ID (12-digit number, can be empty for some services)
+    /// The account ID (12-digit number, `aws` for AWS-owned resources, or empty
+    /// for some services)
     pub account_id: String,
     /// The resource specification (format varies by service)
     pub resource: String,
@@ -71,7 +72,7 @@ pub enum ArnError {
     InvalidPartition(String),
     /// Service is empty or invalid
     InvalidService(String),
-    /// Account ID format is invalid (should be 12 digits or empty)
+    /// Account ID format is invalid (should be 12 digits, `aws`, or empty)
     InvalidAccountId(String),
     /// Resource format is invalid
     InvalidResource(String),
@@ -101,6 +102,10 @@ impl std::error::Error for ArnError {}
 /// value can produce one by accident: the escape is only ever written by
 /// interpolation, never by a policy author.
 pub(crate) const LITERAL_ESCAPE: char = '\u{e000}';
+
+/// The account component AWS uses for the resources it owns, most notably its
+/// managed policies (`arn:aws:iam::aws:policy/AdministratorAccess`).
+const AWS_OWNED_ACCOUNT: &str = "aws";
 
 impl Arn {
     /// Parse an ARN string into an Arn struct
@@ -137,6 +142,51 @@ impl Arn {
             account_id,
             resource,
         })
+    }
+
+    /// Complete an incomplete ARN that appears as a policy `Resource` with `*`
+    ///
+    /// AWS: "When you specify an incomplete ARN (one with fewer than the standard
+    /// six fields) in an identity-based policy, AWS automatically completes the ARN
+    /// by adding wildcard characters (`*`) to all missing fields. For example,
+    /// specifying `arn:aws:sqs` is equivalent to `arn:aws:sqs:*:*:*`." — IAM User
+    /// Guide, *Grammar of the IAM JSON policy language*.
+    ///
+    /// Only the trailing fields that are absent are added: a field that is present,
+    /// including one that is present but empty (`arn:aws:s3:::`), is left alone.
+    ///
+    /// This applies to a policy resource pattern, never to a request resource or a
+    /// principal, which name a real ARN. A pattern with fewer than three fields
+    /// (`arn:aws`) is rejected: the partition and the service are never wildcarded,
+    /// so such a pattern names no resource type for the remaining `*`s to restrict.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`ArnError::InvalidPrefix`] if the pattern does not start with
+    /// `arn:`, and [`ArnError::InvalidFormat`] if it has fewer than three fields
+    /// or more than the six an ARN has.
+    pub fn complete_resource_pattern(pattern: &str) -> Result<String, ArnError> {
+        let parts: Vec<&str> = pattern.split(':').collect();
+
+        if parts.len() >= 6 {
+            return Arn::parse(pattern).map(|_| pattern.to_string());
+        }
+
+        if parts[0] != "arn" {
+            return Arn::parse(pattern).map(|_| pattern.to_string());
+        }
+
+        if parts.len() < 3 {
+            return Err(ArnError::InvalidFormat);
+        }
+
+        let mut completed = String::with_capacity(pattern.len() + 6);
+        completed.push_str(pattern);
+        for _ in parts.len()..6 {
+            completed.push_str(":*");
+        }
+        Arn::parse(&completed)?;
+        Ok(completed)
     }
 
     /// Check if this ARN matches another ARN or pattern
@@ -318,10 +368,17 @@ impl Arn {
         true
     }
 
-    /// Validate if a string is a valid account ID (12 digits) or a wildcard pattern
+    /// Validate if a string is a valid account ID (12 digits, or the reserved
+    /// `aws` pseudo-account) or a wildcard pattern
     fn is_valid_account_id(account_id: &str) -> bool {
         // Allow empty
         if account_id.is_empty() {
+            return true;
+        }
+
+        // Resources AWS itself owns carry the reserved account `aws` instead of a
+        // real account ID, e.g. `arn:aws:iam::aws:policy/AdministratorAccess`.
+        if account_id == AWS_OWNED_ACCOUNT {
             return true;
         }
 
@@ -503,6 +560,47 @@ mod tests {
     }
 
     #[test]
+    fn test_complete_resource_pattern_adds_missing_fields() {
+        assert_eq!(
+            Arn::complete_resource_pattern("arn:aws:sqs").unwrap(),
+            "arn:aws:sqs:*:*:*"
+        );
+        assert_eq!(
+            Arn::complete_resource_pattern("arn:aws:sqs:*").unwrap(),
+            "arn:aws:sqs:*:*:*"
+        );
+        assert_eq!(
+            Arn::complete_resource_pattern("arn:aws:sqs:us-east-1").unwrap(),
+            "arn:aws:sqs:us-east-1:*:*"
+        );
+
+        // Complete patterns come back untouched, including one with fields that are
+        // present but empty: only the absent fields gain a wildcard.
+        for already_complete in [
+            "arn:aws:s3:::my-bucket/*",
+            "arn:aws:s3:::",
+            "arn:aws:iam::123456789012:user/username",
+        ] {
+            assert_eq!(
+                Arn::complete_resource_pattern(already_complete).unwrap(),
+                already_complete
+            );
+        }
+
+        // Two fields name no service, so nothing remains for the wildcards to scope.
+        assert_eq!(
+            Arn::complete_resource_pattern("arn:aws"),
+            Err(ArnError::InvalidFormat)
+        );
+        // Not an ARN at all is still an error.
+        assert!(Arn::complete_resource_pattern("not-an-arn").is_err());
+        assert_eq!(
+            Arn::complete_resource_pattern("other:aws:s3"),
+            Err(ArnError::InvalidFormat)
+        );
+    }
+
+    #[test]
     fn test_invalid_account_id() {
         let result = Arn::parse("arn:aws:s3:us-east-1:invalid:bucket/my-bucket")
             .unwrap()
@@ -622,6 +720,36 @@ mod tests {
         assert!(!invalid_service.is_valid());
         let invalid_account_id = Arn::parse("arn:aws:s3:abc:12345:*").unwrap();
         assert!(!invalid_account_id.is_valid());
+    }
+
+    #[test]
+    fn test_aws_owned_resources_use_the_reserved_aws_account() {
+        // AWS managed policies are owned by AWS itself and carry the reserved
+        // account `aws`, in every partition.
+        for arn in [
+            "arn:aws:iam::aws:policy/AdministratorAccess",
+            "arn:aws:iam::aws:policy/aws-service-role/AWSServiceRoleForAutoScaling",
+            "arn:aws-us-gov:iam::aws:policy/AdministratorAccess",
+            "arn:aws-cn:iam::aws:policy/AdministratorAccess",
+        ] {
+            assert!(
+                Arn::parse(arn).unwrap().is_valid(),
+                "'{arn}' is a well-formed ARN owned by AWS"
+            );
+        }
+
+        // Only the exact reserved account is accepted; anything else that is not
+        // twelve digits stays invalid.
+        for arn in [
+            "arn:aws:iam::awss:policy/AdministratorAccess",
+            "arn:aws:iam::AWS:policy/AdministratorAccess",
+            "arn:aws:iam::12345678901a:policy/AdministratorAccess",
+        ] {
+            assert!(
+                !Arn::parse(arn).unwrap().is_valid(),
+                "'{arn}' has a malformed account and must stay invalid"
+            );
+        }
     }
 
     #[test]

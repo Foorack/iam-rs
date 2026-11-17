@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::ConditionBlock;
+use super::{ConditionBlock, non_null};
 use crate::{
     core::{IAMAction, IAMEffect, IAMOperator, IAMResource, Principal},
     policy::condition::ConditionValue,
@@ -9,8 +9,14 @@ use crate::{
 
 /// Represents a single statement in an IAM policy
 ///
+/// Unknown elements are rejected rather than ignored: AWS's grammar defines a
+/// closed set of statement elements, so a misspelled one (say `Conditon`) is a
+/// malformed document there. Dropping it here would turn a conditional statement
+/// into an unconditional one that then round-trips faithfully without the typo.
+///
 /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_statement.html>
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct IAMStatement {
     /// Optional statement ID
@@ -25,7 +31,12 @@ pub struct IAMStatement {
     /// The Sid element supports ASCII uppercase letters (A-Z), lowercase letters (a-z), and numbers (0-9).
     ///
     /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_sid.html>
-    #[serde(rename = "Sid", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "Sid",
+        default,
+        deserialize_with = "non_null::deserialize",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub sid: Option<String>,
 
     /// The effect of the statement (Allow or Deny)
@@ -53,7 +64,12 @@ pub struct IAMStatement {
     /// In those cases, the principal is implicitly the identity where the policy is attached.
     ///
     /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_principal.html>
-    #[serde(rename = "Principal", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "Principal",
+        default,
+        deserialize_with = "non_null::deserialize",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub principal: Option<Principal>,
 
     /// Optional not principal(s) - who the statement does not apply to
@@ -64,7 +80,12 @@ pub struct IAMStatement {
     /// `NotPrincipal` must be used with `"Effect":"Deny"`. Using it with `"Effect":"Allow"` is not supported.
     ///
     /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_notprincipal.html>
-    #[serde(rename = "NotPrincipal", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "NotPrincipal",
+        default,
+        deserialize_with = "non_null::deserialize",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub not_principal: Option<Principal>,
 
     /// Optional action(s) - what actions are allowed/denied
@@ -107,7 +128,12 @@ pub struct IAMStatement {
     /// In that case, the `*` wildcard doesn't allow complete control of the queue; it allows only the subset of actions that you've shared.
     ///
     /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_action.html>
-    #[serde(rename = "Action", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "Action",
+        default,
+        deserialize_with = "non_null::deserialize",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub action: Option<IAMAction>,
 
     /// Optional not action(s) - what actions are not covered
@@ -162,7 +188,12 @@ pub struct IAMStatement {
     /// ```
     ///
     /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_notaction.html>
-    #[serde(rename = "NotAction", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "NotAction",
+        default,
+        deserialize_with = "non_null::deserialize",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub not_action: Option<IAMAction>,
 
     /// Optional resource(s) - what resources the statement applies to
@@ -246,7 +277,12 @@ pub struct IAMStatement {
     /// For more information about JSON policy variables, see [IAM policy elements: Variables and tags](https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_variables.html).
     ///
     /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_resource.html>
-    #[serde(rename = "Resource", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "Resource",
+        default,
+        deserialize_with = "non_null::deserialize",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub resource: Option<IAMResource>,
 
     /// Optional not resource(s) - what resources are not covered
@@ -256,7 +292,12 @@ pub struct IAMStatement {
     /// This is particularly useful for policies that apply within a single AWS service.
     ///
     /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_notresource.html>
-    #[serde(rename = "NotResource", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "NotResource",
+        default,
+        deserialize_with = "non_null::deserialize",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub not_resource: Option<IAMResource>,
 
     /// Optional conditions for the statement
@@ -291,7 +332,12 @@ pub struct IAMStatement {
     /// ```
     ///
     /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_condition.html>
-    #[serde(rename = "Condition", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "Condition",
+        default,
+        deserialize_with = "non_null::deserialize",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub condition: Option<ConditionBlock>,
 }
 
@@ -629,5 +675,46 @@ mod tests {
             .with_action(IAMAction::Single("s3:GetObject".to_string()))
             .with_resource(IAMResource::Single("*".to_string()));
         assert!(empty_sid.is_valid());
+    }
+
+    #[test]
+    fn test_unknown_statement_element_is_rejected() {
+        // AWS's statement grammar is a closed set of elements, so `Conditon` is a
+        // malformed document. Ignoring it here dropped the condition and left the
+        // statement as an unconditional deny.
+        let statement = r#"{
+            "Effect": "Deny",
+            "Action": "s3:*",
+            "Resource": "*",
+            "Conditon": {"StringEquals": {"aws:a": "b"}}
+        }"#;
+
+        let error = serde_json::from_str::<IAMStatement>(statement)
+            .expect_err("a statement with an unknown element must not parse");
+        assert!(
+            error.to_string().contains("unknown field `Conditon`"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn test_explicit_null_statement_element_is_rejected() {
+        // `Option<T>` cannot tell an absent element from `null`, and AWS rejects
+        // the latter. Accepting it dropped the element again on serialisation.
+        for element in [
+            r#""Sid": null"#,
+            r#""Principal": null"#,
+            r#""Action": null"#,
+            r#""Resource": null"#,
+            r#""Condition": null"#,
+        ] {
+            let statement = format!(r#"{{"Effect": "Deny", {element}}}"#);
+            let error = serde_json::from_str::<IAMStatement>(&statement)
+                .expect_err("an explicit null must not parse");
+            assert!(
+                error.to_string().contains("cannot be null"),
+                "unexpected error for {element}: {error}"
+            );
+        }
     }
 }

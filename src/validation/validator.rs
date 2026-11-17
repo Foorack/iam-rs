@@ -247,15 +247,23 @@ pub(crate) mod helpers {
             return Ok(());
         }
 
+        // Resources must be ARNs, or `*`. An incomplete ARN is completed with
+        // wildcards by AWS, so `arn:aws:sqs` is the pattern `arn:aws:sqs:*:*:*`.
         if !resource.starts_with("arn:") {
             return Err(ValidationError::InvalidResource {
                 resource: resource.to_string(),
                 reason: "Resource must be an ARN or '*'".to_string(),
             });
         }
-
-        // Use lenient parsing for resources with wildcards
-        let arn = Arn::parse(resource).map_err(|e| ValidationError::InvalidResource {
+        let completed = Arn::complete_resource_pattern(resource).map_err(|e| {
+            ValidationError::InvalidResource {
+                resource: resource.to_string(),
+                reason: e.to_string(),
+            }
+        })?;
+        // Check the completed pattern, so the padding `*`s the completion adds are
+        // not mistaken for wildcards the author wrote in a forbidden position.
+        let arn = Arn::parse(&completed).map_err(|e| ValidationError::InvalidResource {
             resource: resource.to_string(),
             reason: e.to_string(),
         })?;

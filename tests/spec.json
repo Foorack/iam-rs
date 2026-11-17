@@ -67,14 +67,14 @@
           },
           {
             "type": "object",
-            "description": "Account ID format is invalid (should be 12 digits or empty)",
+            "description": "Account ID format is invalid (should be 12 digits, `aws`, or empty)",
             "required": [
               "InvalidAccountId"
             ],
             "properties": {
               "InvalidAccountId": {
                 "type": "string",
-                "description": "Account ID format is invalid (should be 12 digits or empty)"
+                "description": "Account ID format is invalid (should be 12 digits, `aws`, or empty)"
               }
             }
           },
@@ -102,7 +102,7 @@
       },
       "Condition": {
         "type": "object",
-        "description": "Represents a single condition in an IAM policy",
+        "description": "Represents a single condition in an IAM policy\n\nThe operator, key and value are the only fields an entry can have, so an\nunknown one is rejected rather than ignored, matching the rest of the\ndocument model.",
         "required": [
           "operator",
           "key",
@@ -121,11 +121,12 @@
             "$ref": "#/components/schemas/ConditionValue",
             "description": "The condition value(s)"
           }
-        }
+        },
+        "additionalProperties": false
       },
       "ConditionBlock": {
         "type": "object",
-        "description": "Represents a condition block in an IAM policy\nThis is a collection of conditions grouped by operator\n\nDeserialising rejects a duplicate operator block and a duplicate condition key\ninside one block: a map cannot hold both, AWS ANDs every entry, and keeping the\nlast one silently changes what the statement means.\n\nThat check needs the raw JSON text. Going through a `serde_json::Value` first —\n`serde_json::from_value`, or any conversion via `Value` — has already dropped\nduplicates before this type sees them, so prefer [`crate::IAMPolicy::from_json`]\nfor untrusted input.",
+        "description": "Represents a condition block in an IAM policy\nThis is a collection of conditions grouped by operator\n\nDeserialising rejects a duplicate operator block and a duplicate condition key\ninside one block: a map cannot hold both, AWS ANDs every entry, and keeping the\nlast one silently changes what the statement means.\n\nThat check needs the raw JSON text. Going through a `serde_json::Value` first —\n`serde_json::from_value`, or any conversion via `Value` — has already dropped\nduplicates before this type sees them, so prefer [`crate::IAMPolicy::from_json`]\nfor untrusted input.\n\nAn unknown operator name is rejected as well: the block's only entries are\noperator names, and [`IAMOperator`] has a closed set of variants. AWS's\ncondition grammar has no other element, so there is nothing else a\n`deny_unknown_fields` would have to cover here.",
         "additionalProperties": {
           "type": "object",
           "description": "Map of operators to their key-value pairs",
@@ -461,7 +462,7 @@
       },
       "IAMPolicy": {
         "type": "object",
-        "description": "JSON policy documents are made up of elements.\nThe elements are listed here in the general order you use them in a policy.\nThe order of the elements doesn't matter—for example, the Resource element can come before the Action element.\nYou're not required to specify any Condition elements in the policy.\nTo learn more about the general structure and purpose of a JSON policy document, see Overview of JSON policies.\n\nSome JSON policy elements are mutually exclusive.\nThis means that you cannot create a policy that uses both.\nFor example, you cannot use both Action and `NotAction` in the same policy statement.\nOther pairs that are mutually exclusive include Principal/NotPrincipal and Resource/NotResource.\n\nThe details of what goes into a policy vary for each service, depending on what actions the service makes available, what types of resources it contains, and so on.\nWhen you're writing policies for a specific service, it's helpful to see examples of policies for that service.\n\nWhen you create or edit a JSON policy, `iam-rw` can perform policy validation to help you create an effective policy.\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements.html>",
+        "description": "JSON policy documents are made up of elements.\nThe elements are listed here in the general order you use them in a policy.\nThe order of the elements doesn't matter—for example, the Resource element can come before the Action element.\nYou're not required to specify any Condition elements in the policy.\nTo learn more about the general structure and purpose of a JSON policy document, see Overview of JSON policies.\n\nSome JSON policy elements are mutually exclusive.\nThis means that you cannot create a policy that uses both.\nFor example, you cannot use both Action and `NotAction` in the same policy statement.\nOther pairs that are mutually exclusive include Principal/NotPrincipal and Resource/NotResource.\n\nThe details of what goes into a policy vary for each service, depending on what actions the service makes available, what types of resources it contains, and so on.\nWhen you're writing policies for a specific service, it's helpful to see examples of policies for that service.\n\nWhen you create or edit a JSON policy, `iam-rw` can perform policy validation to help you create an effective policy.\n\nUnknown elements are rejected rather than ignored: AWS's grammar defines a\nclosed set of policy elements, so a misspelled one is a malformed document\nthere and a silently different policy here.\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements.html>",
         "required": [
           "Statement"
         ],
@@ -481,7 +482,8 @@
             "$ref": "#/components/schemas/IAMVersion",
             "description": "The `Version` policy element specifies the language syntax rules that are to be used to process a policy.\n\nTo use all of the available policy features, include the following Version element outside the Statement element in all policies.\n`2012-10-17` is the current version, and the one that introduced policy variables. The element is optional in\nAWS's grammar: a document without it is evaluated under the older policy language, in which `${...}` policy\nvariables are literal text, so it deserialises to the `IAMVersion::Unspecified` variant and is written back out without\na `Version` element.\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_version.html>"
           }
-        }
+        },
+        "additionalProperties": false
       },
       "IAMRequest": {
         "type": "object",
@@ -528,7 +530,7 @@
       },
       "IAMStatement": {
         "type": "object",
-        "description": "Represents a single statement in an IAM policy\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_statement.html>",
+        "description": "Represents a single statement in an IAM policy\n\nUnknown elements are rejected rather than ignored: AWS's grammar defines a\nclosed set of statement elements, so a misspelled one (say `Conditon`) is a\nmalformed document there. Dropping it here would turn a conditional statement\ninto an unconditional one that then round-trips faithfully without the typo.\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_statement.html>",
         "required": [
           "Effect"
         ],
@@ -621,7 +623,8 @@
             ],
             "description": "Optional statement ID\n\nYou can provide a `Sid` (statement ID) as an optional identifier for the policy statement.\nYou can assign a `Sid` value to each statement in a statement array.\nYou can use the `Sid` value as a description for the policy statement.\n\nIn services that let you specify an ID element, such as AWS SQS and AWS SNS, the `Sid` value is just a sub-ID of the policy document ID.\nIn IAM, the `Sid` value must be unique within a JSON policy.\n\nThe Sid element supports ASCII uppercase letters (A-Z), lowercase letters (a-z), and numbers (0-9).\n\n<https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_sid.html>"
           }
-        }
+        },
+        "additionalProperties": false
       },
       "IAMStatements": {
         "oneOf": [

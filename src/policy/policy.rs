@@ -1,4 +1,4 @@
-use super::IAMStatement;
+use super::{IAMStatement, non_null};
 use crate::{
     core::IAMVersion,
     validation::{Validate, ValidationContext, ValidationError, ValidationResult, helpers},
@@ -78,8 +78,13 @@ mod one_or_many {
 ///
 /// When you create or edit a JSON policy, `iam-rw` can perform policy validation to help you create an effective policy.
 ///
+/// Unknown elements are rejected rather than ignored: AWS's grammar defines a
+/// closed set of policy elements, so a misspelled one is a malformed document
+/// there and a silently different policy here.
+///
 /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements.html>
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "utoipa", derive(utoipa::ToSchema))]
 pub struct IAMPolicy {
     /// The `Version` policy element specifies the language syntax rules that are to be used to process a policy.
@@ -106,7 +111,12 @@ pub struct IAMPolicy {
     /// Recommendation is to use a UUID (GUID) for the value, or incorporate a UUID as part of the ID to ensure uniqueness.
     ///
     /// <https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_elements_id.html>
-    #[serde(rename = "Id", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "Id",
+        default,
+        deserialize_with = "non_null::deserialize",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub id: Option<String>,
 
     /// The Statement element is the main element for a policy.
@@ -443,7 +453,94 @@ mod tests {
     }
 
     #[test]
+    fn test_misspelled_condition_does_not_load_as_unconditional_deny() {
+        // The motivating bug: `Conditon` was an unknown element, so serde dropped
+        // it, the statement loaded, and it denied every S3 request unconditionally
+        // — the opposite of a deny narrowed to matching requests. AWS rejects the
+        // document as a malformed policy, so it must not load here either.
+        let json = r#"{
+            "Version": "2012-10-17",
+            "Statement": {
+                "Effect": "Deny",
+                "Action": "s3:*",
+                "Resource": "*",
+                "Conditon": {"StringEquals": {"aws:a": "b"}}
+            }
+        }"#;
+
+        let error = IAMPolicy::from_json(json)
+            .expect_err("a misspelled element must not load as an unconditional deny");
+        assert!(
+            error.to_string().contains("unknown field `Conditon`"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn test_misspelled_effect_element_is_rejected() {
+        let json = r#"{
+            "Version": "2012-10-17",
+            "Statement": {
+                "Effectt": "Deny",
+                "Action": "s3:*",
+                "Resource": "*"
+            }
+        }"#;
+
+        let error = IAMPolicy::from_json(json).expect_err("`Effectt` must not parse");
+        assert!(
+            error.to_string().contains("unknown field `Effectt`"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn test_unknown_policy_element_is_rejected() {
+        let json = r#"{
+            "Version": "2012-10-17",
+            "Statements": [{
+                "Effect": "Deny",
+                "Action": "s3:*",
+                "Resource": "*"
+            }]
+        }"#;
+
+        let error = IAMPolicy::from_json(json).expect_err("`Statements` must not parse");
+        assert!(
+            error.to_string().contains("unknown field `Statements`"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn test_explicit_null_policy_element_is_rejected() {
+        // AWS's grammar has no `null` for an element. Accepting it left the element
+        // out on serialisation, so the document meant something else after a
+        // round trip than the author wrote.
+        let json = r#"{
+            "Version": "2012-10-17",
+            "Id": null,
+            "Statement": {
+                "Effect": "Deny",
+                "Action": "s3:*",
+                "Resource": "*"
+            }
+        }"#;
+
+        let error = IAMPolicy::from_json(json).expect_err("`Id: null` must not parse");
+        assert!(
+            error.to_string().contains("cannot be null"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
     fn test_policy_roundtrip_from_files() {
+        // Every file under tests/policies/ is a documented AWS example, so this is
+        // also the guard against rejecting valid documents: parsing is deliberately
+        // strict about unknown elements (deny_unknown_fields) and a real AWS policy
+        // that stopped loading would mean the strictness went too far.
+        //
         // List filenames in the tests/policies directory
         let policies_dir = "tests/policies";
 

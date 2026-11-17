@@ -246,7 +246,9 @@ impl CompiledResourcePattern {
         } else if policy_variables && pattern.contains("${") {
             Self::Dynamic
         } else {
-            Self::Static(ArnMatcher::from_pattern(pattern).map_err(|e| e.to_string()))
+            // A `Resource` pattern is an ARN that AWS completes with wildcards when it
+            // is incomplete: `arn:aws:sqs` means `arn:aws:sqs:*:*:*`.
+            Self::Static(ArnMatcher::from_resource_pattern(pattern).map_err(|e| e.to_string()))
         }
     }
 
@@ -271,7 +273,7 @@ impl CompiledResourcePattern {
                 if interpolation.unresolved {
                     return Ok(false);
                 }
-                let matcher = ArnMatcher::from_pattern(&interpolation.text)
+                let matcher = ArnMatcher::from_resource_pattern(&interpolation.text)
                     .map_err(|e| EvaluationError::InvalidArn(e.to_string()))?;
                 matcher
                     .matches(request_resource)
@@ -2125,6 +2127,121 @@ mod tests {
         );
     }
 
+    /// An incomplete ARN in a policy `Resource` is a pattern, not a malformed ARN.
+    ///
+    /// AWS: "When you specify an incomplete ARN (one with fewer than the standard six
+    /// fields) in an identity-based policy, AWS automatically completes the ARN by
+    /// adding wildcard characters (`*`) to all missing fields. For example, specifying
+    /// `arn:aws:sqs` is equivalent to `arn:aws:sqs:*:*:*`." — IAM User Guide, *Grammar
+    /// of the IAM JSON policy language*.
+    #[test]
+    fn test_incomplete_resource_arn_is_completed_with_wildcards() {
+        let request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::111122223333:user/test".into(),
+            )),
+            "sqs:SendMessage",
+            Arn::parse("arn:aws:sqs:us-east-1:111122223333:queue-name").unwrap(),
+        );
+
+        for pattern in ["arn:aws:sqs", "arn:aws:sqs:*", "arn:aws:sqs:us-east-1"] {
+            let policy = IAMPolicy::from_json(&format!(
+                r#"{{"Version":"2012-10-17","Statement":{{"Effect":"Allow","Action":"sqs:SendMessage","Resource":"{pattern}"}}}}"#
+            ))
+            .unwrap();
+
+            policy
+                .validate(&mut crate::ValidationContext::new())
+                .unwrap_or_else(|e| panic!("'{pattern}' should be valid IAM: {e}"));
+            PolicyEvaluator::new()
+                .try_add_policy(policy.clone())
+                .unwrap_or_else(|e| panic!("try_add_policy refused '{pattern}': {e}"));
+
+            assert_eq!(
+                evaluate_policy(&policy, &request).unwrap(),
+                Decision::Allow,
+                "'{pattern}' means arn:aws:sqs:*:*:*"
+            );
+        }
+
+        // Two fields name no service, so there is nothing for the wildcards to scope.
+        let too_short = IAMPolicy::from_json(
+            r#"{"Version":"2012-10-17","Statement":{"Effect":"Allow","Action":"sqs:SendMessage","Resource":"arn:aws"}}"#,
+        )
+        .unwrap();
+        assert!(
+            too_short
+                .validate(&mut crate::ValidationContext::new())
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_completing_an_incomplete_arn_keeps_its_service() {
+        // Only missing fields gain a `*`; the partition and the service are taken
+        // from the policy, so a completed `arn:aws:sqs` cannot match another service.
+        let policy = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("sqs:SendMessage".to_string()))
+                .with_resource(IAMResource::Single("arn:aws:sqs".to_string())),
+        );
+
+        let sns_request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::111122223333:user/test".into(),
+            )),
+            "sqs:SendMessage",
+            Arn::parse("arn:aws:sns:us-east-1:111122223333:topic").unwrap(),
+        );
+
+        assert_eq!(
+            evaluate_policy(&policy, &sns_request).unwrap(),
+            Decision::NotApplicable
+        );
+    }
+
+    #[test]
+    fn test_complete_resource_patterns_are_unaffected() {
+        // Guards the completion against touching a pattern that is already complete.
+        let complete = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("sqs:SendMessage".to_string()))
+                .with_resource(IAMResource::Single(
+                    "arn:aws:sqs:us-east-1:111122223333:queue-name".to_string(),
+                )),
+        );
+        let wildcard = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("sqs:SendMessage".to_string()))
+                .with_resource(IAMResource::Single("*".to_string())),
+        );
+
+        let other_region = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::111122223333:user/test".into(),
+            )),
+            "sqs:SendMessage",
+            Arn::parse("arn:aws:sqs:eu-west-1:111122223333:queue-name").unwrap(),
+        );
+
+        assert_eq!(
+            evaluate_policy(&complete, &other_region).unwrap(),
+            Decision::NotApplicable
+        );
+        assert_eq!(
+            evaluate_policy(&wildcard, &other_region).unwrap(),
+            Decision::Allow
+        );
+
+        // A `Resource` that is not an ARN at all is still an error, not a pattern.
+        let not_an_arn = IAMPolicy::new().add_statement(
+            IAMStatement::new(IAMEffect::Allow)
+                .with_action(IAMAction::Single("sqs:SendMessage".to_string()))
+                .with_resource(IAMResource::Single("sqs-queue".to_string())),
+        );
+        assert!(evaluate_policy(&not_an_arn, &other_region).is_err());
+    }
+
     /// One expected decision for a policy from `tests/policies/`.
     #[derive(Debug, Deserialize)]
     struct ExpectedCase {
@@ -3840,5 +3957,106 @@ mod tests {
                 "'{pattern}' must match '{action}'"
             );
         }
+    }
+    // --- tests merged from main ---
+
+    // AWS managed policies are owned by AWS itself and carry the reserved
+    // account `aws`, in every partition. Such a resource is data, not a policy
+    // pattern, so the request must be decided instead of rejected.
+    #[test]
+    fn test_aws_owned_policy_resource_is_decided() {
+        let policy = IAMPolicy::from_json(
+            r#"{"Version":"2012-10-17","Statement":{"Effect":"Allow","Action":"*","Resource":"*"}}"#,
+        )
+        .unwrap();
+
+        for resource in [
+            "arn:aws:iam::aws:policy/AdministratorAccess",
+            "arn:aws-us-gov:iam::aws:policy/AdministratorAccess",
+            "arn:aws-cn:iam::aws:policy/AdministratorAccess",
+        ] {
+            let request = IAMRequest::new(
+                Principal::Aws(PrincipalId::String(
+                    "arn:aws:iam::111122223333:user/alice".into(),
+                )),
+                "iam:AttachRolePolicy",
+                Arn::parse(resource).unwrap(),
+            );
+
+            assert_eq!(
+                evaluate_policy(&policy, &request).unwrap(),
+                Decision::Allow,
+                "a request whose resource is '{resource}' must be decided"
+            );
+        }
+    }
+
+    // Regression guard: an ordinary 12-digit account resource keeps deciding.
+    #[test]
+    fn test_numeric_account_request_resource_is_decided() {
+        let policy = IAMPolicy::from_json(
+            r#"{"Version":"2012-10-17","Statement":{"Effect":"Allow","Action":"*","Resource":"*"}}"#,
+        )
+        .unwrap();
+
+        let request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::111122223333:user/alice".into(),
+            )),
+            "iam:AttachRolePolicy",
+            Arn::parse("arn:aws:iam::111122223333:policy/AdministratorAccess").unwrap(),
+        );
+
+        assert_eq!(evaluate_policy(&policy, &request).unwrap(), Decision::Allow);
+    }
+
+    // The reserved account is a single exception: a malformed account is still
+    // an invalid request resource. `Arn::parse` is lenient, so such an ARN can
+    // reach `IAMRequest` and must be rejected before any statement runs.
+    #[test]
+    fn test_invalid_request_resource_is_still_rejected() {
+        let policy = IAMPolicy::from_json(
+            r#"{"Version":"2012-10-17","Statement":{"Effect":"Allow","Action":"*","Resource":"*"}}"#,
+        )
+        .unwrap();
+
+        let request = IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::111122223333:user/alice".into(),
+            )),
+            "iam:AttachRolePolicy",
+            Arn::parse("arn:aws:iam::not-an-account:policy/AdministratorAccess").unwrap(),
+        );
+
+        let error = evaluate_policy(&policy, &request)
+            .expect_err("a malformed request resource must not be decided");
+        assert_eq!(
+            error,
+            EvaluationError::InvalidRequest("Invalid resource ARN".to_string())
+        );
+    }
+
+    // Accepting the reserved account says nothing about what a *policy* may
+    // declare, nor about principal validation: bare account IDs and ARNs keep
+    // validating, non-ARN strings keep failing.
+    #[test]
+    fn test_reserved_aws_account_does_not_loosen_document_validation() {
+        let invalid_resource_policy = IAMPolicy::from_json(
+            r#"{"Version":"2012-10-17","Statement":{"Effect":"Allow","Action":"s3:GetObject","Resource":"not-an-arn"}}"#,
+        )
+        .unwrap();
+        assert!(
+            !invalid_resource_policy.is_valid(),
+            "policy validation must still reject a non-ARN Resource"
+        );
+
+        assert!(Principal::Aws(PrincipalId::String("123456789012".into())).is_valid());
+        assert!(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/alice".into()
+            ))
+            .is_valid()
+        );
+        assert!(!Principal::Aws(PrincipalId::String("not-a-principal".into())).is_valid());
     }
 }
