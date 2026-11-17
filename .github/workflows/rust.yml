@@ -26,4 +26,7 @@ jobs:
       # and issue 27 both shipped a schema disagreeing with the wire format with CI green.
       - run: cargo test --verbose --all-features
       - run: cargo test --verbose
+      # `correctness` and `suspicious` are deny in Cargo.toml, but nothing ran clippy here, so a
+      # lint regression could land on main with every check green (as one did in #72).
+      - run: cargo clippy --all-targets --all-features -- -D warnings
   
