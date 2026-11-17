@@ -175,7 +175,7 @@ pub(super) fn evaluate_condition(
         | O::ForAnyValueStringNotLike
         | O::StringNotLikeIfExists => predicate_str = Box::new(|a, b| !wildcard_match(&a, &b)),
         O::ArnLike | O::ForAllValuesArnLike | O::ForAnyValueArnLike | O::ArnLikeIfExists => {
-            predicate_str = Box::new(|a, b| arn_matches(&a, &b))
+            predicate_str = Box::new(|a, b| arn_matches(&a, &b));
         }
         O::ArnNotLike
         | O::ForAllValuesArnNotLike
