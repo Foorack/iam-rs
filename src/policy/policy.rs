@@ -302,6 +302,40 @@ mod tests {
         assert!(!duplicate_sid_policy.is_valid());
     }
 
+    // AWS documents `{"AWS": "*"}` as another spelling of `"Principal": "*"`.
+    // Before this was handled, the bare wildcard was parsed as an ARN and the
+    // document was rejected with "ARN must have exactly 6 parts".
+    #[test]
+    fn test_wildcard_aws_principal_is_valid() {
+        let allow_policy = IAMPolicy::from_json(
+            r#"{
+                "Version": "2012-10-17",
+                "Statement": [{
+                    "Effect": "Allow",
+                    "Principal": {"AWS": "*"},
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::my-bucket/*"
+                }]
+            }"#,
+        )
+        .unwrap();
+        assert!(allow_policy.is_valid());
+
+        let not_principal_policy = IAMPolicy::from_json(
+            r#"{
+                "Version": "2012-10-17",
+                "Statement": [{
+                    "Effect": "Deny",
+                    "NotPrincipal": {"AWS": "*"},
+                    "Action": "s3:GetObject",
+                    "Resource": "arn:aws:s3:::my-bucket/*"
+                }]
+            }"#,
+        )
+        .unwrap();
+        assert!(not_principal_policy.is_valid());
+    }
+
     #[test]
     fn test_policy_id_validation() {
         // Empty ID
