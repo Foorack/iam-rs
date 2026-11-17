@@ -49,6 +49,12 @@ Lint levels are set in `Cargo.toml`: `correctness` and `suspicious` are **deny**
 `complexity`, `perf`, `pedantic`, `cargo` are warn. `clippy::missing_errors_doc` is allowed
 crate-wide, though fallible public functions still carry `# Errors` sections — keep doing that.
 
+CI runs `cargo clippy --all-targets --all-features -- -D warnings` on all three toolchains, and adds
+the clippy component explicitly because only stable ships it. It does **not** run `cargo fmt --check`:
+the tree is not rustfmt-clean (pre-existing drift in `arn.rs`, `operator.rs`, `policy.rs` and two test
+blocks in `engine.rs`), so gates on formatting would fail immediately. Format your own hunks and
+leave the rest alone.
+
 ## Change hygiene
 
 - **One change per pull request.** If an issue bundles two independent fixes, split it into two PRs
