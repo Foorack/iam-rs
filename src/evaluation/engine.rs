@@ -125,7 +125,10 @@ pub struct EvaluationOptions {
     pub stop_on_explicit_deny: bool,
     /// Whether to collect detailed match information
     pub collect_match_details: bool,
-    /// Maximum number of statements to evaluate (for safety)
+    /// Maximum number of statements a single policy document may declare
+    /// (safety limit). A policy with more statements than this makes
+    /// evaluation return [`EvaluationError::InternalError`]; the limit applies
+    /// to each policy on its own, not to the sum across policies.
     pub max_statements: usize,
     /// Whether to ignore resource constraints
     pub ignore_resource_constraints: bool,
@@ -352,7 +355,8 @@ impl PolicyEvaluator {
     /// - ARN format errors occur during evaluation
     /// - Variable interpolation fails
     /// - Condition evaluation fails
-    /// - Maximum statement evaluation limit is exceeded
+    /// - A policy declares more statements than
+    ///   [`EvaluationOptions::max_statements`] allows
     pub fn evaluate(&self, request: &IAMRequest) -> Result<EvaluationResult, EvaluationError> {
         let (decision, statement_details) = self.decide(request)?;
         Ok(EvaluationResult {
@@ -416,20 +420,25 @@ impl PolicyEvaluator {
         let mut statement_details = Vec::new();
         let mut has_explicit_allow = false;
         let mut has_explicit_deny = false;
-        let mut statement_count = 0;
 
         // Evaluate each policy
         for (policy_index, policy) in self.policies.iter().enumerate() {
+            // The limit is a per-document safety valve: it counts every
+            // statement the policy declares and is checked before any of them
+            // runs, so a short-circuit cannot hide an over-limit policy and the
+            // outcome never depends on `stop_on_explicit_deny`. AWS itself has
+            // no statement-count limit, only document-size limits, so summing
+            // the count across the whole evaluation would reject ordinary
+            // policy sets.
+            if policy.statement.len() > self.options.max_statements {
+                return Err(EvaluationError::InternalError(
+                    "Maximum statement evaluation limit exceeded".to_string(),
+                ));
+            }
+
             let policy_patterns = self.resource_patterns.get(policy_index);
             let policy_variables = policy.version.supports_policy_variables();
             for (statement_index, statement) in policy.statement.iter().enumerate() {
-                statement_count += 1;
-                if statement_count > self.options.max_statements {
-                    return Err(EvaluationError::InternalError(
-                        "Maximum statement evaluation limit exceeded".to_string(),
-                    ));
-                }
-
                 let patterns = policy_patterns.and_then(|p| p.statement(statement_index));
                 let statement_result = Self::evaluate_statement(
                     statement,
@@ -2389,6 +2398,147 @@ mod tests {
             3,
             "without the short circuit every statement is recorded"
         );
+    }
+
+    fn s3_request(action: &str) -> IAMRequest {
+        IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
+            action,
+            Arn::parse("arn:aws:s3:::my-bucket/file.txt").unwrap(),
+        )
+    }
+
+    /// A policy with `count` non-matching statements followed by `last`.
+    fn policy_with_trailing(count: usize, last: IAMStatement) -> IAMPolicy {
+        let policy = (0..count).fold(IAMPolicy::new(), |policy, index| {
+            policy.add_statement(
+                IAMStatement::new(IAMEffect::Allow)
+                    .with_sid(format!("Filler{index}"))
+                    .with_action(IAMAction::Single("sts:GetCallerIdentity".to_string()))
+                    .with_resource(IAMResource::Single("*".to_string())),
+            )
+        });
+        policy.add_statement(last)
+    }
+
+    fn allow_get_object() -> IAMStatement {
+        IAMStatement::new(IAMEffect::Allow)
+            .with_action(IAMAction::Single("s3:GetObject".to_string()))
+            .with_resource(IAMResource::Single("*".to_string()))
+    }
+
+    #[test]
+    fn test_policy_at_statement_limit_evaluates() {
+        let policy = policy_with_trailing(3, allow_get_object());
+        assert_eq!(policy.statement.len(), 4);
+        let evaluator =
+            PolicyEvaluator::with_policies(vec![policy]).with_options(EvaluationOptions {
+                max_statements: 4,
+                ..Default::default()
+            });
+
+        let result = evaluator.evaluate(&s3_request("s3:GetObject")).unwrap();
+        assert_eq!(result.decision, Decision::Allow);
+    }
+
+    #[test]
+    fn test_policy_exceeding_statement_limit_is_an_error() {
+        let policy = policy_with_trailing(4, allow_get_object());
+        assert_eq!(policy.statement.len(), 5);
+        let evaluator =
+            PolicyEvaluator::with_policies(vec![policy]).with_options(EvaluationOptions {
+                max_statements: 4,
+                ..Default::default()
+            });
+
+        let error = evaluator
+            .evaluate(&s3_request("s3:GetObject"))
+            .expect_err("an over-limit policy must not be evaluated");
+        assert!(
+            matches!(error, EvaluationError::InternalError(_)),
+            "unexpected error: {error}"
+        );
+    }
+
+    // The limit is per policy, so a policy set whose total statement count
+    // exceeds it stays evaluable.
+    #[test]
+    fn test_statement_limit_is_per_policy_not_per_evaluation() {
+        let policies = vec![
+            policy_with_trailing(3, allow_get_object()),
+            policy_with_trailing(3, allow_get_object()),
+        ];
+        let evaluator = PolicyEvaluator::with_policies(policies).with_options(EvaluationOptions {
+            max_statements: 4,
+            ..Default::default()
+        });
+
+        let result = evaluator.evaluate(&s3_request("s3:GetObject")).unwrap();
+        assert_eq!(result.decision, Decision::Allow);
+    }
+
+    // `EvaluationOptions` documents that `stop_on_explicit_deny` does not change
+    // the decision, and reaching the statement limit must not change that.
+    #[test]
+    fn test_decision_at_statement_limit_ignores_stop_on_explicit_deny() {
+        let policy = policy_with_trailing(
+            2,
+            IAMStatement::new(IAMEffect::Deny)
+                .with_action(IAMAction::Single("s3:*".to_string()))
+                .with_resource(IAMResource::Single("*".to_string())),
+        );
+        assert_eq!(policy.statement.len(), 3);
+        let request = s3_request("s3:GetObject");
+
+        let decisions: Vec<Decision> = [true, false]
+            .into_iter()
+            .map(|stop_on_explicit_deny| {
+                PolicyEvaluator::with_policies(vec![policy.clone()])
+                    .with_options(EvaluationOptions {
+                        stop_on_explicit_deny,
+                        max_statements: 3,
+                        ..Default::default()
+                    })
+                    .evaluate(&request)
+                    .unwrap()
+                    .decision
+            })
+            .collect();
+
+        assert_eq!(decisions, vec![Decision::Deny, Decision::Deny]);
+    }
+
+    // A deny is never silently skipped: when the policy cannot be evaluated
+    // because it is over the limit the caller gets an error, not a decision.
+    #[test]
+    fn test_deny_beyond_statement_limit_is_not_ignored() {
+        let policy = policy_with_trailing(
+            3,
+            IAMStatement::new(IAMEffect::Deny)
+                .with_action(IAMAction::Single("s3:*".to_string()))
+                .with_resource(IAMResource::Single("*".to_string())),
+        );
+        assert_eq!(policy.statement.len(), 4);
+
+        for stop_on_explicit_deny in [true, false] {
+            let evaluator = PolicyEvaluator::with_policies(vec![policy.clone()]).with_options(
+                EvaluationOptions {
+                    stop_on_explicit_deny,
+                    max_statements: 3,
+                    ..Default::default()
+                },
+            );
+
+            let error = evaluator.evaluate(&s3_request("s3:GetObject")).expect_err(
+                "the deny beyond the limit must not be dropped in favour of a decision",
+            );
+            assert!(
+                matches!(error, EvaluationError::InternalError(_)),
+                "unexpected error with stop_on_explicit_deny={stop_on_explicit_deny}: {error}"
+            );
+        }
     }
 
     #[test]

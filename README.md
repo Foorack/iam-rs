@@ -366,7 +366,7 @@ let evaluator = PolicyEvaluator::with_policies(vec![policy1, policy2, policy3])
     .with_options(EvaluationOptions {
         stop_on_explicit_deny: true,        // Stop at first explicit deny
         collect_match_details: true,        // Collect debug information
-        max_statements: 1000,               // Safety limit
+        max_statements: 1000,               // Safety limit, per policy
         ignore_resource_constraints: false, // Ignore Resource/NotResource constraints
     });
 
