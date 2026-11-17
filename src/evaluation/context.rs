@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, ser::SerializeMap};
 use std::collections::HashMap;
 
 #[allow(dead_code)]
@@ -134,11 +134,32 @@ impl utoipa::ToSchema for Context {
 
 // Impl serialization and deserialization for Context (hide the data internal structure)
 impl Serialize for Context {
+    /// Writes the context as a flat map of key to value.
+    ///
+    /// A non-finite number (`NaN`, an infinity) is rejected here rather than
+    /// written: JSON has no representation for one, so `serde_json` would emit
+    /// `null`, which this type's own `Deserialize` then refuses. Emitting a
+    /// document that cannot be read back is worse than failing to write it, and
+    /// the error names the offending key.
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        self.data.serialize(serializer)
+        use serde::ser::Error as _;
+
+        let mut map = serializer.serialize_map(Some(self.data.len()))?;
+        for (key, value) in &self.data {
+            if let ContextValue::Number(number) = value
+                && !number.is_finite()
+            {
+                return Err(S::Error::custom(format!(
+                    "context value `{key}` is the non-finite number {number}, which JSON cannot \
+                     represent"
+                )));
+            }
+            map.serialize_entry(key, value)?;
+        }
+        map.end()
     }
 }
 
@@ -427,5 +448,39 @@ mod tests {
         assert_eq!(context.get("aws:PrincipalTag/team"), Some(&blocked));
         assert_eq!(context.get("aws:PrincipalTag/TEAM"), Some(&alice));
         assert_eq!(context.get("aws:PrincipalTag/Team"), Some(&alice));
+    }
+
+    #[test]
+    fn test_context_refuses_to_serialise_a_non_finite_number() {
+        // `serde_json` writes a non-finite `f64` as `null`, which this type's own
+        // `Deserialize` then rejects, so the library would emit a document it
+        // cannot read back. Refusing to write it keeps every serialised context
+        // re-readable, and the error names the key.
+        for number in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut context = Context::new();
+            context.insert("aws:EpochTime".to_string(), ContextValue::Number(number));
+            let error = serde_json::to_string(&context)
+                .expect_err("a non-finite number must not serialise");
+            let message = error.to_string();
+            assert!(
+                message.contains("aws:EpochTime") && message.contains("non-finite"),
+                "unexpected error: {message}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_context_serialises_and_reads_back() {
+        // The guard above must not disturb ordinary values, including a negative
+        // and a fractional number.
+        let context = Context::new()
+            .with_string("aws:username", "alice")
+            .with_boolean("aws:SecureTransport", true)
+            .with_number("aws:EpochTime", 1_700_000_000.5);
+        let json = serde_json::to_string(&context).expect("finite values serialise");
+        assert_eq!(
+            serde_json::from_str::<Context>(&json).expect("reads back"),
+            context
+        );
     }
 }
