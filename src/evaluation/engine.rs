@@ -467,7 +467,7 @@ impl PolicyEvaluator {
         let action_matches = if let Some(ref action) = statement.action {
             Self::action_matches(action, &request.action)
         } else if let Some(ref not_action) = statement.not_action {
-            !Self::action_matches(not_action, &request.action)
+            Self::not_action_matches(not_action, &request.action)
         } else {
             return Ok(StatementMatch {
                 sid: statement.sid.clone(),
@@ -497,7 +497,7 @@ impl PolicyEvaluator {
                 &request.context,
             )?
         } else if let Some(ref not_resource) = statement.not_resource {
-            !Self::resource_matches(
+            Self::not_resource_matches(
                 not_resource,
                 patterns.and_then(|p| p.not_resource.as_deref()),
                 &request.resource,
@@ -712,6 +712,21 @@ impl PolicyEvaluator {
         }
     }
 
+    /// Check if a request action falls outside a `NotAction` list
+    ///
+    /// An empty array is not valid IAM: AWS rejects the document with
+    /// `MalformedPolicyDocument` because the grammar requires at least one
+    /// value. A document that skipped [`IAMPolicy::validate`] must therefore not
+    /// be treated as the negation of an empty list, which is "every action":
+    /// that would silently turn a malformed `Allow` into allow-all and a
+    /// malformed `Deny` into deny-all. An empty list matches nothing.
+    fn not_action_matches(not_action: &IAMAction, request_action: &str) -> bool {
+        match not_action {
+            IAMAction::Multiple(actions) if actions.is_empty() => false,
+            _ => !Self::action_matches(not_action, request_action),
+        }
+    }
+
     /// Check if an action matches the request action
     ///
     /// AWS treats action names as case-insensitive (e.g. `iam:ListAccessKeys`
@@ -724,6 +739,25 @@ impl PolicyEvaluator {
         match action {
             IAMAction::Single(a) => pattern_matches(a),
             IAMAction::Multiple(actions) => actions.iter().any(|a| pattern_matches(a)),
+        }
+    }
+
+    /// Check if a request resource falls outside a `NotResource` list
+    ///
+    /// Same reasoning as [`Self::not_action_matches`]: AWS rejects an empty array
+    /// (`MalformedPolicyDocument`), so an unvalidated document must not have its
+    /// empty `NotResource` inverted into "every resource". An empty list matches
+    /// nothing.
+    fn not_resource_matches(
+        not_resource: &IAMResource,
+        compiled: Option<&[CompiledResourcePattern]>,
+        request_resource: &Arn,
+        context: &Context,
+    ) -> Result<bool, EvaluationError> {
+        match not_resource {
+            IAMResource::Multiple(patterns) if patterns.is_empty() => Ok(false),
+            _ => Self::resource_matches(not_resource, compiled, request_resource, context)
+                .map(|matches| !matches),
         }
     }
 
@@ -2383,5 +2417,114 @@ mod tests {
             ],
         );
         assert_eq!(evaluate_policy(&policy, &request).unwrap(), Decision::Allow);
+    }
+
+    fn test_request(action: &str, resource: &str) -> IAMRequest {
+        IAMRequest::new(
+            Principal::Aws(PrincipalId::String(
+                "arn:aws:iam::123456789012:user/test".into(),
+            )),
+            action,
+            Arn::parse(resource).unwrap(),
+        )
+    }
+
+    #[test]
+    fn test_empty_not_action_matches_no_action() {
+        // AWS rejects `"NotAction": []` with MalformedPolicyDocument: the array
+        // grammar requires at least one value. Evaluating such a document without
+        // validating it must not invert the empty list into "every action", which
+        // would turn the Allow below into allow-all and the Deny into deny-all.
+        for effect in [IAMEffect::Allow, IAMEffect::Deny] {
+            let mut statement = IAMStatement::new(effect);
+            statement.not_action = Some(IAMAction::Multiple(Vec::new()));
+            statement.resource = Some(IAMResource::Single("*".to_string()));
+            let policy = IAMPolicy::new().add_statement(statement);
+
+            let request = test_request("s3:DeleteBucket", "arn:aws:s3:::my-bucket/file.txt");
+            assert_eq!(
+                evaluate_policy(&policy, &request).unwrap(),
+                Decision::NotApplicable,
+                "{effect:?} with an empty NotAction must not match any action"
+            );
+        }
+    }
+
+    #[test]
+    fn test_empty_not_resource_matches_no_resource() {
+        for effect in [IAMEffect::Allow, IAMEffect::Deny] {
+            let mut statement = IAMStatement::new(effect);
+            statement.action = Some(IAMAction::Single("ec2:*".to_string()));
+            statement.not_resource = Some(IAMResource::Multiple(Vec::new()));
+            let policy = IAMPolicy::new().add_statement(statement);
+
+            let request = test_request(
+                "ec2:TerminateInstances",
+                "arn:aws:ec2:us-east-1:123456789012:instance/i-1",
+            );
+            assert_eq!(
+                evaluate_policy(&policy, &request).unwrap(),
+                Decision::NotApplicable,
+                "{effect:?} with an empty NotResource must not match any resource"
+            );
+        }
+    }
+
+    #[test]
+    fn test_non_empty_not_action_still_excludes() {
+        // Guards against overcorrecting: a valid NotAction list must keep
+        // excluding its entries and still apply to everything else.
+        for (effect, matched) in [
+            (IAMEffect::Allow, Decision::Allow),
+            (IAMEffect::Deny, Decision::Deny),
+        ] {
+            let mut statement = IAMStatement::new(effect);
+            statement.not_action = Some(IAMAction::Multiple(vec!["s3:GetObject".to_string()]));
+            statement.resource = Some(IAMResource::Single("*".to_string()));
+            let policy = IAMPolicy::new().add_statement(statement);
+
+            let excluded = test_request("s3:GetObject", "arn:aws:s3:::my-bucket/file.txt");
+            assert_eq!(
+                evaluate_policy(&policy, &excluded).unwrap(),
+                Decision::NotApplicable,
+                "{effect:?} with NotAction [s3:GetObject] must exclude s3:GetObject"
+            );
+
+            let other = test_request("s3:PutObject", "arn:aws:s3:::my-bucket/file.txt");
+            assert_eq!(
+                evaluate_policy(&policy, &other).unwrap(),
+                matched,
+                "{effect:?} with NotAction [s3:GetObject] must apply to s3:PutObject"
+            );
+        }
+    }
+
+    #[test]
+    fn test_non_empty_not_resource_still_excludes() {
+        for (effect, matched) in [
+            (IAMEffect::Allow, Decision::Allow),
+            (IAMEffect::Deny, Decision::Deny),
+        ] {
+            let mut statement = IAMStatement::new(effect);
+            statement.action = Some(IAMAction::Single("s3:*".to_string()));
+            statement.not_resource = Some(IAMResource::Multiple(vec![
+                "arn:aws:s3:::sensitive/*".to_string(),
+            ]));
+            let policy = IAMPolicy::new().add_statement(statement);
+
+            let excluded = test_request("s3:GetObject", "arn:aws:s3:::sensitive/secret.txt");
+            assert_eq!(
+                evaluate_policy(&policy, &excluded).unwrap(),
+                Decision::NotApplicable,
+                "{effect:?} with NotResource [sensitive/*] must exclude that ARN"
+            );
+
+            let other = test_request("s3:GetObject", "arn:aws:s3:::public/file.txt");
+            assert_eq!(
+                evaluate_policy(&policy, &other).unwrap(),
+                matched,
+                "{effect:?} with NotResource [sensitive/*] must apply elsewhere"
+            );
+        }
     }
 }
