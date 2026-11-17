@@ -390,8 +390,15 @@ fn evaluate_set_operator(
                 }
                 // A scalar context behaves like a single-element set.
                 Some(ContextValue::String(s)) => Ok(satisfies(s)),
-                Some(_) => Ok(false),       // Type mismatch
-                None => Ok(for_all_values), // ForAllValues: true, ForAnyValue: false
+                Some(_) => Ok(false), // Type mismatch
+                // AWS's evaluation table for the set operators gives
+                // `ForAllValues:StringNotLike` with "no aws:ResourceOrgPaths in
+                // the request" as *no match*: the negated forms are defined as
+                // "none of the request values matches any policy value", and an
+                // absent key has no request values to satisfy that with. So a
+                // negated set operator does not match when the key is missing,
+                // even under `ForAllValues`.
+                None => Ok(for_all_values && !all_policy_values),
             }
         }
         OperatorType::Boolean => {
@@ -423,8 +430,15 @@ fn evaluate_set_operator(
                     }
                 }
                 Some(ContextValue::Boolean(b)) => Ok(satisfies(b)),
-                Some(_) => Ok(false),       // Type mismatch
-                None => Ok(for_all_values), // ForAllValues: true, ForAnyValue: false
+                Some(_) => Ok(false), // Type mismatch
+                // AWS's evaluation table for the set operators gives
+                // `ForAllValues:StringNotLike` with "no aws:ResourceOrgPaths in
+                // the request" as *no match*: the negated forms are defined as
+                // "none of the request values matches any policy value", and an
+                // absent key has no request values to satisfy that with. So a
+                // negated set operator does not match when the key is missing,
+                // even under `ForAllValues`.
+                None => Ok(for_all_values && !all_policy_values),
             }
         }
         // Set operators are only defined for string/ARN/boolean operators.
@@ -1244,6 +1258,47 @@ mod tests {
         )
         .unwrap();
         assert!(result);
+    }
+
+    #[test]
+    fn test_set_operator_missing_context_for_negated_operators() {
+        // AWS's set-operator evaluation table gives `ForAllValues:StringNotLike`
+        // with "no aws:ResourceOrgPaths in the request" as *no match*, unlike the
+        // positive `ForAllValues`, which is true when the key is absent.
+        let ctx = Context::new();
+        for operator in [
+            IAMOperator::ForAllValuesStringNotLike,
+            IAMOperator::ForAllValuesStringNotEquals,
+            IAMOperator::ForAnyValueStringNotLike,
+            IAMOperator::ForAnyValueStringNotEquals,
+        ] {
+            let result = evaluate_condition_json(
+                &ctx,
+                &operator,
+                "aws:ResourceOrgPaths",
+                &serde_json::json!(["o-a/r-a/ou-a/"]),
+            )
+            .unwrap();
+            assert!(!result, "{operator:?} must not match a missing key");
+        }
+
+        // The positive forms keep their documented missing-key behaviour.
+        let result = evaluate_condition_json(
+            &ctx,
+            &IAMOperator::ForAllValuesStringEquals,
+            "aws:ResourceOrgPaths",
+            &serde_json::json!(["o-a/r-a/ou-a/"]),
+        )
+        .unwrap();
+        assert!(result, "ForAllValues must be true for a missing key");
+        let result = evaluate_condition_json(
+            &ctx,
+            &IAMOperator::ForAnyValueStringEquals,
+            "aws:ResourceOrgPaths",
+            &serde_json::json!(["o-a/r-a/ou-a/"]),
+        )
+        .unwrap();
+        assert!(!result, "ForAnyValue must be false for a missing key");
     }
 
     #[test]
