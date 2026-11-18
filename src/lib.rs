@@ -89,37 +89,95 @@ mod openapi_tests {
         );
     }
 
-    /// Every `$ref` in a document has to resolve to something in that same document.
+    /// Every `$ref` a type emits has to resolve to a component in the same document.
     ///
-    /// `IamApiDoc` registers every type in this crate by hand, which hides a hand-written
-    /// `ToSchema` that forgets to collect its own dependencies: the component is there because
-    /// the list says so, not because anything registered it. A downstream application has no
-    /// such list — its derive collects whatever the holder's `schemas()` returns — so the
-    /// missing registration only shows up there, as a dangling `$ref` and an invalid document.
+    /// `IamApiDoc` registers every type in this crate by hand, so a hand-written `ToSchema` that
+    /// forgets to collect its own dependencies still produces a complete document here: the
+    /// component is present because the list says so, not because anything registered it. A
+    /// downstream application has no such list — its derive collects whatever the holder's
+    /// `schemas()` returns — so the omission only shows up there, as a dangling `$ref` and an
+    /// invalid document. That is how the missing `PrincipalId` reached 0.15.2 with a green suite.
     ///
-    /// This doc registers one type that holds references and nothing else, which is the shape a
-    /// real document has, and checks every `$ref` it emits.
+    /// Each type is therefore registered **on its own**, so nothing can cover for anything else.
+    /// The names that yields are then compared against `IamApiDoc`'s components, so a type added
+    /// to one and not the other fails here instead of being silently uncovered.
     #[test]
-    fn test_every_ref_resolves_with_a_single_holder() {
-        #[derive(OpenApi)]
-        #[openapi(components(schemas(crate::IAMPolicy)))]
-        struct PolicyOnlyDoc;
+    fn test_every_schema_is_self_contained() {
+        let mut covered: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
 
-        let doc = serde_json::to_value(PolicyOnlyDoc::openapi())
-            .expect("the document does not serialise");
+        macro_rules! check_alone {
+            ($($ty:ty),* $(,)?) => {
+                $(
+                    {
+                        #[derive(OpenApi)]
+                        #[openapi(components(schemas($ty)))]
+                        struct Only;
 
-        let mut refs = Vec::new();
-        collect_refs(&doc, &mut refs);
-        assert!(!refs.is_empty(), "the document emits no $ref at all");
+                        let doc = serde_json::to_value(Only::openapi())
+                            .expect("the document does not serialise");
 
-        let dangling: Vec<&String> = refs
-            .iter()
-            .filter(|reference| !resolves(&doc, reference))
-            .collect();
-        assert!(
-            dangling.is_empty(),
-            "these references do not resolve to a component: {dangling:?}"
+                        let mut refs = Vec::new();
+                        collect_refs(&doc, &mut refs);
+                        let dangling: Vec<&String> = refs
+                            .iter()
+                            .filter(|reference| !resolves(&doc, reference))
+                            .collect();
+                        assert!(
+                            dangling.is_empty(),
+                            "{} on its own emits references that do not resolve to a \
+                             component: {dangling:?}",
+                            stringify!($ty),
+                        );
+
+                        covered.extend(component_names(&doc));
+                    }
+                )*
+            };
+        }
+
+        check_alone!(
+            crate::Arn,
+            crate::ArnError,
+            crate::IAMAction,
+            crate::IAMEffect,
+            crate::IAMOperator,
+            crate::IAMResource,
+            crate::IAMVersion,
+            crate::OperatorType,
+            crate::Principal,
+            crate::PrincipalId,
+            crate::Condition,
+            crate::ConditionBlock,
+            crate::ConditionValue,
+            crate::IAMPolicy,
+            crate::IAMStatement,
+            crate::Context,
+            crate::ContextValue,
+            crate::Decision,
+            crate::EvaluationError,
+            crate::EvaluationOptions,
+            crate::EvaluationResult,
+            crate::IAMRequest,
+            crate::PolicyEvaluator,
+            crate::PolicyVariable,
+            crate::StatementMatch,
         );
+
+        let whole =
+            serde_json::to_value(IamApiDoc::openapi()).expect("the document does not serialise");
+        assert_eq!(
+            covered,
+            component_names(&whole),
+            "a type is registered by one of these tests and not the other; add it to both",
+        );
+    }
+
+    fn component_names(doc: &serde_json::Value) -> std::collections::BTreeSet<String> {
+        doc["components"]["schemas"]
+            .as_object()
+            .map_or_else(std::collections::BTreeSet::new, |schemas| {
+                schemas.keys().cloned().collect()
+            })
     }
 
     fn collect_refs(value: &serde_json::Value, out: &mut Vec<String>) {
@@ -144,11 +202,12 @@ mod openapi_tests {
         }
     }
 
-    /// A `#/a/b/c` reference resolves when the document has that path. Anything not starting at
-    /// `#/` points outside the document, which this crate never emits.
+    /// A `#/a/b/c` reference resolves when the document has that path. Anything else does not
+    /// resolve *within* this document: this crate emits no external references, so one appearing
+    /// here is a change that should be looked at rather than waved through.
     fn resolves(doc: &serde_json::Value, reference: &str) -> bool {
         let Some(path) = reference.strip_prefix("#/") else {
-            return true;
+            return false;
         };
         let mut node = doc;
         for segment in path.split('/') {
