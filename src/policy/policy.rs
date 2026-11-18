@@ -117,6 +117,7 @@ pub struct IAMPolicy {
         deserialize_with = "non_null::deserialize",
         skip_serializing_if = "Option::is_none"
     )]
+    #[cfg_attr(feature = "utoipa", schema(nullable = false))]
     pub id: Option<String>,
 
     /// The Statement element is the main element for a policy.

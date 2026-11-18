@@ -172,6 +172,56 @@ mod openapi_tests {
         );
     }
 
+    /// No policy element that the parser rejects as `null` may be described as nullable.
+    ///
+    /// `non_null::deserialize` refuses an explicit `null` for these elements, because AWS treats
+    /// it as a malformed document rather than an omitted element. The derive only sees
+    /// `Option<T>`, so it writes `null` into the schema unless the field says otherwise, and a
+    /// client generated from that schema can send exactly what the parser refuses: with
+    /// `typescript-fetch` the field comes out as `IAMAction | Null`, and `Null` is not a type
+    /// anything defines.
+    ///
+    /// Each such field therefore carries `schema(nullable = false)`. This checks the result
+    /// rather than the attribute, so a new element that is deserialised with `non_null` and
+    /// declared without it fails here instead of downstream.
+    #[test]
+    fn test_no_policy_element_is_nullable() {
+        let doc =
+            serde_json::to_value(IamApiDoc::openapi()).expect("the document does not serialise");
+        let schemas = &doc["components"]["schemas"];
+
+        for holder in ["IAMPolicy", "IAMStatement"] {
+            let properties = schemas[holder]["properties"]
+                .as_object()
+                .unwrap_or_else(|| panic!("{holder} has no properties in the spec"));
+            for (name, schema) in properties {
+                assert!(
+                    !admits_null(schema),
+                    "{holder}.{name} is described as nullable, but the parser rejects null: \
+                     put #[cfg_attr(feature = \"utoipa\", schema(nullable = false))] on the field",
+                );
+            }
+        }
+    }
+
+    /// Whether a schema permits the JSON value `null`, in either the 3.1 form
+    /// (`"type": ["string", "null"]`) or the 3.0 one (`"nullable": true`).
+    fn admits_null(schema: &serde_json::Value) -> bool {
+        if schema["nullable"] == serde_json::Value::Bool(true) {
+            return true;
+        }
+        match &schema["type"] {
+            serde_json::Value::String(kind) if kind == "null" => return true,
+            serde_json::Value::Array(kinds) if kinds.iter().any(|k| k == "null") => return true,
+            _ => {}
+        }
+        ["oneOf", "anyOf", "allOf"].iter().any(|key| {
+            schema[key]
+                .as_array()
+                .is_some_and(|members| members.iter().any(admits_null))
+        })
+    }
+
     fn component_names(doc: &serde_json::Value) -> std::collections::BTreeSet<String> {
         doc["components"]["schemas"]
             .as_object()
