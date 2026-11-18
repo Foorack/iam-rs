@@ -96,6 +96,23 @@ impl utoipa::ToSchema for Principal {
     fn name() -> std::borrow::Cow<'static, str> {
         std::borrow::Cow::Borrowed("Principal")
     }
+
+    // The schema above refers to `PrincipalId` by name, which a `Ref` does not register by
+    // itself. The derive used to collect it; the hand-written schema does not, so a document
+    // whose only holder of `Principal` was this type had a dangling `$ref`. `Context` does the
+    // same for `ContextValue`.
+    fn schemas(
+        schemas: &mut Vec<(
+            String,
+            utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>,
+        )>,
+    ) {
+        schemas.push((
+            <PrincipalId as utoipa::ToSchema>::name().into_owned(),
+            <PrincipalId as utoipa::PartialSchema>::schema(),
+        ));
+        <PrincipalId as utoipa::ToSchema>::schemas(schemas);
+    }
 }
 
 /// The four map keys a principal block may use.

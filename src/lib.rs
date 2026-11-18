@@ -88,4 +88,75 @@ mod openapi_tests {
             "OpenAPI spec has changed — update tests/spec.json if this is intentional"
         );
     }
+
+    /// Every `$ref` in a document has to resolve to something in that same document.
+    ///
+    /// `IamApiDoc` registers every type in this crate by hand, which hides a hand-written
+    /// `ToSchema` that forgets to collect its own dependencies: the component is there because
+    /// the list says so, not because anything registered it. A downstream application has no
+    /// such list — its derive collects whatever the holder's `schemas()` returns — so the
+    /// missing registration only shows up there, as a dangling `$ref` and an invalid document.
+    ///
+    /// This doc registers one type that holds references and nothing else, which is the shape a
+    /// real document has, and checks every `$ref` it emits.
+    #[test]
+    fn test_every_ref_resolves_with_a_single_holder() {
+        #[derive(OpenApi)]
+        #[openapi(components(schemas(crate::IAMPolicy)))]
+        struct PolicyOnlyDoc;
+
+        let doc = serde_json::to_value(PolicyOnlyDoc::openapi())
+            .expect("the document does not serialise");
+
+        let mut refs = Vec::new();
+        collect_refs(&doc, &mut refs);
+        assert!(!refs.is_empty(), "the document emits no $ref at all");
+
+        let dangling: Vec<&String> = refs
+            .iter()
+            .filter(|reference| !resolves(&doc, reference))
+            .collect();
+        assert!(
+            dangling.is_empty(),
+            "these references do not resolve to a component: {dangling:?}"
+        );
+    }
+
+    fn collect_refs(value: &serde_json::Value, out: &mut Vec<String>) {
+        match value {
+            serde_json::Value::Object(map) => {
+                for (key, child) in map {
+                    if key == "$ref" {
+                        if let Some(reference) = child.as_str() {
+                            out.push(reference.to_owned());
+                        }
+                    } else {
+                        collect_refs(child, out);
+                    }
+                }
+            }
+            serde_json::Value::Array(items) => {
+                for item in items {
+                    collect_refs(item, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    /// A `#/a/b/c` reference resolves when the document has that path. Anything not starting at
+    /// `#/` points outside the document, which this crate never emits.
+    fn resolves(doc: &serde_json::Value, reference: &str) -> bool {
+        let Some(path) = reference.strip_prefix("#/") else {
+            return true;
+        };
+        let mut node = doc;
+        for segment in path.split('/') {
+            let Some(child) = node.get(segment) else {
+                return false;
+            };
+            node = child;
+        }
+        true
+    }
 }
