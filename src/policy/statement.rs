@@ -37,6 +37,7 @@ pub struct IAMStatement {
         deserialize_with = "non_null::deserialize",
         skip_serializing_if = "Option::is_none"
     )]
+    #[cfg_attr(feature = "utoipa", schema(nullable = false))]
     pub sid: Option<String>,
 
     /// The effect of the statement (Allow or Deny)
@@ -70,6 +71,7 @@ pub struct IAMStatement {
         deserialize_with = "non_null::deserialize",
         skip_serializing_if = "Option::is_none"
     )]
+    #[cfg_attr(feature = "utoipa", schema(nullable = false))]
     pub principal: Option<Principal>,
 
     /// Optional not principal(s) - who the statement does not apply to
@@ -86,6 +88,7 @@ pub struct IAMStatement {
         deserialize_with = "non_null::deserialize",
         skip_serializing_if = "Option::is_none"
     )]
+    #[cfg_attr(feature = "utoipa", schema(nullable = false))]
     pub not_principal: Option<Principal>,
 
     /// Optional action(s) - what actions are allowed/denied
@@ -134,6 +137,7 @@ pub struct IAMStatement {
         deserialize_with = "non_null::deserialize",
         skip_serializing_if = "Option::is_none"
     )]
+    #[cfg_attr(feature = "utoipa", schema(nullable = false))]
     pub action: Option<IAMAction>,
 
     /// Optional not action(s) - what actions are not covered
@@ -194,6 +198,7 @@ pub struct IAMStatement {
         deserialize_with = "non_null::deserialize",
         skip_serializing_if = "Option::is_none"
     )]
+    #[cfg_attr(feature = "utoipa", schema(nullable = false))]
     pub not_action: Option<IAMAction>,
 
     /// Optional resource(s) - what resources the statement applies to
@@ -283,6 +288,7 @@ pub struct IAMStatement {
         deserialize_with = "non_null::deserialize",
         skip_serializing_if = "Option::is_none"
     )]
+    #[cfg_attr(feature = "utoipa", schema(nullable = false))]
     pub resource: Option<IAMResource>,
 
     /// Optional not resource(s) - what resources are not covered
@@ -298,6 +304,7 @@ pub struct IAMStatement {
         deserialize_with = "non_null::deserialize",
         skip_serializing_if = "Option::is_none"
     )]
+    #[cfg_attr(feature = "utoipa", schema(nullable = false))]
     pub not_resource: Option<IAMResource>,
 
     /// Optional conditions for the statement
@@ -338,6 +345,7 @@ pub struct IAMStatement {
         deserialize_with = "non_null::deserialize",
         skip_serializing_if = "Option::is_none"
     )]
+    #[cfg_attr(feature = "utoipa", schema(nullable = false))]
     pub condition: Option<ConditionBlock>,
 }
 
