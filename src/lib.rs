@@ -184,28 +184,65 @@ mod openapi_tests {
     /// Each such field therefore carries `schema(nullable = false)`. This checks the result
     /// rather than the attribute, so a new element that is deserialised with `non_null` and
     /// declared without it fails here instead of downstream.
+    ///
+    /// The walk covers the whole document, not just the two structs that carry `non_null`
+    /// today: a `non_null` field added to a third struct would otherwise sit outside it and
+    /// pass. Every nullable property that remains has to be named below, which makes it a
+    /// decision rather than an oversight, and a named one that stops being nullable fails too
+    /// so the list cannot go stale.
     #[test]
-    fn test_no_policy_element_is_nullable() {
+    fn test_only_named_properties_are_nullable() {
+        // `StatementMatch` is a readable result, not a document that is parsed back in, so
+        // `null` there is a value it genuinely accepts.
+        //
+        // `PolicyVariable` derives no `Serialize`/`Deserialize` at all, so it has no wire form
+        // and accepts nothing, `null` included. There is no parser to disagree with the schema;
+        // the derive writes the `Option` out as-is.
+        const NULLABLE: &[&str] = &["PolicyVariable.default_value", "StatementMatch.sid"];
+
         let doc =
             serde_json::to_value(IamApiDoc::openapi()).expect("the document does not serialise");
         let schemas = &doc["components"]["schemas"];
 
-        for holder in ["IAMPolicy", "IAMStatement"] {
-            let properties = schemas[holder]["properties"]
-                .as_object()
-                .unwrap_or_else(|| panic!("{holder} has no properties in the spec"));
+        let mut found: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
+        for (holder, component) in schemas.as_object().expect("no components in the spec") {
+            let Some(properties) = component["properties"].as_object() else {
+                continue;
+            };
             for (name, schema) in properties {
-                assert!(
-                    !admits_null(schema),
-                    "{holder}.{name} is described as nullable, but the parser rejects null: \
-                     put #[cfg_attr(feature = \"utoipa\", schema(nullable = false))] on the field",
-                );
+                if admits_null(schema) {
+                    found.insert(format!("{holder}.{name}"));
+                }
             }
         }
+
+        let expected: std::collections::BTreeSet<String> =
+            NULLABLE.iter().map(|name| (*name).to_owned()).collect();
+
+        let unexpected: Vec<&String> = found.difference(&expected).collect();
+        assert!(
+            unexpected.is_empty(),
+            "these properties are described as nullable but are not in the allowlist: \
+             {unexpected:?}. If the parser rejects null for one, put \
+             #[cfg_attr(feature = \"utoipa\", schema(nullable = false))] on the field; if it \
+             genuinely accepts null, add it to NULLABLE.",
+        );
+
+        let stale: Vec<&String> = expected.difference(&found).collect();
+        assert!(
+            stale.is_empty(),
+            "these properties are in the allowlist but are no longer nullable: {stale:?}. \
+             Remove them from NULLABLE.",
+        );
     }
 
     /// Whether a schema permits the JSON value `null`, in either the 3.1 form
     /// (`"type": ["string", "null"]`) or the 3.0 one (`"nullable": true`).
+    ///
+    /// A `$ref` is not followed: this asks about the schema object in front of it, and no
+    /// component in this crate admits `null`, so a reference to one cannot either. If a
+    /// nullable component ever appears, this helper needs to resolve references before the
+    /// answer means anything.
     fn admits_null(schema: &serde_json::Value) -> bool {
         if schema["nullable"] == serde_json::Value::Bool(true) {
             return true;
